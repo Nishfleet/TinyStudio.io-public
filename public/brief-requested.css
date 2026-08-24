@@ -1,0 +1,17 @@
+.done{max-width:660px;margin:0 auto;padding:118px 0 0;text-align:center}
+  .tick{width:56px;height:56px;margin:0 auto 30px;border-radius:50%;border:1px solid var(--brass);
+    display:flex;align-items:center;justify-content:center;color:var(--brass);font-size:22px;
+    background:rgba(255,253,248,.7);box-shadow:0 1px 0 rgba(255,255,255,.9) inset,
+    0 16px 38px -26px rgba(25,20,16,.35)}
+  .done h1{font-family:'Fraunces',serif;font-weight:200;font-size:60px;line-height:1.04;letter-spacing:-.032em}
+  .done h1 em{font-style:italic;font-weight:300;color:var(--brass)}
+  .done .sub{font-size:18px;line-height:1.72;color:var(--soft);margin:26px auto 0;max-width:46ch}
+  .next{margin:52px auto 0;max-width:560px;text-align:left;border-top:1px solid var(--line);padding-top:30px}
+  .step{display:grid;grid-template-columns:34px 1fr;gap:18px;padding:16px 0;border-bottom:1px solid var(--hair)}
+  .step:last-child{border-bottom:0}
+  .step .n{font-family:'Fraunces',serif;font-style:italic;font-weight:200;font-size:24px;color:var(--brass-lt);line-height:1.2}
+  .step h2{font-size:16.5px;font-weight:600;letter-spacing:-.008em}
+  .step p{margin-top:6px;font-size:15px;line-height:1.68;color:var(--muted)}
+  .back{margin-top:44px;display:inline-block;font-size:13.5px;color:var(--muted);text-decoration:none;
+    padding:15px 0;text-decoration:underline;text-underline-offset:4px}
+  .back:hover{color:var(--ink);text-decoration-color:var(--brass)}

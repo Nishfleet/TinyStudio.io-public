@@ -1,0 +1,14 @@
+node_modules
+.wrangler/
+.dev.vars
+# Stray fleet desk/triage snapshot accidentally written to the repo root
+# (agent-state dump with internal triage/spend/credential-mention content).
+# Never belongs in the public product repo; the live file must be deleted
+# from the checkout, this only guarantees it cannot be committed again.
+/data.json
+dist/
+.DS_Store
+*.log
+playwright-report/
+test-results/
+.playwright-mcp/

@@ -1,0 +1,53 @@
+.roster{margin-top:56px;border-top:1px solid var(--line)}
+  .ag{display:grid;grid-template-columns:56px 1.15fr 1.45fr auto;gap:34px;align-items:start;
+    padding:30px 0;border-bottom:1px solid var(--hair);
+    transition:padding-left var(--mid) var(--ease),background var(--mid) var(--ease)}
+  .ag:hover{padding-left:14px;background:rgba(255,253,248,.5)}
+  .ag .n{font-family:'Fraunces',serif;font-style:italic;font-weight:200;font-size:30px;color:var(--brass-lt);line-height:1}
+  .ag h2{font-size:19px;font-weight:600;letter-spacing:-.012em}
+  .ag .job{margin-top:7px;font-size:14.5px;line-height:1.65;color:var(--muted)}
+  .ag .reads{font-size:14px;line-height:1.72;color:var(--soft)}
+  .ag .reads b{display:block;font-size:10px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--muted);font-weight:600;margin-bottom:7px}
+  .ag .gate{font-size:10px;letter-spacing:.18em;text-transform:uppercase;font-weight:700;
+    color:var(--brass);white-space:nowrap;padding-top:5px}
+
+  .gatebox{margin-top:96px;display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);
+    border-radius:14px;overflow:hidden;background:linear-gradient(172deg,rgba(255,253,248,.9),rgba(235,225,207,.5))}
+  .gatebox>div{padding:38px 42px}
+  .gatebox>div:first-child{border-right:1px solid var(--line)}
+  .gatebox h2{font-family:'Fraunces',serif;font-weight:300;font-size:25px;letter-spacing:-.02em}
+  .gatebox ul{margin-top:18px;list-style:none}
+  .gatebox li{font-size:15px;line-height:1.55;color:var(--soft);padding:9px 0 9px 26px;position:relative}
+  .gatebox li::before{content:'';position:absolute;left:0;top:16px;width:9px;height:1px;background:var(--brass)}
+  .gatebox .never li::before{background:var(--sig);width:9px;height:9px;top:14px;border-radius:50%;
+    background:transparent;border:1px solid var(--sig)}
+
+  .stack{margin-top:44px;display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1px solid var(--hair)}
+  .stack div{padding:26px 30px 26px 0;border-right:1px solid var(--hair)}
+  .stack div:last-child{border-right:0}
+  .stack div:not(:first-child){padding-left:30px}
+  .stack .k{font-family:'Fraunces',serif;font-size:21px;font-weight:300;letter-spacing:-.015em}
+  .stack .v{margin-top:8px;font-size:14px;line-height:1.65;color:var(--muted)}
+
+/* mobile — agents page */
+@media (max-width:760px){
+  .ag{grid-template-columns:1fr;gap:12px;padding:28px 0}
+  .ag .n{font-size:26px}
+  .ag .gate{padding-top:0}
+  .gatebox{grid-template-columns:1fr}
+  .gatebox>div{padding:30px 26px}
+  .gatebox>div:first-child{border-right:0;border-bottom:1px solid var(--line)}
+  .stack{grid-template-columns:1fr}
+  .stack div{padding:22px 0;border-right:0;border-bottom:1px solid var(--hair)}
+  .stack div:not(:first-child){padding-left:0}
+  .stack div:last-child{border-bottom:0}
+}
+
+/* in-content conversion CTA on the closing urgency band — pill link, >=44px hit area.
+   Scoped to .band .cta so nothing else on the page is touched. Mirrors the
+   /specimen and /audit closing bands. */
+.band .cta{display:inline-block;margin-top:26px;border:1px solid rgba(242,234,220,.4);border-radius:999px;
+  padding:16px 24px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;
+  color:#F2EADC;text-decoration:none;transition:border-color var(--mid) var(--ease),background var(--mid) var(--ease)}
+.band .cta:hover,.band .cta:focus-visible{border-color:var(--brass-lt);background:rgba(201,165,102,.14)}

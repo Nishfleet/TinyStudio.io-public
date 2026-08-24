@@ -1,0 +1,30 @@
+# Gitleaks configuration for TinyStudio.io.
+#
+# Starts from the full upstream default rule set and narrows NOTHING globally.
+# The single allowlist below exempts one already-public string in one evidence
+# document; every other path, rule and secret shape is scanned exactly as
+# gitleaks ships them.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = """
+Cloudflare Web Analytics beacon site tag, quoted verbatim from the served
+public HTML inside a debugging write-up.
+
+Why this is not a secret: the value is the `data-cf-beacon` site tag that
+Cloudflare's automatic Web Analytics setup injects into the page HTML, so it is
+served to every visitor of tinystudio.io by design. It identifies the site to
+the RUM collector and grants no access: it cannot read analytics, cannot call
+the Cloudflare API, and is not an account, zone or API token. gitleaks matches
+it only because `"token":"<32 hex>"` fits the generic-api-key heuristic.
+
+The scope is deliberately two conditions ANDed together, so this exemption
+cannot silently cover anything else: the finding must be in this one evidence
+file AND look exactly like a cf-beacon site tag. A real credential committed to
+this file, or this same shape committed anywhere else, still fails the scan.
+"""
+condition = "AND"
+paths = ['''^docs/evidence/web-analytics-beacon-404-2026-08-09\.md$''']
+regexes = ['''data-cf-beacon=[^\n]*"token":"[a-f0-9]{32}"''']
+regexTarget = "line"

@@ -1,0 +1,32 @@
+.doc{max-width:840px;margin-top:56px}
+  .dochead{display:flex;justify-content:space-between;align-items:center;padding-bottom:16px;
+    border-bottom:1px solid var(--ink);color:var(--muted)}
+  .stamp{color:var(--sig);border:1px solid var(--sig);padding:6px 12px;border-radius:2px}
+  .f{padding:34px 0;border-bottom:1px solid var(--hair)}
+  .f .top{display:flex;gap:18px;align-items:baseline}
+  .f .idx{font-family:'Fraunces',serif;font-style:italic;font-weight:200;font-size:30px;color:var(--brass-lt);line-height:1}
+  .f h2{font-size:22px;font-weight:600;letter-spacing:-.014em;line-height:1.3}
+  .f .body{margin-left:48px}
+  .f p{margin-top:12px;font-size:16px;line-height:1.74;color:var(--soft)}
+  .ev{margin-top:16px;background:rgba(255,253,248,.75);border:1px solid var(--hair);border-left:2px solid var(--brass);
+    border-radius:0 6px 6px 0;padding:16px 20px}
+  .ev b{display:block;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);
+    font-weight:600;margin-bottom:8px}
+  .ev span{font-size:14.5px;line-height:1.7;color:var(--soft)}
+  .fix{margin-top:14px;font-size:15.5px;line-height:1.7;color:var(--ink)}
+  .fix b{color:var(--brass);font-weight:600}
+  .notrun{margin-top:40px;background:rgba(176,74,46,.05);border:1px solid rgba(176,74,46,.22);
+    border-radius:10px;padding:26px 30px}
+  .notrun h3{font-family:'Fraunces',serif;font-weight:300;font-size:21px;letter-spacing:-.018em;color:var(--sig)}
+  .notrun p{margin-top:11px;font-size:15px;line-height:1.72;color:var(--soft)}
+
+/* extracted from inline style attributes — CSP style-src 'self' blocks those */
+.xs1{padding-top:44px}
+.xs2{font-size:56px}
+
+/* in-content conversion CTA on the dark band — pill link, >=44px hit area */
+.band{margin-top:84px}
+.band .cta{display:inline-block;margin-top:26px;border:1px solid rgba(242,234,220,.4);border-radius:999px;
+  padding:16px 24px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;
+  color:#F2EADC;text-decoration:none;transition:border-color var(--mid) var(--ease),background var(--mid) var(--ease)}
+.band .cta:hover,.band .cta:focus-visible{border-color:var(--brass-lt);background:rgba(201,165,102,.14)}

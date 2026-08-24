@@ -1,0 +1,59 @@
+.bandgrid{display:grid;grid-template-columns:auto 1fr;gap:66px;align-items:center}
+.stat{font-family:'Fraunces',serif;font-weight:200;font-size:118px;line-height:.84;
+  letter-spacing:-.05em;color:#F2EADC;white-space:nowrap}
+.stat sup{font-size:.5em;letter-spacing:0;color:var(--brass-lt)}
+.checks{margin-top:54px;display:grid;grid-template-columns:repeat(2,1fr)}
+.check{padding:34px 34px 0 0;border-right:1px solid var(--hair)}
+.check:nth-child(even){padding:34px 0 0 34px;border-right:0}
+.check:first-child,.check:nth-child(2){padding-top:0}
+.check:nth-child(2){border-right:0}
+.check:nth-child(odd){border-right:1px solid var(--hair)}
+.check:nth-child(3){padding-left:0}
+.num{font-family:'Fraunces',serif;font-style:italic;font-weight:200;font-size:36px;color:var(--brass-lt);
+  margin-bottom:14px;line-height:1}
+.check h3{font-size:16.5px;font-weight:600;margin-bottom:9px;letter-spacing:-.008em}
+.check p{font-size:14.5px;line-height:1.7;color:var(--muted)}
+.rows{margin-top:34px;max-width:760px}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:22px;padding:16px 0;
+  border-bottom:1px solid var(--hair);transition:padding-left var(--mid) var(--ease)}
+.row:hover{padding-left:9px}
+.row .t{font-size:15.5px;color:var(--soft)}
+.row .v{font-family:'Fraunces',serif;font-size:15px;color:var(--brass);white-space:nowrap}
+.q{display:grid;grid-template-columns:.85fr 1.15fr;gap:52px;padding:26px 0;border-top:1px solid var(--hair)}
+.q:last-of-type{border-bottom:1px solid var(--hair)}
+.q h3{font-size:18px;font-weight:600;letter-spacing:-.01em;max-width:26ch}
+.q p{font-size:15.5px;line-height:1.74;color:var(--muted)}
+
+/* extracted from inline style attributes — CSP style-src 'self' blocks those */
+.xa1{color:var(--brass)}
+
+/* in-content conversion CTA on the dark band — pill link, >=44px hit area.
+   Scoped to .band .cta so the study band at the top of the page is untouched.
+   Mirrors the /specimen and /audit closing bands. */
+.band .cta{display:inline-block;margin-top:26px;border:1px solid rgba(242,234,220,.4);border-radius:999px;
+  padding:16px 24px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;
+  color:#F2EADC;text-decoration:none;transition:border-color var(--mid) var(--ease),background var(--mid) var(--ease)}
+.band .cta:hover,.band .cta:focus-visible{border-color:var(--brass-lt);background:rgba(201,165,102,.14)}
+
+/* mobile — deliberate two-tier nav + stacked content flow, so nothing runs
+   off-canvas at 390x844. Desktop (above 760px) is untouched. */
+@media (max-width:760px){
+  .wrap{padding:0 20px}
+  nav{flex-wrap:wrap;gap:18px 0}
+  .navlinks{flex:1 1 100%;flex-wrap:wrap;gap:14px 18px;justify-content:space-between}
+  .navcta{flex:1 1 100%;text-align:center;padding:15px 20px}
+  .phead{padding:52px 0 0}
+  .phead h1{font-size:clamp(38px,9.4vw,70px)}
+  .band{padding:44px 26px}
+  .bandgrid{grid-template-columns:1fr;gap:36px}
+  .stat{font-size:clamp(72px,21vw,118px)}
+  section{margin-top:84px;padding-top:48px}
+  .checks{grid-template-columns:1fr;margin-top:40px}
+  .check,.check:nth-child(even),.check:nth-child(odd){padding:30px 0;border-right:0;border-left:0;border-bottom:1px solid var(--hair)}
+  .check:first-child,.check:nth-child(2){padding-top:30px}
+  .check:last-child{border-bottom:0;padding-bottom:0}
+  .row{flex-wrap:wrap;gap:2px 22px}
+  .row .v{white-space:normal}
+  .q{grid-template-columns:1fr;gap:14px}
+  footer{margin-top:72px}
+}

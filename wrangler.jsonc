@@ -1,0 +1,34 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "tinystudio-io-public",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-05-29",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "tinystudio.io/*", "zone_name": "tinystudio.io" },
+    { "pattern": "www.tinystudio.io/*", "zone_name": "tinystudio.io" },
+    { "pattern": "app.tinystudio.io/*", "zone_name": "tinystudio.io" },
+    { "pattern": "api.tinystudio.io/*", "zone_name": "tinystudio.io" }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tinystudio_email_signups",
+      "database_id": "ff360a55-14fc-468c-895f-893c89e0db79",
+      "preview_database_id": "478f4a89-8936-4a57-bdd0-5f273090b2e5"
+    }
+  ],
+  "ai": {
+    "binding": "AI"
+  },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/*"]
+  }
+}
