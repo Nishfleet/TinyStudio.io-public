@@ -45,3 +45,61 @@ jobs:
           sudo mv /tmp/gitleaks /usr/local/bin/
       - name: Scan
         run: gitleaks detect --source . --no-banner --redact
+
+  semgrep:
+    # Batched into CI per the fleet standard (one workflow per event).
+    # Consumes the canonical no-hand-built-orchestration ruleset by PINNED raw
+    # URL at Nishfleet/siterep-public@4738f06 (exact commit SHA) plus p/default
+    # for defense-in-depth. Per-repo copies of the ruleset are forbidden — one
+    # canonical source, every repo consumes it by pin. Fails only on
+    # ERROR/HIGH-tier findings; lower-severity p/default noise is reported but
+    # does not block, so pre-existing MEDIUM/WARNING/INFO does not stall PRs.
+    name: semgrep
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install semgrep (pinned)
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          # Pinned to an exact release (published 2026-07-28, >7 days old).
+          # Bump deliberately; do not use `latest` or a floating range.
+          pip install semgrep==1.172.0
+      - name: Semgrep scan (canonical orchestration gate + p/default)
+        run: |
+          set -uo pipefail
+          CANONICAL_SHA="4738f06365012bc9f1f54c5981cedf9ddd3fa1eb"
+          CANONICAL_URL="https://raw.githubusercontent.com/Nishfleet/siterep-public/${CANONICAL_SHA}/.semgrep/no-hand-built-orchestration.yml"
+          semgrep --config "${CANONICAL_URL}" \
+                  --config p/default \
+                  --quiet --metrics=off --json > semgrep-results.json
+          jq -r '.results[] | "::" + (.extra.severity | ascii_downcase) + "::" + .path + ":" + (.start.line|tostring) + " [" + .check_id + "] " + (.extra.message | gsub("\n";" "))' semgrep-results.json 2>/dev/null || true
+          if jq -e '[.results[] | select(.extra.severity | ascii_downcase | IN("error","high"))] | length > 0' semgrep-results.json >/dev/null 2>&1; then
+            echo "::error::Semgrep found ERROR/HIGH-severity findings (listed above)."
+            exit 1
+          fi
+          echo "::notice::Semgrep clean (no ERROR/HIGH findings)."
+
+  actionlint:
+    # Lint job config is wiring (not a ruleset), so per-repo duplication is
+    # acceptable — only the semgrep ruleset stays canonical. Same job shape as
+    # siterep-public / aiconverter-app: SHA-pinned action, uses-only.
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run actionlint
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+        with:
+          shellcheck: false
+          pyflakes: false
