@@ -1,0 +1,54 @@
+{
+  "schema": "controlled-questions/v1",
+  "purpose": "The controlled questions behind the AI-search evidence artifact on the audit page. Every question has a stable id, a short name, the exact prompt sent to each engine, and the ground truth the verdict is checked against. A question enters this list only when it is one a buyer would actually ask before committing.",
+  "questions": [
+    {
+      "id": "q1-what-tinystudio-does",
+      "name": "What TinyStudio does",
+      "prompt": "What does TinyStudio do?",
+      "truth": "TinyStudio runs a free leak audit of high-ticket service homepages and a desk that closes the leaks the audit finds (audit.html, pricing.html)."
+    },
+    {
+      "id": "q2-what-tinystudio-charges",
+      "name": "What TinyStudio charges",
+      "prompt": "How much does TinyStudio charge?",
+      "truth": "The audit is free. The desk that closes findings runs at $2,500 a month on a three-month minimum (pricing.html)."
+    },
+    {
+      "id": "q3-where-tinystudio-is-based",
+      "name": "Where TinyStudio is based",
+      "prompt": "Where is TinyStudio based?",
+      "truth": "The site does not state a base city or office address for TinyStudio (audit.html, pricing.html)."
+    },
+    {
+      "id": "q4-who-tinystudio-works-with",
+      "name": "Who TinyStudio works with",
+      "prompt": "Who does TinyStudio work with?",
+      "truth": "TinyStudio serves high-ticket clinics, surgeons, dentists, spas, clubs, property, dealers, brokers and similar businesses; clients are never named (audit.html)."
+    },
+    {
+      "id": "q5-what-is-tinystudio-io",
+      "name": "Whether tinystudio.io is named",
+      "prompt": "What is tinystudio.io?",
+      "truth": "tinystudio.io is TinyStudio's own site: the free leak audit of high-ticket service homepages, and the human-reviewed desk that closes what the audit finds."
+    },
+    {
+      "id": "q6-client-work",
+      "name": "Whether TinyStudio publishes client work",
+      "prompt": "Does TinyStudio publish client work?",
+      "truth": "TinyStudio does not publish client work: no logos, no case studies, no testimonials, no 'as seen at' (audit.html)."
+    },
+    {
+      "id": "q7-what-tinystudio-io-charges",
+      "name": "What tinystudio.io charges",
+      "prompt": "tinystudio.io pricing",
+      "truth": "The audit is free; the desk runs at $2,500 a month on a three-month minimum (pricing.html)."
+    },
+    {
+      "id": "q8-conversion-audit",
+      "name": "Whether TinyStudio is a conversion audit service",
+      "prompt": "Is TinyStudio a conversion audit service?",
+      "truth": "TinyStudio is not a conversion audit service: it runs the free leak audit of the one page your revenue depends on, each fault named in order of what it costs you, with the fix beside each, and promises no conversion lift (index.html)."
+    }
+  ]
+}
