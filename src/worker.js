@@ -38,6 +38,12 @@ const PUBLIC_ASSET_PATHS = new Set([
   // is listed because the signup redirect and nav link to the clean form.
   "/msp.html",
   "/msp",
+  "/privacy.html",
+  "/privacy",
+  "/terms.html",
+  "/terms",
+  "/contact.html",
+  "/contact",
   "/brief-requested.html",
   "/brief-requested",
   "/shared.css",

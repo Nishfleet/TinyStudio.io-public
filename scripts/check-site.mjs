@@ -1681,7 +1681,10 @@ const socialSharePages = [
   ["desk page", read("public/agents.html"), "https://tinystudio.io/agents"],
   ["pricing page", read("public/pricing.html"), "https://tinystudio.io/pricing"],
   ["specimen page", read("public/specimen.html"), "https://tinystudio.io/specimen"],
-  ["msp page", read("public/msp.html"), "https://tinystudio.io/msp"]
+  ["msp page", read("public/msp.html"), "https://tinystudio.io/msp"],
+  ["privacy page", read("public/privacy.html"), "https://tinystudio.io/privacy"],
+  ["terms page", read("public/terms.html"), "https://tinystudio.io/terms"],
+  ["contact page", read("public/contact.html"), "https://tinystudio.io/contact"]
 ];
 const SOCIAL_IMAGE_URL = "https://tinystudio.io/og-image.png";
 
@@ -1926,6 +1929,9 @@ const htmlPageTargets = {
   "pricing.html": "/pricing",
   "specimen.html": "/specimen",
   "msp.html": "/msp",
+  "privacy.html": "/privacy",
+  "terms.html": "/terms",
+  "contact.html": "/contact",
   // The post-signup page is served at both forms too (verified 2026-08-17:
   // /brief-requested.html 307s to /brief-requested), so nothing may link to
   // its redirecting twin either.
@@ -1994,7 +2000,10 @@ const indexablePages = [
   { path: "/agents", html: read("public/agents.html") },
   { path: "/pricing", html: read("public/pricing.html") },
   { path: "/specimen", html: read("public/specimen.html") },
-  { path: "/msp", html: read("public/msp.html") }
+  { path: "/msp", html: read("public/msp.html") },
+  { path: "/privacy", html: read("public/privacy.html") },
+  { path: "/terms", html: read("public/terms.html") },
+  { path: "/contact", html: read("public/contact.html") }
 ];
 
 function indexableAnchorTarget(rawHref) {
@@ -2057,7 +2066,10 @@ const canonicalPages = [
   ["desk page", read("public/agents.html"), "https://tinystudio.io/agents"],
   ["pricing page", read("public/pricing.html"), "https://tinystudio.io/pricing"],
   ["specimen page", read("public/specimen.html"), "https://tinystudio.io/specimen"],
-  ["msp page", read("public/msp.html"), "https://tinystudio.io/msp"]
+  ["msp page", read("public/msp.html"), "https://tinystudio.io/msp"],
+  ["privacy page", read("public/privacy.html"), "https://tinystudio.io/privacy"],
+  ["terms page", read("public/terms.html"), "https://tinystudio.io/terms"],
+  ["contact page", read("public/contact.html"), "https://tinystudio.io/contact"]
 ];
 
 const canonicalLinkPattern = /<link\b[^>]*\brel\s*=\s*["']canonical["'][^>]*>/gi;
