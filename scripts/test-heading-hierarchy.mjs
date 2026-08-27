@@ -26,7 +26,10 @@ const PAGES = [
   "public/pricing.html",
   "public/specimen.html",
   "public/msp.html",
-  "public/brief-requested.html"
+  "public/brief-requested.html",
+  "public/privacy.html",
+  "public/terms.html",
+  "public/contact.html"
 ];
 
 // The corrected outlines, locked as level sequences. Anything that reopens a
@@ -38,7 +41,10 @@ const EXPECTED_OUTLINES = {
   "public/pricing.html": [1, 2, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 2, 2],
   "public/specimen.html": [1, 2, 2, 2, 2, 3, 2, 2],
   "public/msp.html": [1, 2, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2],
-  "public/brief-requested.html": [1, 2, 2, 2]
+  "public/brief-requested.html": [1, 2, 2, 2],
+  "public/privacy.html": [1, 2, 2, 2],
+  "public/terms.html": [1, 2, 2, 2],
+  "public/contact.html": [1, 2, 2, 2]
 };
 
 // Parse the headings that would actually be rendered: comments, <script> and
