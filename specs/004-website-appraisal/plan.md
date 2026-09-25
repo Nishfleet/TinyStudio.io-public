@@ -22,5 +22,5 @@ that closes what the audit finds.
 
 ## Verification
 
-- node --test scripts/test-product-contract.mjs
+- node --test test/test-product-contract.mjs
 - npm test

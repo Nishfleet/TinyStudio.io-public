@@ -19,9 +19,9 @@
 //
 // The css2 response is stubbed so the check has no external network
 // dependency; the real font URL and the no-JS fallback are kept honest by the
-// static guards in scripts/check-site.mjs.
+// static guards in test/check-site.mjs.
 //
-// Run: node scripts/check-render-blocking.mjs  (or `npm run check:render-blocking`)
+// Run: node test/check-render-blocking.mjs  (or `npm run check:render-blocking`)
 
 import http from "node:http";
 import { readFileSync, statSync } from "node:fs";

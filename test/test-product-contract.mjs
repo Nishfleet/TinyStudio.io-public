@@ -304,7 +304,7 @@ test("package.json describes the current product and wires the contract test", (
   const issues = currentFramingIssues(pkg.description);
   assert.deepEqual(issues, [], issues.join("; "));
   assert.ok(!pkg.description.includes(OLD_PACKAGE_DESCRIPTION), "package.json must not carry the old Agent Desk description");
-  assert.ok(pkg.scripts["test:contract"] === "node --test scripts/test-product-contract.mjs", "test:contract must run the contract test");
+  assert.ok(pkg.scripts["test:contract"] === "node --test test/test-product-contract.mjs", "test:contract must run the contract test");
   assert.ok(pkg.scripts.test.includes("test:contract"), "npm test must include the contract test");
 });
 
@@ -344,7 +344,7 @@ test("the current plan exists at specs/004-website-appraisal/plan.md", () => {
   assert.ok(plan.includes("/api/agent-audit"), "spec 004 must document the legacy /api/agent-audit endpoint");
   assert.ok(plan.includes("legacy"), "spec 004 must cover legacy mechanics");
   assert.ok(plan.includes("## Verification"), "spec 004 must have a Verification section");
-  assert.ok(plan.includes("node --test scripts/test-product-contract.mjs"), "spec 004 must cite the contract test");
+  assert.ok(plan.includes("node --test test/test-product-contract.mjs"), "spec 004 must cite the contract test");
 });
 
 test("checker rejects the old Agent Desk framings (fixtures)", () => {
