@@ -566,11 +566,11 @@ if (!packageJson.includes("\"migrate:remote\"") || !packageJson.includes("d1 mig
   failures.push("Deploy scripts must include the remote D1 migration command.");
 }
 
-if (!packageJson.includes("\"test:worker\"") || !packageJson.includes("scripts/test-agent-worker.mjs")) {
+if (!packageJson.includes("\"test:worker\"") || !packageJson.includes("test/test-agent-worker.mjs")) {
   failures.push("Worker agent contract tests must be wired into package scripts.");
 }
 
-if (!packageJson.includes("\"test:ui\"") || !packageJson.includes("scripts/test-agent-ui.mjs")) {
+if (!packageJson.includes("\"test:ui\"") || !packageJson.includes("test/test-agent-ui.mjs")) {
   failures.push("Agent UI interaction tests must be wired into package scripts.");
 }
 
@@ -813,18 +813,18 @@ if (fontReceipt) {
 }
 
 // The static guards cannot see behavior, so CI must run the browser check
-// (scripts/check-render-blocking.mjs) alongside them; these guards keep that
+// (test/check-render-blocking.mjs) alongside them; these guards keep that
 // wiring from drifting: the script, the package.json entry, the CI step, and
 // the production CSP the browser check asserts under (mirrored from the
 // worker, which the check cannot import).
 let renderBlockingScript = "";
 try {
-  renderBlockingScript = read("scripts/check-render-blocking.mjs");
+  renderBlockingScript = read("test/check-render-blocking.mjs");
 } catch {
-  failures.push("scripts/check-render-blocking.mjs must exist (browser render-blocking guard).");
+  failures.push("test/check-render-blocking.mjs must exist (browser render-blocking guard).");
 }
 const ciWorkflow = read(".github/workflows/ci.yml");
-if (!packageJson.includes('"check:render-blocking": "node scripts/check-render-blocking.mjs"')) {
+if (!packageJson.includes('"check:render-blocking": "node test/check-render-blocking.mjs"')) {
   failures.push("package.json must expose the browser render-blocking check as check:render-blocking.");
 }
 if (!ciWorkflow.includes("npm run check:render-blocking")) {
@@ -833,7 +833,7 @@ if (!ciWorkflow.includes("npm run check:render-blocking")) {
 if (renderBlockingScript) {
   const workerCsp = worker.match(/Content-Security-Policy":\s*"([^"]+)"/)?.[1] ?? "";
   if (!workerCsp || !renderBlockingScript.includes(workerCsp)) {
-    failures.push("scripts/check-render-blocking.mjs must mirror the worker's production CSP string.");
+    failures.push("test/check-render-blocking.mjs must mirror the worker's production CSP string.");
   }
 }
 

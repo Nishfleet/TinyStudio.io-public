@@ -11,6 +11,6 @@ artifact shown on `public/audit.html`.
   answer, cited sources, and any remediation note.
 
 `public/audit.html` embeds a copy of both files as a single JSON bundle inside
-`<script type="application/json" id="ai-search-evidence">`. `scripts/check-site.mjs`
+`<script type="application/json" id="ai-search-evidence">`. `test/check-site.mjs`
 refuses to let the embedded bundle drift from these files: if you edit a
 fixture, regenerate the embed so the two stay identical.

@@ -136,6 +136,6 @@ test("checker rejects a hero that does not name the buyer (fixtures)", () => {
 
 test("the buyer-audience test is wired into npm test", () => {
   const pkg = JSON.parse(read("package.json"));
-  assert.ok(pkg.scripts["test:viewport"] === "node --test scripts/test-first-viewport-audience.mjs", "test:viewport must run the first-viewport audience test");
+  assert.ok(pkg.scripts["test:viewport"] === "node --test test/test-first-viewport-audience.mjs", "test:viewport must run the first-viewport audience test");
   assert.ok(pkg.scripts.test.includes("test:viewport"), "npm test must include the first-viewport audience test");
 });

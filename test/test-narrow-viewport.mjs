@@ -19,7 +19,7 @@
 // The card is decorative; the failure mode it guards is the document shifting
 // sideways on real small-mobile devices.
 //
-// Run: node scripts/test-narrow-viewport.mjs  (or `npm run test:narrow`)
+// Run: node test/test-narrow-viewport.mjs  (or `npm run test:narrow`)
 
 import http from "node:http";
 import { readFileSync, statSync } from "node:fs";

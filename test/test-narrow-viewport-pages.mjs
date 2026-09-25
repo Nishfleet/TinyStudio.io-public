@@ -19,7 +19,7 @@
 // reported but do not gate this packet's exit code so CI does not block on
 // an unrelated defect.
 //
-// Run: node scripts/test-narrow-viewport-pages.mjs  (or `npm run test:narrow-pages`)
+// Run: node test/test-narrow-viewport-pages.mjs  (or `npm run test:narrow-pages`)
 
 import http from "node:http";
 import { readFileSync, statSync } from "node:fs";
