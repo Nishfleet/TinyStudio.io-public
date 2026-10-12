@@ -107,9 +107,8 @@ const MAX_AGENT_RUNS_PER_IP_PER_DAY = 20;
 // closed-intake response instead of a normal success.
 const MAX_APPRAISALS_PER_MONTH = 6;
 // Abuse bounds on the anonymous appraisal endpoint: a confirmation email goes
-// to whatever address the caller types, so each caller and the waitlist are capped.
-const MAX_APPRAISAL_REQUESTS_PER_IP_PER_DAY = 10;
-const MAX_APPRAISAL_REQUESTS_PER_EMAIL_PER_DAY = 3;
+// to whatever address the caller types. Per-caller rate limits use the stock
+// Workers Rate Limiting binding (APPRAISAL_LIMITER); the waitlist has a monthly ceiling.
 const MAX_WAITLIST_PER_MONTH = 50;
 // The current product's public intake (homepage and /appraisal) posts to
 // /api/signups. Its rows and the public /health surface must be labeled with
@@ -556,7 +555,7 @@ function confirmationMessage(env, input, kind, slotDate) {
     to: input.email,
     subject: accepted ? "Your appraisal request is in" : "You are on the TinyStudio waitlist",
     text: [
-      `${input.name},`,
+      "Hello,",
       "",
       accepted
         ? `We have your request for ${input.website}. A person reads your site and sends you the record within five working days.`
@@ -687,6 +686,7 @@ async function placeAppraisalRequest(env, input, now) {
     .run();
   if (!waitlisted.meta?.changes) {
     const winner = await existingAppraisal(env, input, month);
+    if (!winner) throw new Error("waitlist insert ignored with no existing row");
     return { ...winner, duplicate: true, at };
   }
   await recordAppraisalEvent(env, id, "waitlisted", slotDate, at);
@@ -694,21 +694,20 @@ async function placeAppraisalRequest(env, input, now) {
 }
 
 async function appraisalAbuseGuard(request, env, input, now) {
-  const day = now.toISOString().slice(0, 10);
-  const ipHash = await hashIp(request, `appraisal:${day}`);
-  const ipCount = await incrementUsageCounter(env, `appraisal-ip:${day}:${ipHash}`);
-  if (ipHash && ipCount > MAX_APPRAISAL_REQUESTS_PER_IP_PER_DAY) return "rate_limited";
-  const emailCount = await incrementUsageCounter(env, `appraisal-email:${day}:${input.email}`);
-  if (emailCount > MAX_APPRAISAL_REQUESTS_PER_EMAIL_PER_DAY) return "rate_limited";
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  for (const key of [`ip:${ip}`, `email:${input.email}`]) {
+    const { success } = await env.APPRAISAL_LIMITER.limit({ key });
+    if (!success) return "rate_limited";
+  }
+  const slots = await appraisalSlots(env, now);
+  if (!slots.full) return null;
   const waitlist = await env.DB.prepare("SELECT COUNT(*) AS n FROM appraisal_waitlist WHERE month = ?1")
     .bind(appraisalMonth(now))
     .first();
-  const slots = await appraisalSlots(env, now);
-  if (slots.full && Number(waitlist?.n || 0) >= MAX_WAITLIST_PER_MONTH) return "waitlist_full";
-  return null;
+  return Number(waitlist?.n || 0) >= MAX_WAITLIST_PER_MONTH ? "waitlist_full" : null;
 }
 
-function waitlistedPageResponse(slotDate) {
+function waitlistedPageResponse(slotDate, confirmation) {
   return withSecurityHeaders(
     new Response(
       `<!doctype html>
@@ -721,7 +720,7 @@ function waitlistedPageResponse(slotDate) {
   <body>
     <main>
       <h1>The six appraisals for this month are taken.</h1>
-      <p>You are on the waitlist. The next open slot is ${slotDate}. We have emailed you once to confirm.</p>
+      <p>You are on the waitlist. The next open slot is ${slotDate}. ${confirmation === "failed" ? "The confirmation email did not go out; send the form again and we will retry it." : "We have emailed you once to confirm."}</p>
       <p><a href="https://tinystudio.io/">Back to TinyStudio.io</a></p>
     </main>
   </body>
@@ -789,7 +788,7 @@ async function appraisalRequestResponse(request, env, url) {
   }
 
   if (wantsHtmlRedirect(request)) {
-    return placed.kind === "accepted" ? htmlRedirect(url, "saved") : waitlistedPageResponse(placed.slotDate);
+    return placed.kind === "accepted" ? htmlRedirect(url, "saved") : waitlistedPageResponse(placed.slotDate, confirmation);
   }
   return jsonResponse(
     {

@@ -31,6 +31,18 @@ function d1(sqlite) {
   };
 }
 
+// Same contract as the Workers Rate Limiting binding: limit({key}) -> {success}.
+function fakeLimiter(limit) {
+  const seen = new Map();
+  return {
+    async limit({ key }) {
+      const n = (seen.get(key) || 0) + 1;
+      seen.set(key, n);
+      return { success: n <= limit };
+    }
+  };
+}
+
 function freshEnv(now = "2026-10-12T09:00:00.000Z") {
   const sqlite = new DatabaseSync(":memory:");
   for (const file of readdirSync(new URL("../migrations/", import.meta.url)).sort()) {
@@ -40,12 +52,15 @@ function freshEnv(now = "2026-10-12T09:00:00.000Z") {
   const env = {
     DB: d1(sqlite),
     APPRAISAL_NOW: now,
-    EMAIL: { async send(message) { sent.push(message); } }
+    EMAIL: { async send(message) { sent.push(message); } },
+    APPRAISAL_LIMITER: fakeLimiter(5)
   };
   return { sqlite, env, sent };
 }
 
+let nextIp = 0;
 function submit(env, overrides = {}, headers = {}) {
+  nextIp += 1;
   const body = {
     website: "clinic.example",
     businessType: "Private dental clinic",
@@ -58,7 +73,12 @@ function submit(env, overrides = {}, headers = {}) {
   return worker.fetch(
     new Request("https://tinystudio.io/api/appraisal-requests", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Origin: "https://tinystudio.io", ...headers },
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "https://tinystudio.io",
+        "CF-Connecting-IP": `192.0.2.${nextIp % 250}`,
+        ...headers
+      },
       body: JSON.stringify(body)
     }),
     env
@@ -208,7 +228,7 @@ test("a no-JS form post lands on the thank-you page, or the waitlist page when t
     worker.fetch(
       new Request("https://tinystudio.io/api/appraisal-requests", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "text/html" },
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "text/html", "CF-Connecting-IP": `198.51.100.${n}` },
         body: new URLSearchParams({
           website: `site${n}.example`, businessType: "Clinic", dealValue: "5000", monthlyLeads: "10",
           name: "Dana", email: `owner${n}@site${n}.example`
@@ -236,23 +256,25 @@ test("a cross-site post is refused and stores nothing", async () => {
 test("a burst from one address is cut off before it can send mail to arbitrary addresses", async () => {
   const { sqlite, env, sent } = freshEnv();
   const statuses = [];
-  for (let n = 1; n <= 12; n += 1) {
+  for (let n = 1; n <= 7; n += 1) {
     const res = await submit(env, { website: `s${n}.example`, email: `v${n}@s${n}.example` }, { "CF-Connecting-IP": "203.0.113.9" });
     statuses.push(res.status);
   }
-  assert.deepEqual(statuses.slice(0, 10).every((code) => code === 201), true);
-  assert.deepEqual(statuses.slice(10), [429, 429]);
-  assert.equal(sent.length, 10);
-  assert.ok(sqlite.prepare("SELECT COUNT(*) AS n FROM appraisal_waitlist").get().n <= 4);
+  assert.deepEqual(statuses, [201, 201, 201, 201, 201, 429, 429]);
+  assert.equal(sent.length, 5);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM appraisal_requests").get().n, 5);
 });
 
-test("one email address is limited per day, and the waitlist has a monthly ceiling", async () => {
+test("one email address is rate limited across addresses, and and the waitlist has a monthly ceiling", async () => {
   const { sqlite, env } = freshEnv();
   const codes = [];
   for (let n = 1; n <= 4; n += 1) {
     codes.push((await submit(env, { website: `s${n}.example` }, { "CF-Connecting-IP": `203.0.113.${n}` })).status);
   }
-  assert.deepEqual(codes, [201, 201, 201, 429]);
+  assert.deepEqual(codes, [201, 201, 201, 201]);
+  const fifth = await submit(env, { website: "s5.example" }, { "CF-Connecting-IP": "203.0.113.5" });
+  const sixth = await submit(env, { website: "s6.example" }, { "CF-Connecting-IP": "203.0.113.6" });
+  assert.deepEqual([fifth.status, sixth.status], [201, 429]);
 
   const full = freshEnv();
   for (let n = 1; n <= 6; n += 1) await submit(full.env, { website: `a${n}.example`, email: `a${n}@a${n}.example` }, { "CF-Connecting-IP": `198.51.100.${n}` });
