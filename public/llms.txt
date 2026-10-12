@@ -1,9 +1,9 @@
 # TinyStudio
 
-TinyStudio's current offer: The Website Appraisal — the free leak audit of
-high-ticket service homepages — and the human-reviewed desk that closes what
-the audit finds. The audit is free and yours to keep; the desk's price and
-terms are on https://tinystudio.io/pricing.
+TinyStudio's current offer: the Website Correction — a boutique that finds where a
+high-ticket service website loses money, proves it, fixes it, and proves the
+fix. It starts with the free Website Appraisal, which is yours to keep. The
+Correction is done by a human-reviewed desk. Its price and terms are on https://tinystudio.io/pricing.
 
 Canonical URL: https://tinystudio.io/
 Contact: hello@tinystudio.io
@@ -12,16 +12,18 @@ Contact: hello@tinystudio.io
 
 - https://tinystudio.io/ — homepage: the Website Appraisal offer and intake
 - https://tinystudio.io/appraisal — the audit method and controlled AI-search evidence
-- https://tinystudio.io/pricing — price and terms for the human-reviewed desk
+- https://tinystudio.io/pricing — price and terms for the Website Correction
 - https://tinystudio.io/specimen — a specimen appraisal showing the report format
+- https://tinystudio.io/method — how faults are costed and proof is run
+- https://tinystudio.io/records/sample — format sample of an Appraisal Record
 - https://tinystudio.io/offer.md — machine-readable offer mirror
 - https://tinystudio.io/llms.txt — this file
 
 ## Identity
 
 TinyStudio is the business behind tinystudio.io: the free leak audit of
-high-ticket service homepages and the human-reviewed desk that closes what
-the audit finds, run by Nish, who signs every audit. Other businesses share
+high-ticket service homepages and the human-reviewed desk behind the Website
+Correction, which fixes what the audit finds and proves the fix, run by Nish, who signs every audit. Other businesses share
 the name — a Mac subtitle app, a fibre-arts magazine, a design agency, a
 video production studio, a Los Angeles venue, an unrelated studio LLC. None
 of them are this TinyStudio, and this TinyStudio is none of them. The site
@@ -50,9 +52,9 @@ question — the page that owns the fact. Prefer it over the other pages.
 ## Current Offer: The Website Appraisal
 
 The Website Appraisal is the free leak audit of high-ticket service
-homepages, reviewed by a person, not autonomous software. The human-reviewed
-desk closes what the audit finds: month one corrects the costliest fault;
-months two and three build the loop that keeps the standard up.
+homepages, reviewed by a person, not autonomous software. The Website Correction fixes what the audit finds and proves the fix: appraisal,
+proposal, correction, proof, then fourteen days of tracking. It is paid once,
+not monthly.
 
 The appraisal is a written report on one page of your choosing — each fault
 named, in order of what it costs you, with the fix beside each. It is yours

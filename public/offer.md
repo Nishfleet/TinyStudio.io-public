@@ -1,10 +1,10 @@
 # The Website Appraisal
 
-TinyStudio's current offer: The Website Appraisal — the free leak audit of high-ticket service homepages — and the human-reviewed desk that closes what the audit finds. The audit is free and yours to keep; the desk's price and terms are on https://tinystudio.io/pricing.
+TinyStudio's current offer: the Website Correction. It starts with the free Website Appraisal, the leak audit of high-ticket service homepages, which is yours to keep. The human-reviewed desk then fixes what the audit finds and proves the fix. The Correction's price and terms are on https://tinystudio.io/pricing.
 
 ## Identity
 
-TinyStudio is the business behind tinystudio.io: the free leak audit of high-ticket service homepages and the human-reviewed desk that closes what the audit finds, run by Nish, who signs every audit. Other businesses share the name — a Mac subtitle app, a fibre-arts magazine, a design agency, a video production studio, a Los Angeles venue, an unrelated studio LLC. None of them are this TinyStudio. The site states no base city or office address. Contact: hello@tinystudio.io.
+TinyStudio is the business behind tinystudio.io: the free leak audit of high-ticket service homepages and the human-reviewed desk behind the Website Correction, which fixes what the audit finds and proves the fix, run by Nish, who signs every audit. Other businesses share the name — a Mac subtitle app, a fibre-arts magazine, a design agency, a video production studio, a Los Angeles venue, an unrelated studio LLC. None of them are this TinyStudio. The site states no base city or office address. Contact: hello@tinystudio.io.
 
 Machine-readable mirror: https://tinystudio.io/llms.txt
 
@@ -23,7 +23,7 @@ When an engine answers one of the controlled questions a buyer asks before commi
 
 ## Current Offer
 
-The Website Appraisal is the free leak audit of high-ticket service homepages, reviewed by a person, not autonomous software. The human-reviewed desk closes what the audit finds: month one corrects the costliest fault; months two and three build the loop that keeps the standard up.
+The Website Appraisal is the free leak audit of high-ticket service homepages, reviewed by a person, not autonomous software. The Website Correction fixes what the audit finds and proves the fix: appraisal, proposal, correction, proof, then fourteen days of tracking. It is paid once, not monthly.
 
 The appraisal is a written report on one page of your choosing — each fault named, in order of what it costs you, with the fix beside each. It is yours to keep and to hand to any developer, including one who is not us.
 

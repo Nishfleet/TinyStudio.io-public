@@ -30,6 +30,10 @@ const PUBLIC_ASSET_PATHS = new Set([
   "/appraisal",
   "/pricing.html",
   "/pricing",
+  "/method.html",
+  "/method",
+  "/records/sample.html",
+  "/records/sample",
   "/specimen.html",
   "/specimen",
   "/privacy.html",
@@ -73,6 +77,9 @@ const PUBLIC_ASSET_PATHS = new Set([
 
 // /audit was renamed /appraisal; keep old links and search results working.
 const APPRAISAL_REDIRECT_PATHS = new Set(["/audit", "/audit.html"]);
+
+// docs/PLAN.md names the offer page /correction; the price page is /pricing.
+const CORRECTION_REDIRECT_PATHS = new Set(["/correction", "/correction.html"]);
 
 const STALE_PUBLIC_PATHS = new Set([
   "/pipeline-sprint/",
@@ -1506,6 +1513,15 @@ export default {
       APPRAISAL_REDIRECT_PATHS.has(url.pathname)
     ) {
       const target = new URL("/appraisal", url);
+      target.search = url.search;
+      return withSecurityHeaders(Response.redirect(target.toString(), 301));
+    }
+
+    if (
+      (request.method === "GET" || request.method === "HEAD") &&
+      CORRECTION_REDIRECT_PATHS.has(url.pathname)
+    ) {
+      const target = new URL("/pricing", url);
       target.search = url.search;
       return withSecurityHeaders(Response.redirect(target.toString(), 301));
     }

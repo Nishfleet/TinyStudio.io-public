@@ -587,7 +587,7 @@ if (leadFormReceipt) {
 // production CSP. These are STATIC SOURCE GUARDS (regex over the served
 // files), not network-timing tests: CI has no browser, so they assert the
 // blocking shape cannot return, not that the font CDN is fast.
-const fontCssHref = "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;0,9..144,400;1,9..144,200;1,9..144,300&family=Karla:wght@300;400;500;600;700&display=swap";
+const fontCssHref = "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;0,9..144,400;1,9..144,200;1,9..144,300&family=Karla:wght@300;400;500;600;700&display=optional";
 
 const fontPages = [
   ["homepage", siteHome],
@@ -1177,9 +1177,8 @@ if (!llms.includes("https://tinystudio.io/appraisal")) {
 // The machine-readable pair states the current offer in the site's own words
 // and points at the clean /pricing for price and terms. It must not restate
 // the pricing page's specifics (dollar amounts, refund language) or revive
-// the retired Website Correction / founder-pilot / MSP-buyer framing.
+// the retired founder-pilot / MSP-buyer framing.
 const staleOfferPhrases = [
-  "Website Correction",
   "founder pilot",
   "founder-pilot",
   "Managed IT, MSP"
@@ -1962,7 +1961,7 @@ for (const [pageName, pageHtml] of intakePages) {
 // tap-target standard. These are STATIC SOURCE GUARDS (regex over the served
 // HTML/CSS), not behavioral tests: CI has no browser.
 const specimenCtaHtml = read("public/specimen.html");
-const specimenCtaBand = specimenCtaHtml.match(/<div class="band">([\s\S]*?)<\/div>\s*<footer>/);
+const specimenCtaBand = specimenCtaHtml.match(/<div class="band">([\s\S]*?)<\/div>\s*(?:<\/main>\s*)?<footer>/);
 if (!specimenCtaBand) {
   failures.push("Specimen page must keep an in-content conversion CTA band between the report and the footer.");
 } else {
