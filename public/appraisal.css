@@ -29,7 +29,11 @@
   .navcta{flex:1 1 100%;text-align:center;padding:15px 20px}
   .phead{padding:52px 0 0}
   .phead h1{font-size:clamp(38px,9.4vw,70px)}
-  .stat{font-size:clamp(72px,21vw,128px)}
+  /* 128px desktop, but the floor has to clear the band's own padding on a
+     240px screen: "54 of 88" is nowrap, and a 72px floor needed 211px inside
+     the 148px a 240px viewport leaves after .wrap and .band padding. 20vw keeps
+     it inside from 240px up and is identical to the old floor from ~360px up. */
+  .stat{font-size:clamp(42px,20vw,128px)}
   .band{padding:44px 26px}
   .bandgrid{grid-template-columns:1fr;gap:36px}
   section{margin-top:84px;padding-top:48px}

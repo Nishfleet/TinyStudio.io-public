@@ -6,6 +6,10 @@
   --brass:#A47E3C; --brass-ink:#7A5C22; --brass-lt:#C9A566; --sig:#9C3F25;
   --line:rgba(25,20,16,.11); --hair:rgba(25,20,16,.07);
   --ease:cubic-bezier(0,0,.2,1); --slow:250ms; --mid:200ms; --fast:150ms;
+  /* severity tints: the --sig colour at the five alphas the site uses. A tint
+     names a token; it never re-keys the colour. */
+  --sig-wash:rgba(156,63,37,.05); --sig-fill:rgba(156,63,37,.09); --sig-ring:rgba(156,63,37,.14);
+  --sig-edge:rgba(156,63,37,.22); --sig-line:rgba(156,63,37,.35);
   /* type: one serif for display, one sans for UI and body */
   --serif:'Fraunces','Fraunces Fallback',serif; --sans:'Karla','Karla Fallback',sans-serif;
   --t-1:12px; --t-2:14px; --t-3:16px; --t-4:18px; --t-5:24px; --t-6:34px; --t-7:46px; --t-8:70px;
@@ -60,7 +64,7 @@ nav{display:flex;justify-content:space-between;align-items:center;padding:30px 0
   background:rgba(255,253,248,.8);border:1px solid var(--line);border-radius:999px;padding:11px 22px 11px 16px;
   box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 14px 34px -24px rgba(25,20,16,.35)}
 .urg i{width:7px;height:7px;border-radius:50%;background:var(--sig);display:block;flex-shrink:0;
-  box-shadow:0 0 0 4px rgba(156,63,37,.14)}
+  box-shadow:0 0 0 4px var(--sig-ring)}
 .urg span{font-size:13.5px;color:var(--soft)}
 .urg b{color:var(--ink);font-weight:600}
 

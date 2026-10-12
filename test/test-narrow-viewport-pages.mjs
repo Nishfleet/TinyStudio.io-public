@@ -9,8 +9,15 @@
 // This check runs real Chromium against each page served statically and
 // asserts, at 240/260/280/300/320/360/390px viewports, that
 // `documentElement.scrollWidth === documentElement.clientWidth` on the three
-// routes this packet owns — /appraisal, /pricing, /specimen. The home
-// page (/) is also measured, but its 240px-only overflow is the
+// routes this packet owns — /appraisal, /pricing, /specimen. A document-level
+// comparison alone misses a spill a clipped ancestor hides, so the same sweep
+// also measures the named content containers in SPILL_SELECTORS and fails when
+// one extends past the viewport edge. That second assertion is what caught the
+// `.stat` "54 of 88" figure, whose `white-space:nowrap` and 72px font-size
+// floor needed 211px inside the 148px a 240px viewport leaves after the wrap
+// and band padding.
+//
+// The home page (/) is also measured, but its 240px-only overflow is the
 // `.browser`/`.mock` hero-mock card covered by the in-progress
 // hero-mock-240px packet, which is out of scope here; home failures are
 // reported but do not gate this packet's exit code so CI does not block on
@@ -39,6 +46,13 @@ const PAGES = [
 // hero-mock-240px packet. Failures on those owned routes gate exit code;
 // home-page failures are reported but do not gate (out of scope).
 const OWNED_PATHS = new Set(["/appraisal", "/pricing", "/specimen"]);
+// Content containers where a child wider than the viewport is always a defect.
+// A grid that re-tunes its column count on desktop — the pricing page's
+// .track went from four stops to five — has to still fit the narrow viewport,
+// and a document-level scrollWidth comparison can miss a spill that a clipped
+// ancestor hides. The hero mock is deliberately absent: its inner card is
+// clipped on purpose at 240px and is the hero-mock packet's subject.
+const SPILL_SELECTORS = [".phead h1", ".track", ".plan", ".q", "form.lead", ".band", ".fault-card", ".stat", ".steps li", ".footnote-ref"];
 
 const CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -97,14 +111,26 @@ try {
       await page.goto(`${origin}${route.path}`, { waitUntil: "domcontentloaded", timeout: 30000 });
       await page.waitForTimeout(600);
 
-      const state = await page.evaluate(() => ({
-        sw: document.documentElement.scrollWidth,
-        cw: document.documentElement.clientWidth
-      }));
+      const state = await page.evaluate((selectors) => {
+        const vw = document.documentElement.clientWidth;
+        const spills = [];
+        for (const selector of selectors) {
+          for (const el of document.querySelectorAll(selector)) {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) continue;
+            if (r.right > vw + 1 || r.left < -1) {
+              const cls = typeof el.className === "string" && el.className.trim() && el.className.trim() !== selector.slice(1) ? `.${el.className.trim().split(/\s+/).join(".")}` : "";
+              spills.push(`${el.tagName.toLowerCase()}${cls} (${selector}) spans ${Math.round(r.left)}-${Math.round(r.right)} in a ${vw}px viewport`);
+            }
+          }
+        }
+        return { sw: document.documentElement.scrollWidth, cw: vw, spills: spills.slice(0, 6) };
+      }, SPILL_SELECTORS);
 
       const problems = state.sw !== state.cw
         ? [`doc scrollWidth ${state.sw} != clientWidth ${state.cw}`]
         : [];
+      for (const spill of state.spills) problems.push(spill);
 
       const owned = OWNED_PATHS.has(route.path);
       rows.push({

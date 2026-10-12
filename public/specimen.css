@@ -16,7 +16,7 @@
   .fix{margin-top:14px;font-size:15.5px;line-height:1.7;color:var(--ink)}
   .fix b{color:var(--brass-ink);font-weight:600}
   /* tint tracks the --sig token (#9C3F25) */
-  .notrun{margin-top:40px;background:rgba(156,63,37,.05);border:1px solid rgba(156,63,37,.22);
+  .notrun{margin-top:40px;background:var(--sig-wash);border:1px solid var(--sig-edge);
     border-radius:10px;padding:26px 30px}
   .notrun h3{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:300;font-size:21px;letter-spacing:-.018em;color:var(--sig)}
   .notrun p{margin-top:11px;font-size:15px;line-height:1.72;color:var(--soft)}

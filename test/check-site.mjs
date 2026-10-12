@@ -1137,12 +1137,17 @@ const walkPublic = (dir = "public", ext = /\.(html|txt|md)$/, out = []) => {
 // must still be stripped, or the scan reports a retired term that is not in copy.
 const stripEvidenceJson = (text) =>
   text.replace(/<script\b[^>]*type\s*=\s*["']application\/json["'][^>]*>[\s\S]*?<\/script>/gi, "");
-for (const file of walkPublic()) {
-  const text = stripEvidenceJson(read(file));
-  for (const pattern of retiredTerms) {
-    if (pattern.test(text)) failures.push(`${file} must not revive the retired Growth Desk terms: ${pattern}`);
+// One scan over every file public/ serves, so a guard added later cannot forget
+// the subdirectory the flat readdir used to miss.
+const scanPublic = (patterns, message, ext = /\.(html|txt|md)$/) => {
+  for (const file of walkPublic("public", ext)) {
+    const text = stripEvidenceJson(read(file));
+    for (const pattern of patterns) {
+      if (pattern.test(text)) failures.push(message(file, pattern));
+    }
   }
-}
+};
+scanPublic(retiredTerms, (file, pattern) => `${file} must not revive the retired Growth Desk terms: ${pattern}`);
 // The exception above is a real hole, so it is pinned here: the appraisal page
 // keeps "Growth Desk" and "delivery guarantee" only inside its evidence JSON,
 // and the scan passes only because that block is stripped. If the strip ever
@@ -1163,14 +1168,8 @@ if (!/growth desk/i.test(appraisalEvidence)) {
 // "one page of your choosing" / "one page you name" wording caused, so both are
 // banned site-wide and the plan wording is required wherever the scope is stated.
 const retiredScopePhrases = [/one page of your choosing/i, /one page you name/i];
-for (const file of walkPublic()) {
-  const text = stripEvidenceJson(read(file));
-  for (const pattern of retiredScopePhrases) {
-    if (pattern.test(text)) {
-      failures.push(`${file} states the retired appraisal scope ${pattern}; PLAN.md section 3 scopes the appraisal to the homepage and the three pages that matter.`);
-    }
-  }
-}
+scanPublic(retiredScopePhrases, (file, pattern) =>
+  `${file} states the retired appraisal scope ${pattern}; PLAN.md section 3 scopes the appraisal to the homepage and the three pages that matter.`);
 for (const file of ["public/index.html", "public/terms.html", "public/offer.md", "public/llms.txt", "public/pricing.html"]) {
   if (!/homepage and the three pages that matter/i.test(stripEvidenceJson(read(file)))) {
     failures.push(`${file} must state the appraisal scope in PLAN.md section 3's words: "your homepage and the three pages that matter".`);
@@ -1178,13 +1177,44 @@ for (const file of ["public/index.html", "public/terms.html", "public/offer.md",
 }
 // The severity token moved from a warm rust to --sig (#9C3F25) in the token
 // re-tune. Four rgba() tints and one hard-coded dot colour kept the old value,
-// so the tint stopped matching the token. Banning the literal catches the drift
-// wherever it reappears, instead of relying on someone noticing a screenshot.
-const retiredSigLiterals = [/rgba\(\s*176\s*,\s*74\s*,\s*46/i, /#B04A2E/i];
+// so the tint stopped matching the token. Banning the old literal alone only
+// moves the drift one value later, so the current value is banned too: a tint
+// names one of the --sig-* tint tokens, it never re-keys the colour.
+const retiredSigLiterals = [/rgba?\(\s*176\s*,\s*74\s*,\s*46/i, /#B04A2E/i];
+const hardCodedSig = [/rgba?\(\s*156\s*,\s*63\s*,\s*37/i];
+// The tint tokens declare the literal once, on purpose, inside :root. Stripping
+// that block leaves only the places a tint is actually used.
+const stripRootTokens = (text) => text.replace(/:root\{[\s\S]*?\}/g, "");
 for (const file of walkPublic("public", /\.css$/)) {
-  const text = read(file);
-  for (const pattern of retiredSigLiterals) {
-    if (pattern.test(text)) failures.push(`${file} still carries a retired --sig literal: ${pattern}. Use the --sig token.`);
+  const text = stripRootTokens(read(file));
+  for (const pattern of [...retiredSigLiterals, ...hardCodedSig]) {
+    if (pattern.test(text)) {
+      failures.push(`${file} hard-codes the --sig colour: ${pattern}. Use --sig or a --sig-* tint token.`);
+    }
+  }
+}
+// index.css carries its own :root block, because the homepage loads index.css
+// and not shared.css. Two copies of one palette with nothing between them is
+// how the homepage kept the pre-design-system motion (--slow 1.25s, --mid .66s
+// against PLAN.md section 5's 150-250ms) for a whole milestone. Every token name
+// both files declare must carry the same value, or the pages drift silently.
+const rootTokens = (file) => {
+  const block = read(file).match(/:root\{([\s\S]*?)\}/);
+  const tokens = {};
+  if (block) {
+    for (const [, name, value] of block[1].matchAll(/(--[\w-]+)\s*:\s*([^;}]+)/g)) tokens[name] = value.trim();
+  }
+  return tokens;
+};
+const sharedTokens = rootTokens("public/shared.css");
+const indexTokens = rootTokens("public/index.css");
+const sharedNames = Object.keys(sharedTokens).filter((name) => name in indexTokens);
+if (sharedNames.length === 0) {
+  failures.push("public/index.css must declare a :root block sharing token names with public/shared.css.");
+}
+for (const name of sharedNames) {
+  if (indexTokens[name] !== sharedTokens[name]) {
+    failures.push(`public/index.css declares ${name}: ${indexTokens[name]} but public/shared.css declares ${sharedTokens[name]}. One palette, one value.`);
   }
 }
 for (const phrase of staleOfferPhrases) {
