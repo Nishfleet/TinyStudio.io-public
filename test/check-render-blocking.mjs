@@ -5,8 +5,8 @@
 //
 //   1. no request leaves the origin (fonts are self-hosted, no Google chain),
 //   2. the only render-blocking resources are same-origin stylesheets,
-//   3. the preloaded Fraunces file is the one the page then uses (no second
-//      fetch of it) and both families really load under the CSP.
+//   3. both families are declared, the font files are served under the CSP and
+//      nothing preloads them (a preload defeats font-display: optional).
 //
 // Run: npm run check:render-blocking  (it builds public/fonts first)
 
@@ -76,14 +76,19 @@ async function measurePage(page, pageUrl) {
   page.on("request", (request) => requests.push(request.url()));
   await page.goto(pageUrl, { waitUntil: "load", timeout: 30000 });
   await page.evaluate(() => document.fonts.ready);
-  const state = await page.evaluate(() => ({
-    families: [...document.fonts].filter((f) => f.status === "loaded").map((f) => f.family.replace(/"/g, "")),
-    blocking: performance
-      .getEntriesByType("resource")
-      .filter((r) => r.renderBlockingStatus === "blocking")
-      .map((r) => r.name),
-    fraunces: performance.getEntriesByType("resource").filter((r) => r.name.includes("fraunces-latin-opsz-normal")).length
-  }));
+  const state = await page.evaluate(async () => {
+    const files = ["fraunces-latin-opsz-normal", "fraunces-latin-opsz-italic", "karla-latin-wght-normal"];
+    const statuses = await Promise.all(files.map(async (name) => (await fetch(`fonts/${name}.woff2`)).status));
+    return {
+      declared: [...document.fonts].map((f) => f.family.replace(/"/g, "")),
+      statuses,
+      preloads: document.querySelectorAll('link[rel="preload"][as="font"]').length,
+      blocking: performance
+        .getEntriesByType("resource")
+        .filter((r) => r.renderBlockingStatus === "blocking")
+        .map((r) => r.name)
+    };
+  });
   return { requests, ...state };
 }
 
@@ -112,12 +117,13 @@ try {
     if (disallowedBlocking.length) {
       problems.push(`render-blocking resources other than same-origin stylesheets: ${disallowedBlocking.join(", ")}`);
     }
-    if (!result.families.includes("Fraunces") || !result.families.includes("Karla")) {
-      problems.push(`Fraunces and Karla must both load (loaded: ${result.families.join(", ") || "none"})`);
+    if (!result.declared.includes("Fraunces") || !result.declared.includes("Karla")) {
+      problems.push(`fonts.css must declare Fraunces and Karla (declared: ${result.declared.join(", ") || "none"})`);
     }
-    if (result.fraunces !== 1) problems.push(`the preloaded Fraunces file must be fetched exactly once (saw ${result.fraunces})`);
+    if (result.statuses.some((status) => status !== 200)) problems.push(`font files must be served under the CSP (statuses: ${result.statuses.join(", ")})`);
+    if (result.preloads) problems.push("fonts must not be preloaded (font-display: optional)");
 
-    rows.push({ pageName, families: result.families.join("+"), fraunces: result.fraunces, problems });
+    rows.push({ pageName, declared: result.declared.length, problems });
     if (problems.length) failures.push(`${pageName}: ${problems.join("; ")}`);
   }
 } finally {
@@ -126,11 +132,11 @@ try {
 }
 
 console.log("Font and render-blocking check (real Chromium, production CSP):");
-console.table(rows.map((r) => ({ page: r.pageName, "fonts loaded": r.families, "fraunces fetches": r.fraunces, result: r.problems.length ? "FAIL" : "PASS" })));
+console.table(rows.map((r) => ({ page: r.pageName, "faces declared": r.declared, result: r.problems.length ? "FAIL" : "PASS" })));
 
 if (failures.length) {
   console.error("\nFailures:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log("All five pages load self-hosted fonts with only same-origin stylesheets blocking.");
+console.log("All five pages load self-hosted fonts, no preload, with only same-origin stylesheets blocking.");
