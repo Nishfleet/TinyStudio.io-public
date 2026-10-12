@@ -464,6 +464,297 @@ async function signupResponse(request, env, url) {
   return jsonResponse({ ok: true, message: "signal_saved" }, { status: 201 });
 }
 
+// M1b: the appraisal request form (docs/PLAN.md 6.2). The six-a-month counter is
+// computed from appraisal_requests rows for the current UTC month, never from a
+// stored number. A full month sends the request to the waitlist with the next
+// open slot date; a valid unused referral code skips the waitlist (6.9).
+function appraisalNow(env) {
+  return new Date(env.APPRAISAL_NOW || Date.now());
+}
+
+function appraisalMonth(now) {
+  return now.toISOString().slice(0, 7);
+}
+
+function nextSlotDate(now) {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
+}
+
+async function appraisalSlots(env, now) {
+  const month = appraisalMonth(now);
+  const row = await env.DB.prepare("SELECT COUNT(*) AS taken FROM appraisal_requests WHERE month = ?1")
+    .bind(month)
+    .first();
+  const taken = Number(row?.taken || 0);
+  const full = taken >= MAX_APPRAISALS_PER_MONTH;
+  return {
+    month,
+    limit: MAX_APPRAISALS_PER_MONTH,
+    taken: Math.min(taken, MAX_APPRAISALS_PER_MONTH),
+    remaining: Math.max(0, MAX_APPRAISALS_PER_MONTH - taken),
+    full,
+    nextSlotDate: full ? nextSlotDate(now) : null
+  };
+}
+
+async function appraisalSlotsResponse(request, env) {
+  if (request.method !== "GET") {
+    return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
+  }
+  try {
+    return jsonResponse({ ok: true, ...(await appraisalSlots(env, appraisalNow(env))) });
+  } catch (error) {
+    console.warn("tinystudio_appraisal_storage_failed", error.message || "storage failed");
+    return jsonResponse({ ok: false, error: "storage_unavailable" }, { status: 503 });
+  }
+}
+
+function wholeNumber(value, max) {
+  const text = String(value ?? "").replace(/[,\s$]/g, "");
+  if (!/^\d+$/.test(text)) return null;
+  const number = Number(text);
+  return number <= max ? number : null;
+}
+
+function appraisalInput(body) {
+  const input = {
+    website: normalizeWebsite(body.website),
+    businessType: cleanField(body.businessType, 120),
+    dealValue: wholeNumber(body.dealValue, 100000000),
+    monthlyLeads: wholeNumber(body.monthlyLeads, 1000000),
+    name: cleanField(body.name, 120),
+    email: normalizeEmail(body.email),
+    referral: cleanField(body.referral, 64)
+  };
+  const invalid = [];
+  if (!input.website) invalid.push("website");
+  if (!input.businessType) invalid.push("businessType");
+  if (input.dealValue === null || input.dealValue < 1) invalid.push("dealValue");
+  if (input.monthlyLeads === null) invalid.push("monthlyLeads");
+  if (!input.name) invalid.push("name");
+  if (!isValidEmail(input.email)) invalid.push("email");
+  return { input, invalid };
+}
+
+async function recordAppraisalEvent(env, requestId, type, detail, at) {
+  await env.DB.prepare(
+    "INSERT INTO appraisal_events (request_id, type, detail, created_at) VALUES (?1, ?2, ?3, ?4)"
+  )
+    .bind(requestId, type, detail, at)
+    .run();
+}
+
+function confirmationMessage(env, input, kind, slotDate) {
+  const accepted = kind === "accepted";
+  return {
+    from: env.CONFIRMATION_FROM || "TinyStudio <appraisals@tinystudio.io>",
+    to: input.email,
+    subject: accepted ? "Your appraisal request is in" : "You are on the TinyStudio waitlist",
+    text: [
+      `${input.name},`,
+      "",
+      accepted
+        ? `We have your request for ${input.website}. A person reads your site and sends you the record within five working days.`
+        : `The six appraisals for this month are taken. We have put ${input.website} on the waitlist. The next open slot is ${slotDate}.`,
+      "",
+      "You do not need to do anything. This is the only email we send until the record is ready.",
+      "",
+      "TinyStudio"
+    ].join("\n")
+  };
+}
+
+// Exactly one confirmation per request: the UPDATE claims the send, so a retry
+// of the same submission finds confirmation_sent_at set and sends nothing. A
+// failed send releases the claim so the next retry can send.
+async function sendConfirmationOnce(env, table, id, input, kind, slotDate, at) {
+  const claim = await env.DB.prepare(
+    `UPDATE ${table} SET confirmation_sent_at = ?1 WHERE id = ?2 AND confirmation_sent_at IS NULL`
+  )
+    .bind(at, id)
+    .run();
+  if (!claim.meta?.changes) return "already_sent";
+
+  try {
+    if (!env.EMAIL) throw new Error("email binding missing");
+    await env.EMAIL.send(confirmationMessage(env, input, kind, slotDate));
+  } catch (error) {
+    await env.DB.prepare(`UPDATE ${table} SET confirmation_sent_at = NULL WHERE id = ?1`).bind(id).run();
+    await recordAppraisalEvent(env, id, "confirmation_failed", cleanField(error.message, 200), at);
+    console.warn("tinystudio_appraisal_confirmation_failed", error.message || "send failed");
+    return "failed";
+  }
+  await recordAppraisalEvent(env, id, "confirmation_sent", kind, at);
+  return "sent";
+}
+
+async function existingAppraisal(env, input, month) {
+  const key = [input.email, input.website, month];
+  const request = await env.DB.prepare(
+    "SELECT id FROM appraisal_requests WHERE email = ?1 AND site_url = ?2 AND month = ?3"
+  )
+    .bind(...key)
+    .first();
+  if (request) return { table: "appraisal_requests", id: request.id, kind: "accepted", slotDate: null };
+  const waitlisted = await env.DB.prepare(
+    "SELECT id, slot_date FROM appraisal_waitlist WHERE email = ?1 AND site_url = ?2 AND month = ?3"
+  )
+    .bind(...key)
+    .first();
+  if (waitlisted) {
+    return { table: "appraisal_waitlist", id: waitlisted.id, kind: "waitlisted", slotDate: waitlisted.slot_date };
+  }
+  return null;
+}
+
+async function placeAppraisalRequest(env, input, now) {
+  const at = now.toISOString();
+  const month = appraisalMonth(now);
+
+  const existing = await existingAppraisal(env, input, month);
+  if (existing) return { ...existing, duplicate: true, at };
+
+  const id = crypto.randomUUID();
+  const slots = await appraisalSlots(env, now);
+  let referred = false;
+  if (slots.full && input.referral) {
+    const claim = await env.DB.prepare(
+      "UPDATE appraisal_referrals SET used_request_id = ?1, used_at = ?2 WHERE code = ?3 AND used_request_id IS NULL"
+    )
+      .bind(id, at, input.referral)
+      .run();
+    referred = Boolean(claim.meta?.changes);
+  }
+
+  // One statement decides acceptance, so two requests racing for the sixth
+  // place cannot both win: the capacity test and the insert are atomic.
+  const accepted = await env.DB.prepare(
+    `INSERT OR IGNORE INTO appraisal_requests
+       (id, site_url, business_type, avg_deal_value, monthly_leads, name, email, month, referral_code, created_at)
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
+     WHERE ?11 = 1 OR (SELECT COUNT(*) FROM appraisal_requests WHERE month = ?8) < ?12`
+  )
+    .bind(
+      id, input.website, input.businessType, input.dealValue, input.monthlyLeads, input.name, input.email,
+      month, referred ? input.referral : null, at, referred ? 1 : 0, MAX_APPRAISALS_PER_MONTH
+    )
+    .run();
+
+  if (accepted.meta?.changes) {
+    await recordAppraisalEvent(env, id, "request_accepted", referred ? "referral" : "capacity", at);
+    if (referred) await recordAppraisalEvent(env, id, "referral_used", input.referral, at);
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO appraisal_audit_jobs (id, request_id, status, created_at) VALUES (?1, ?2, 'queued', ?3)"
+    )
+      .bind(crypto.randomUUID(), id, at)
+      .run();
+    await recordAppraisalEvent(env, id, "audit_queued", "seo-fix-kit", at);
+    return { table: "appraisal_requests", id, kind: "accepted", slotDate: null, duplicate: false, referred, at };
+  }
+
+  if (referred) {
+    await env.DB.prepare(
+      "UPDATE appraisal_referrals SET used_request_id = NULL, used_at = NULL WHERE code = ?1 AND used_request_id = ?2"
+    )
+      .bind(input.referral, id)
+      .run();
+  }
+  // The place was taken, or a racing duplicate beat this insert to the key.
+  const raced = await existingAppraisal(env, input, month);
+  if (raced) return { ...raced, duplicate: true, at };
+
+  const slotDate = nextSlotDate(now);
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO appraisal_waitlist
+       (id, site_url, business_type, avg_deal_value, monthly_leads, name, email, month, slot_date, created_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`
+  )
+    .bind(id, input.website, input.businessType, input.dealValue, input.monthlyLeads, input.name, input.email, month, slotDate, at)
+    .run();
+  await recordAppraisalEvent(env, id, "waitlisted", slotDate, at);
+  return { table: "appraisal_waitlist", id, kind: "waitlisted", slotDate, duplicate: false, at };
+}
+
+function waitlistedPageResponse(slotDate) {
+  return withSecurityHeaders(
+    new Response(
+      `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TinyStudio — You are on the waitlist</title>
+  </head>
+  <body>
+    <main>
+      <h1>The six appraisals for this month are taken.</h1>
+      <p>You are on the waitlist. The next open slot is ${slotDate}. We have emailed you once to confirm.</p>
+      <p><a href="https://tinystudio.io/">Back to TinyStudio.io</a></p>
+    </main>
+  </body>
+</html>`,
+      { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } }
+    )
+  );
+}
+
+async function appraisalRequestResponse(request, env, url) {
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
+  }
+  if (requestTooLarge(request)) {
+    return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+  }
+
+  let body;
+  try {
+    body = await readRequestBody(request);
+  } catch (error) {
+    if (error.message === "request_too_large") {
+      return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+    }
+    body = {};
+  }
+
+  const { input, invalid } = appraisalInput(body);
+  if (invalid.length) {
+    if (wantsHtmlRedirect(request)) {
+      const back = new URL("/appraisal", url);
+      back.search = "?signal=invalid";
+      back.hash = "start";
+      return withSecurityHeaders(Response.redirect(back.toString(), 303));
+    }
+    return jsonResponse({ ok: false, error: "invalid_request", fields: invalid }, { status: 400 });
+  }
+
+  let placed;
+  let confirmation;
+  try {
+    placed = await placeAppraisalRequest(env, input, appraisalNow(env));
+    confirmation = await sendConfirmationOnce(
+      env, placed.table, placed.id, input, placed.kind, placed.slotDate, placed.at
+    );
+  } catch (error) {
+    console.warn("tinystudio_appraisal_storage_failed", error.message || "storage failed");
+    return jsonResponse({ ok: false, error: "storage_unavailable" }, { status: 503 });
+  }
+
+  if (wantsHtmlRedirect(request)) {
+    return placed.kind === "accepted" ? htmlRedirect(url, "saved") : waitlistedPageResponse(placed.slotDate);
+  }
+  return jsonResponse(
+    {
+      ok: true,
+      status: placed.kind,
+      requestId: placed.id,
+      duplicate: placed.duplicate,
+      nextSlotDate: placed.slotDate,
+      confirmation
+    },
+    { status: placed.duplicate ? 200 : 201 }
+  );
+}
+
 async function hashIp(request, bucket) {
   const ip = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "";
   if (!ip) return "";
@@ -1512,6 +1803,14 @@ export default {
 
     if (url.pathname === "/api/signups") {
       return signupResponse(request, env, url);
+    }
+
+    if (url.pathname === "/api/appraisal-requests") {
+      return appraisalRequestResponse(request, env, url);
+    }
+
+    if (url.pathname === "/api/appraisal-slots") {
+      return appraisalSlotsResponse(request, env);
     }
 
     if (url.pathname === "/api/agent-audit") {

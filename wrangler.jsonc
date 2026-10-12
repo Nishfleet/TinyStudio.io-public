@@ -23,6 +23,7 @@
       "preview_database_id": "478f4a89-8936-4a57-bdd0-5f273090b2e5"
     }
   ],
+  "send_email": [{ "name": "EMAIL" }],
   "ai": {
     "binding": "AI"
   },

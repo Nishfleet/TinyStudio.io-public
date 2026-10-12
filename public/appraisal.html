@@ -78,13 +78,19 @@
     <h1>The Appraisal</h1>
     <p class="sub"><em>We read your page as a customer with intent reads it.</em></p>
     <p class="sub">Four passes, by hand, on the surfaces that decide whether someone who arrived ready to buy stays that way. You get a short, plain document — each fault named, in order of what it costs you, with the fix beside each one. No deck. No dashboard.</p>
-    <form class="lead two" id="start" action="/api/signups" method="post">
+    <form class="lead two" id="start" action="/api/appraisal-requests" method="post">
       <label for="intake-website"><span>Your website domain</span><input type="text" name="website" id="intake-website" required inputmode="url" autocomplete="url" placeholder="yourwebsite.com" pattern="(https?://)?([a-zA-Z0-9\-]+\.)+[a-zA-Z]{2,}(:[0-9]+)?(/[^\s]*)?" title="Enter your domain, like example.com"></label>
+      <label for="intake-business"><span>Type of business</span><input type="text" name="businessType" id="intake-business" required maxlength="120" placeholder="Private dental clinic"></label>
+      <label for="intake-deal"><span>Approximate average deal value (USD)</span><input type="text" name="dealValue" id="intake-deal" required inputmode="numeric" pattern="[0-9,\s$]+" title="Whole dollars, like 8000" placeholder="8000"></label>
+      <label for="intake-leads"><span>Leads a month, approximately</span><input type="text" name="monthlyLeads" id="intake-leads" required inputmode="numeric" pattern="[0-9,\s]+" title="A whole number, like 40" placeholder="40"></label>
+      <label for="intake-name"><span>Your name</span><input type="text" name="name" id="intake-name" required maxlength="120" autocomplete="name"></label>
       <label for="intake-email"><span>Your work email</span><input type="email" name="email" id="intake-email" required autocomplete="email" placeholder="you@company.com"></label>
+      <label for="intake-referral"><span>Referral code, if you have one</span><input type="text" name="referral" id="intake-referral" maxlength="64" autocomplete="off"></label>
       <button>Request the appraisal</button>
     </form>
+    <p class="micro" data-slots-status role="status"></p>
     <p class="micro">Thirty seconds to ask. Findings inside five working days. No call at any point. Yours to keep either way.</p>
-    <div class="urg"><i></i><span><b>Six a month.</b> When the sixth is taken, the intake closes until the next.</span></div>
+    <div class="urg"><i></i><span><b>Six a month.</b> When the sixth is taken, the intake closes until the next. <span data-slots-counter></span></span></div>
   </div>
 
   <div class="band">
