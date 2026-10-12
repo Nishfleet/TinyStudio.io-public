@@ -1,3 +1,5 @@
+import { RECORD_ID, recordKey } from "./record.js";
+
 const SECURITY_HEADERS = {
   // Verified missing on the live host before adding: HTTPS already works on
   // tinystudio.io, www, and app, so a year-long max-age with subdomains is safe.
@@ -1798,6 +1800,28 @@ gtag('event', 'conversion', {
 `;
 }
 
+// M1c: the Appraisal Record, static HTML from R2, reachable only by its
+// unguessable id. No login, no listing; anything else is a plain 404.
+async function recordResponse(request, env, url) {
+  const id = url.pathname.slice("/records/".length);
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
+  }
+  if (!RECORD_ID.test(id)) return jsonResponse({ ok: false, error: "not_found" }, { status: 404 });
+  const object = await env.RECORDS.get(recordKey(id));
+  if (!object) return jsonResponse({ ok: false, error: "not_found" }, { status: 404 });
+  return withSecurityHeaders(
+    new Response(request.method === "HEAD" ? null : object.body, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "private, no-store",
+        "X-Robots-Tag": "noindex, nofollow"
+      }
+    }),
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
+  );
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -1858,6 +1882,10 @@ export default {
 
     if (url.pathname === "/api/appraisal-slots") {
       return appraisalSlotsResponse(request, env);
+    }
+
+    if (url.pathname.startsWith("/records/")) {
+      return recordResponse(request, env, url);
     }
 
     if (url.pathname === "/api/agent-audit") {

@@ -1,0 +1,29 @@
+{
+  "note": "Fault type to conversion-delta table (docs/PLAN.md section 7). deltaPct is the share of monthly leads the fault is estimated to lose. Every row carries the source it comes from; a record may only show a number that traces to a row here and to the customer's inputs. Rows must be re-checked against their source by the reviewer before a record is sent.",
+  "rows": [
+    {
+      "id": "slow-load",
+      "faultType": "slow-load",
+      "label": "Slow page load",
+      "deltaPct": 4.42,
+      "basis": "Conversion rate falls 4.42% for each added second of load time in the first five seconds.",
+      "source": { "title": "Portent, Site Speed is (still) Impacting Your Conversion Rate, 2019", "url": "https://www.portent.com/blog/analytics/research-site-speed-hurting-everyones-revenue.htm" }
+    },
+    {
+      "id": "no-mobile-viewport",
+      "faultType": "no-mobile-viewport",
+      "label": "Page not built for phones",
+      "deltaPct": 8.4,
+      "basis": "A 0.1 second faster mobile site lifted retail conversion 8.4%; used here as the per-step cost of a poor mobile experience.",
+      "source": { "title": "Deloitte and Google, Milliseconds Make Millions, 2020", "url": "https://www2.deloitte.com/ie/en/pages/consulting/articles/milliseconds-make-millions.html" }
+    },
+    {
+      "id": "missing-title",
+      "faultType": "missing-title",
+      "label": "Missing or empty page title",
+      "deltaPct": 0,
+      "basis": "No conversion delta is claimed: a missing title costs search visibility, which this table does not price.",
+      "source": { "title": "Google Search Central, Influence your title links", "url": "https://developers.google.com/search/docs/appearance/title-link" }
+    }
+  ]
+}
