@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;1,9..144,300&family=Karla:wght@400;600&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #f3eee6; }
+      #root { position: relative; width: 1920px; height: 1080px; background: linear-gradient(135deg, #f7f3ec, #ebe3d6); font-family: Karla, sans-serif; color: #2a2622; }
+      .scene { position: absolute; inset: 0; }
+      .eyebrow { font-size: 26px; letter-spacing: 0.3em; text-transform: uppercase; color: #8f6f3a; font-weight: 600; }
+      .h { font-family: Fraunces, serif; font-weight: 300; letter-spacing: -0.02em; line-height: 1.05; }
+      .h em { color: #8f6f3a; }
+      .center { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 180px; gap: 36px; }
+      .sub { font-size: 40px; line-height: 1.45; color: #5b544b; max-width: 1400px; }
+      .frame { position: absolute; border-radius: 18px; overflow: hidden; background: #fff; box-shadow: 0 40px 90px rgba(60, 40, 10, 0.25); }
+      .frame img { position: absolute; left: 0; top: 0; width: 100%; display: block; }
+      .caption { position: absolute; left: 120px; bottom: 90px; max-width: 1100px; }
+      .caption .h { font-size: 76px; }
+      .side { position: absolute; left: 110px; top: 0; bottom: 0; width: 640px; display: flex; flex-direction: column; justify-content: center; gap: 28px; }
+      .side .h { font-size: 78px; }
+      .side .sub { font-size: 34px; }
+      .fact { text-align: center; }
+      .fact .h { font-size: 88px; }
+      .fact .eyebrow { font-size: 22px; margin-top: 14px; }
+      .row { display: flex; gap: 110px; }
+      .cta { background: #2a2622; color: #f7f3ec; padding: 30px 64px; border-radius: 999px; font-size: 34px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="62" data-width="1920" data-height="1080">
+
+      <!-- 1. Who it is for, what it does (0-9s) -->
+      <div id="s1" class="scene center clip" data-start="0" data-duration="9" data-track-index="0">
+        <div class="eyebrow s1a">TinyStudio</div>
+        <div class="h s1b" style="font-size: 112px">A free appraisal of your <em>high-ticket service website.</em></div>
+        <div class="sub s1c">For the owner, founder or marketer. We read the one page your revenue depends on, and show you where buyers go.</div>
+      </div>
+
+      <!-- 2. The problem, on the real homepage (9-19s) -->
+      <div id="s2" class="scene clip" data-start="9" data-duration="10" data-track-index="0">
+        <div class="side">
+          <div class="eyebrow">The problem</div>
+          <div class="h">Most of them leave <em>before they ever get in touch.</em></div>
+          <div class="sub">The appraisal reads your page the way a customer with intent reads it.</div>
+        </div>
+        <div class="frame s2f" style="left: 820px; top: 260px; width: 1000px; height: 563px">
+          <img src="assets/home.jpg" alt="tinystudio.io homepage" />
+        </div>
+      </div>
+
+      <!-- 3. The specimen: faults, evidence, fix (19-33s) -->
+      <div id="s3" class="scene clip" data-start="19" data-duration="14" data-track-index="0">
+        <div class="side">
+          <div class="eyebrow">A real specimen</div>
+          <div class="h">Each fault named. <em>The fix beside it.</em></div>
+          <div class="sub">The specimen is a real audit of a clinic homepage, with the client's name removed.</div>
+        </div>
+        <div class="frame s3f" style="left: 820px; top: 90px; width: 1000px; height: 900px">
+          <img class="s3i" src="assets/specimen.jpg" alt="tinystudio.io specimen appraisal" />
+        </div>
+      </div>
+
+      <!-- 4. Terms (33-44s) -->
+      <div id="s4" class="scene center clip" data-start="33" data-duration="11" data-track-index="0">
+        <div class="eyebrow s4a">What you get</div>
+        <div class="row s4r">
+          <div class="fact"><div class="h">Free</div><div class="eyebrow">and yours to keep</div></div>
+          <div class="fact"><div class="h">Six a month</div><div class="eyebrow">done by hand</div></div>
+          <div class="fact"><div class="h">Five days</div><div class="eyebrow">request to findings</div></div>
+        </div>
+        <div class="sub s4b">No call at any point.</div>
+      </div>
+
+      <!-- 5. A person signs it (44-53s) -->
+      <div id="s5" class="scene center clip" data-start="44" data-duration="9" data-track-index="0">
+        <div class="eyebrow s5a">Reviewed by a person</div>
+        <div class="h s5b" style="font-size: 104px">Read and <em>signed by Nish.</em></div>
+        <div class="sub s5c">Not autonomous software. The appraisal is yours to hand to any developer, including one who is not us.</div>
+      </div>
+
+      <!-- 6. Next action (53-62s) -->
+      <div id="s6" class="scene center clip" data-start="53" data-duration="9" data-track-index="0">
+        <div class="eyebrow s6a">One next step</div>
+        <div class="h s6b" style="font-size: 104px">Show me where our site <em>undersells us.</em></div>
+        <div class="cta s6c">Request the appraisal</div>
+        <div class="sub s6d">tinystudio.io</div>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      const rise = (sel, t, d = 0.9) => tl.fromTo(sel, { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: d, ease: "power2.out" }, t);
+      const fade = (sel, t) => tl.to(sel, { opacity: 0, duration: 0.5, ease: "power1.in" }, t);
+
+      // S1 : all three lines in view by 2.5s, so the first 5s say who and what
+      rise(".s1a", 0.2, 0.7); rise(".s1b", 0.6, 1.0); rise(".s1c", 1.6, 0.9);
+      fade("#s1", 8.4);
+      // S2
+      rise("#s2 .side > *", 9.3, 0.9);
+      tl.fromTo(".s2f", { opacity: 0, x: 80 }, { opacity: 1, x: 0, duration: 1.0, ease: "power2.out" }, 9.5);
+      tl.to("#s2 .frame img", { scale: 1.04, transformOrigin: "50% 0%", duration: 9, ease: "none" }, 9.5);
+      fade("#s2", 18.4);
+      // S3: slow pan down the real specimen page
+      rise("#s3 .side > *", 19.3, 0.9);
+      tl.fromTo(".s3f", { opacity: 0, x: 80 }, { opacity: 1, x: 0, duration: 1.0, ease: "power2.out" }, 19.5);
+      tl.fromTo(".s3i", { y: 0 }, { y: -450, duration: 12, ease: "power1.inOut" }, 20.5);
+      fade("#s3", 32.4);
+      // S4
+      rise(".s4a", 33.3, 0.7); rise(".s4r .fact", 33.9, 0.9); rise(".s4b", 37.5, 0.9);
+      fade("#s4", 43.4);
+      // S5
+      rise(".s5a", 44.3, 0.7); rise(".s5b", 44.7, 1.0); rise(".s5c", 46.2, 0.9);
+      fade("#s5", 52.4);
+      // S6
+      rise(".s6a", 53.3, 0.7); rise(".s6b", 53.7, 1.0); rise(".s6c", 55.5, 0.9); rise(".s6d", 56.8, 0.9);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
