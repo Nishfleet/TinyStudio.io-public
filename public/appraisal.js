@@ -1,5 +1,5 @@
 (function () {
-  var S = '.phead h1,.phead .sub,form.lead,.micro,.urg,.band,section h2,section .lede,.check,.row';
+  var S = 'form.lead,.micro,.urg,.band,section h2,section .lede,.check,.row';
   function r() {
     var e = [].slice.call(document.querySelectorAll(S));
     e.forEach(function (x) { x.setAttribute('data-r', ''); });

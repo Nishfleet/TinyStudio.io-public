@@ -27,6 +27,9 @@
   "ai": {
     "binding": "AI"
   },
+  "build": {
+    "command": "node build-fonts.mjs"
+  },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

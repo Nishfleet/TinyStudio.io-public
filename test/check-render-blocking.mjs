@@ -1,27 +1,14 @@
-// TinyStudio — browser render-blocking guard (dogfood finding b8f6046e942a).
+// TinyStudio - browser font and render-blocking guard.
 //
-// The static guards in check-site.mjs prove the served HTML cannot contain the
-// blocking font shape, but they cannot see the behavior: a regression could
-// still ship if the served HTML drifts and CI stays green. This check runs
-// real Chromium against the six public pages, served statically under the
-// exact production Content-Security-Policy the worker emits, and asserts:
+// Serves the six public pages statically under the exact production
+// Content-Security-Policy the worker emits and asserts in real Chromium:
 //
-//   1. the Google Fonts css2 stylesheet is fetched non-blocking
-//      (renderBlockingStatus !== "blocking"),
-//   2. first-contentful-paint does not wait for it (the css2 response is
-//      intercepted and delayed, so a blocking shape deterministically delays
-//      first paint),
-//   3. the only render-blocking resources are the site's own same-origin
-//      stylesheets,
-//   4. the preload link is still promoted to a real stylesheet under the
-//      production CSP (the inline-onload shape the CSP forbids would leave
-//      link.sheet null).
+//   1. no request leaves the origin (fonts are self-hosted, no Google chain),
+//   2. the only render-blocking resources are same-origin stylesheets,
+//   3. both families are declared, the font files are served under the CSP and
+//      nothing preloads them (a preload defeats font-display: optional).
 //
-// The css2 response is stubbed so the check has no external network
-// dependency; the real font URL and the no-JS fallback are kept honest by the
-// static guards in test/check-site.mjs.
-//
-// Run: node test/check-render-blocking.mjs  (or `npm run check:render-blocking`)
+// Run: npm run check:render-blocking  (it builds public/fonts first)
 
 import http from "node:http";
 import { readFileSync, statSync } from "node:fs";
@@ -34,10 +21,6 @@ import { chromium } from "playwright";
 // run under it or it would not exercise the production shape.
 const PRODUCTION_CSP =
   "default-src 'self'; img-src 'self' data:; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
-
-const FONT_CSS_PATTERN = "**fonts.googleapis.com/css2**";
-const CSS2_DELAY_MS = 2500; // generous: a slow CI runner still paints first before this
-const STUB_CSS = "/* TinyStudio render-blocking check: stubbed font stylesheet */";
 
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const PAGES = [
@@ -53,6 +36,7 @@ const CONTENT_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
   ".png": "image/png",
   ".txt": "text/plain; charset=utf-8",
   ".md": "text/markdown; charset=utf-8",
@@ -87,64 +71,25 @@ function startServer() {
   });
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 async function measurePage(page, pageUrl) {
-  // Delay the css2 response: if the stylesheet is ever fetched render-blocking
-  // again, first paint is held until it responds and the check fails.
-  await page.route(FONT_CSS_PATTERN, async (route) => {
-    await sleep(CSS2_DELAY_MS);
-    await route.fulfill({
-      status: 200,
-      contentType: "text/css; charset=utf-8",
-      body: STUB_CSS
-    });
+  const requests = [];
+  page.on("request", (request) => requests.push(request.url()));
+  await page.goto(pageUrl, { waitUntil: "load", timeout: 30000 });
+  await page.evaluate(() => document.fonts.ready);
+  const state = await page.evaluate(async () => {
+    const files = ["fraunces-latin-opsz-normal", "fraunces-latin-opsz-italic", "karla-latin-wght-normal"];
+    const statuses = await Promise.all(files.map(async (name) => (await fetch(`fonts/${name}.woff2`)).status));
+    return {
+      declared: [...document.fonts].map((f) => f.family.replace(/"/g, "")),
+      statuses,
+      preloads: document.querySelectorAll('link[rel="preload"][as="font"]').length,
+      blocking: performance
+        .getEntriesByType("resource")
+        .filter((r) => r.renderBlockingStatus === "blocking")
+        .map((r) => r.name)
+    };
   });
-
-  await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-
-  let fcp = null;
-  let css2 = null;
-  for (let i = 0; i < 160; i++) {
-    const state = await page.evaluate(() => {
-      const paint = performance.getEntriesByType("paint").find((p) => p.name === "first-contentful-paint");
-      const resources = performance.getEntriesByType("resource").map((r) => ({
-        name: r.name,
-        responseEnd: r.responseEnd,
-        renderBlockingStatus: r.renderBlockingStatus
-      }));
-      return {
-        fcp: paint ? Math.round(paint.startTime) : null,
-        resources
-      };
-    });
-    fcp = state.fcp;
-    css2 = state.resources.find((r) => r.name.includes("css2")) ?? null;
-    if (fcp !== null && css2 !== null) break;
-    await sleep(50);
-  }
-
-  // Give the (stubbed, delayed) stylesheet time to finish loading so the
-  // promotion result is observable.
-  await sleep(1500);
-  const promotion = await page.evaluate(() => {
-    // fonts.js creates a NEW stylesheet link for the same URL; the original
-    // preload link keeps rel="preload" and never gets a sheet. Match the
-    // promoted stylesheet link by the font URL (as the evidence receipt does).
-    const promoted = [...document.querySelectorAll("link[href*='fonts.googleapis.com/css2']")].find(
-      (l) => l.rel === "stylesheet"
-    );
-    return { exists: !!promoted, sheetApplied: !!promoted && !!promoted.sheet };
-  });
-
-  const blocking = await page.evaluate(() =>
-    performance
-      .getEntriesByType("resource")
-      .filter((r) => r.renderBlockingStatus === "blocking")
-      .map((r) => r.name)
-  );
-
-  return { fcp, css2, promotion, blocking };
+  return { requests, ...state };
 }
 
 const failures = [];
@@ -162,17 +107,9 @@ try {
     const result = await measurePage(page, `${origin}/${file}`);
     await page.close();
 
-    const css2Status = result.css2?.renderBlockingStatus ?? null;
-    const waitedForCss2 =
-      result.fcp !== null && result.css2 !== null ? result.fcp >= Math.round(result.css2.responseEnd) : null;
-
     const problems = [];
-    if (css2Status !== "non-blocking") {
-      problems.push(`font stylesheet renderBlockingStatus is ${JSON.stringify(css2Status)}, expected "non-blocking"`);
-    }
-    if (waitedForCss2 !== false) {
-      problems.push(`first-contentful-paint waited for the font stylesheet (fcp=${result.fcp}ms, css2 end=${result.css2 ? Math.round(result.css2.responseEnd) : null}ms)`);
-    }
+    const offOrigin = result.requests.filter((url) => !url.startsWith(origin) && !url.startsWith("data:"));
+    if (offOrigin.length) problems.push(`requests left the origin: ${offOrigin.join(", ")}`);
     const disallowedBlocking = result.blocking.filter((name) => {
       const u = new URL(name);
       return u.origin !== origin || !u.pathname.endsWith(".css");
@@ -180,11 +117,13 @@ try {
     if (disallowedBlocking.length) {
       problems.push(`render-blocking resources other than same-origin stylesheets: ${disallowedBlocking.join(", ")}`);
     }
-    if (!result.promotion.exists || !result.promotion.sheetApplied) {
-      problems.push("font preload link was not promoted to a stylesheet under the production CSP (link.sheet is null)");
+    if (!result.declared.includes("Fraunces") || !result.declared.includes("Karla")) {
+      problems.push(`fonts.css must declare Fraunces and Karla (declared: ${result.declared.join(", ") || "none"})`);
     }
+    if (result.statuses.some((status) => status !== 200)) problems.push(`font files must be served under the CSP (statuses: ${result.statuses.join(", ")})`);
+    if (result.preloads) problems.push("fonts must not be preloaded (font-display: optional)");
 
-    rows.push({ pageName, css2Status, fcp: result.fcp, waitedForCss2, disallowedBlocking, sheetApplied: result.promotion.sheetApplied, problems });
+    rows.push({ pageName, declared: result.declared.length, problems });
     if (problems.length) failures.push(`${pageName}: ${problems.join("; ")}`);
   }
 } finally {
@@ -192,22 +131,12 @@ try {
   server.close();
 }
 
-console.log("Render-blocking check (real Chromium, production CSP, css2 delayed " + CSS2_DELAY_MS + "ms):");
-console.table(
-  rows.map((r) => ({
-    page: r.pageName,
-    "css2 status": r.css2Status,
-    "fcp (ms)": r.fcp,
-    "fcp waited for css2": r.waitedForCss2,
-    "other blocking": r.disallowedBlocking.length ? r.disallowedBlocking.join(",") : "-",
-    "sheet applied": r.sheetApplied,
-    result: r.problems.length ? "FAIL" : "PASS"
-  }))
-);
+console.log("Font and render-blocking check (real Chromium, production CSP):");
+console.table(rows.map((r) => ({ page: r.pageName, "faces declared": r.declared, result: r.problems.length ? "FAIL" : "PASS" })));
 
 if (failures.length) {
-  console.error("\nRender-blocking failures:");
+  console.error("\nFailures:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log("All five pages load the font stylesheet without render-blocking under the production CSP.");
+console.log("All five pages load self-hosted fonts, no preload, with only same-origin stylesheets blocking.");

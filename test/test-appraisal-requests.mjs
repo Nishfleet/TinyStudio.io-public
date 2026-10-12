@@ -175,7 +175,8 @@ test("a referred business skips the waitlist for the current month, once per cod
 
 test("every state change writes an event row", async () => {
   const { sqlite, env } = freshEnv();
-  const { requestId } = await (await submit(env)).json();
+  await submit(env);
+  const requestId = sqlite.prepare("SELECT id FROM appraisal_requests").get().id;
   const events = sqlite.prepare("SELECT type FROM appraisal_events WHERE request_id = ? ORDER BY id").all(requestId);
   assert.deepEqual(events.map((row) => row.type), ["request_accepted", "audit_queued", "confirmation_sent"]);
   const job = sqlite.prepare("SELECT status FROM appraisal_audit_jobs WHERE request_id = ?").get(requestId);
@@ -222,4 +223,45 @@ test("a no-JS form post lands on the thank-you page, or the waitlist page when t
   const waitlisted = await form(7);
   assert.equal(waitlisted.status, 200);
   assert.match(await waitlisted.text(), /next open slot is 2026-11-01/);
+});
+
+test("a cross-site post is refused and stores nothing", async () => {
+  const { sqlite, env, sent } = freshEnv();
+  const res = await submit(env, {}, { Origin: "https://evil.example" });
+  assert.equal(res.status, 403);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM appraisal_requests").get().n, 0);
+  assert.equal(sent.length, 0);
+});
+
+test("a burst from one address is cut off before it can send mail to arbitrary addresses", async () => {
+  const { sqlite, env, sent } = freshEnv();
+  const statuses = [];
+  for (let n = 1; n <= 12; n += 1) {
+    const res = await submit(env, { website: `s${n}.example`, email: `v${n}@s${n}.example` }, { "CF-Connecting-IP": "203.0.113.9" });
+    statuses.push(res.status);
+  }
+  assert.deepEqual(statuses.slice(0, 10).every((code) => code === 201), true);
+  assert.deepEqual(statuses.slice(10), [429, 429]);
+  assert.equal(sent.length, 10);
+  assert.ok(sqlite.prepare("SELECT COUNT(*) AS n FROM appraisal_waitlist").get().n <= 4);
+});
+
+test("one email address is limited per day, and the waitlist has a monthly ceiling", async () => {
+  const { sqlite, env } = freshEnv();
+  const codes = [];
+  for (let n = 1; n <= 4; n += 1) {
+    codes.push((await submit(env, { website: `s${n}.example` }, { "CF-Connecting-IP": `203.0.113.${n}` })).status);
+  }
+  assert.deepEqual(codes, [201, 201, 201, 429]);
+
+  const full = freshEnv();
+  for (let n = 1; n <= 6; n += 1) await submit(full.env, { website: `a${n}.example`, email: `a${n}@a${n}.example` }, { "CF-Connecting-IP": `198.51.100.${n}` });
+  for (let n = 1; n <= 50; n += 1) {
+    full.sqlite.prepare(
+      "INSERT INTO appraisal_waitlist (id, site_url, business_type, avg_deal_value, monthly_leads, name, email, month, slot_date, created_at) VALUES (?, ?, 'x', 1, 1, 'x', ?, '2026-10', '2026-11-01', 'now')"
+    ).run(`w${n}`, `https://w${n}.example`, `w${n}@w.example`);
+  }
+  const res = await submit(full.env, { website: "late.example", email: "late@late.example" }, { "CF-Connecting-IP": "192.0.2.77" });
+  assert.equal(res.status, 409);
+  assert.equal((await res.json()).error, "waitlist_full");
 });

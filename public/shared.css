@@ -9,7 +9,7 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
-body{background:var(--cream);color:var(--ink);font-family:'Karla',sans-serif;
+body{background:var(--cream);color:var(--ink);font-family:'Karla','Karla Fallback',sans-serif;
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:hidden}
 body::after{content:'';position:fixed;inset:0;z-index:-2;pointer-events:none;
   background:
@@ -21,11 +21,11 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:98;op
 
 .wrap{max-width:1200px;margin:0 auto;padding:0 60px}
 .sc{font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;font-weight:600}
-.fr{font-family:'Fraunces',serif;font-weight:200;letter-spacing:-.028em}
+.fr{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:200;letter-spacing:-.028em}
 
 /* nav */
 nav{display:flex;justify-content:space-between;align-items:center;padding:30px 0 0}
-.logo{font-family:'Fraunces',serif;font-size:22px;font-weight:400;letter-spacing:.015em;text-decoration:none;color:var(--ink)}
+.logo{font-family:'Fraunces','Fraunces Fallback',serif;font-size:22px;font-weight:400;letter-spacing:.015em;text-decoration:none;color:var(--ink)}
 .logo span{color:var(--brass)}
 .navlinks{display:flex;gap:34px;font-size:13.5px;color:var(--muted);font-weight:500;align-items:center}
 .navlinks a{color:inherit;text-decoration:none;transition:color var(--mid) var(--ease)}
@@ -37,7 +37,7 @@ nav{display:flex;justify-content:space-between;align-items:center;padding:30px 0
 /* page head */
 .phead{padding:80px 0 0;max-width:900px}
 .phead .orn{color:var(--brass);margin-bottom:24px;display:block}
-.phead h1{font-family:'Fraunces',serif;font-weight:200;font-size:70px;line-height:1.03;letter-spacing:-.032em;
+.phead h1{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:200;font-size:70px;line-height:1.03;letter-spacing:-.032em;
   /* longest hero word (a long unbreakable word in a hero h1) overflows at 280px without this */
   overflow-wrap:anywhere;word-break:normal}
 .phead h1 em{font-style:italic;font-weight:300;
@@ -60,11 +60,11 @@ form.lead{margin:36px 0 0;max-width:500px;display:flex;align-items:center;
   box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 18px 44px -26px rgba(25,20,16,.34);
   transition:box-shadow var(--slow) var(--ease),border-color var(--slow) var(--ease)}
 form.lead:hover,form.lead:focus-within{border-color:rgba(164,126,60,.42)}
-form.lead input{flex:1;border:0;background:transparent;outline:none;font-family:'Karla',sans-serif;
+form.lead input{flex:1;border:0;background:transparent;outline:none;font-family:'Karla','Karla Fallback',sans-serif;
   font-size:16px;color:var(--ink);padding:12px 0}
 form.lead input::placeholder{color:#AC9E8B}
 form.lead button{border:0;cursor:pointer;border-radius:999px;padding:16px 20px;white-space:nowrap;
-  font-family:'Karla',sans-serif;font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;
+  font-family:'Karla','Karla Fallback',sans-serif;font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;
   color:#FBF7EF;background:linear-gradient(168deg,#241D16,#100C09);
   box-shadow:0 6px 18px -8px rgba(25,20,16,.6);
   transition:transform var(--mid) var(--ease)}
@@ -73,7 +73,7 @@ form.lead button:hover{transform:translateY(-1.5px)}
 
 /* section */
 section{margin-top:112px;padding-top:66px;border-top:1px solid var(--line)}
-section h2{font-family:'Fraunces',serif;font-weight:200;font-size:46px;letter-spacing:-.028em;line-height:1.08;max-width:15ch}
+section h2{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:200;font-size:46px;letter-spacing:-.028em;line-height:1.08;max-width:15ch}
 section .lede{margin-top:18px;font-size:16px;line-height:1.75;color:var(--muted);max-width:48ch}
 
 /* dark band */
@@ -83,7 +83,7 @@ section .lede{margin-top:18px;font-size:16px;line-height:1.75;color:var(--muted)
 .band::after{content:'';position:absolute;inset:0;pointer-events:none;
   background:radial-gradient(60% 90% at 88% 8%,rgba(201,165,102,.20),transparent 68%)}
 .band>*{position:relative;z-index:2}
-.band h2{font-family:'Fraunces',serif;font-weight:200;font-size:38px;line-height:1.16;letter-spacing:-.022em;max-width:20ch}
+.band h2{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:200;font-size:38px;line-height:1.16;letter-spacing:-.022em;max-width:20ch}
 .band p{margin-top:16px;font-size:15.5px;line-height:1.75;color:#B3A794;max-width:56ch}
 .band .note{margin-top:18px;padding-top:15px;border-top:1px solid rgba(242,234,220,.14);
   font-size:12px;line-height:1.6;color:#8C8171;max-width:60ch}

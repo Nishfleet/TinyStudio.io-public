@@ -1,5 +1,5 @@
 (function(){
-  var SEL='h1,.orn,.sub,form,.micro,.meta,.finding,.browser,.specbody,.lead,.check,.method h2,.stop,.who,.offer h2,.offer p,.price,.faq h2,.q';
+  var SEL='.meta,.finding,.browser,.specbody,.lead,.check,.method h2,.stop,.who,.offer h2,.offer p,.price,.faq h2,.q';
   function run(){
     var els=[].slice.call(document.querySelectorAll(SEL));
     els.forEach(function(el){el.setAttribute('data-r','')});

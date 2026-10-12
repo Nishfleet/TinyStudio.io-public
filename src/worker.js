@@ -51,10 +51,10 @@ const PUBLIC_ASSET_PATHS = new Set([
   "/specimen.js",
   "/brief-requested.css",
   "/brief-requested.js",
-  // Same-origin font promotion for the non-blocking Google Fonts stylesheet
-  // (render-blocking fix b8f6046e942a). The production CSP forbids inline
-  // onload handlers, so public/fonts.js promotes the preloaded css2 URL.
-  "/fonts.js",
+  "/fonts.css",
+  "/fonts/fraunces-latin-opsz-normal.woff2",
+  "/fonts/fraunces-latin-opsz-italic.woff2",
+  "/fonts/karla-latin-wght-normal.woff2",
   "/favicon.svg",
   // Legacy /favicon.ico fallback. Browsers, search-engine crawlers, and
   // screenshot services still hit /favicon.ico even when every page declares
@@ -106,6 +106,11 @@ const MAX_AGENT_RUNS_PER_IP_PER_DAY = 20;
 // is accepted, and any further POST in the same month gets a truthful
 // closed-intake response instead of a normal success.
 const MAX_APPRAISALS_PER_MONTH = 6;
+// Abuse bounds on the anonymous appraisal endpoint: a confirmation email goes
+// to whatever address the caller types, so each caller and the waitlist are capped.
+const MAX_APPRAISAL_REQUESTS_PER_IP_PER_DAY = 10;
+const MAX_APPRAISAL_REQUESTS_PER_EMAIL_PER_DAY = 3;
+const MAX_WAITLIST_PER_MONTH = 50;
 // The current product's public intake (homepage and /appraisal) posts to
 // /api/signups. Its rows and the public /health surface must be labeled with
 // the current offer — The Website Appraisal — never the retired self-serve
@@ -580,8 +585,8 @@ async function sendConfirmationOnce(env, table, id, input, kind, slotDate, at) {
     await env.EMAIL.send(confirmationMessage(env, input, kind, slotDate));
   } catch (error) {
     await env.DB.prepare(`UPDATE ${table} SET confirmation_sent_at = NULL WHERE id = ?1`).bind(id).run();
-    await recordAppraisalEvent(env, id, "confirmation_failed", cleanField(error.message, 200), at);
-    console.warn("tinystudio_appraisal_confirmation_failed", error.message || "send failed");
+    await recordAppraisalEvent(env, id, "confirmation_failed", error.name || "Error", at);
+    console.warn("tinystudio_appraisal_confirmation_failed", error.name || "Error");
     return "failed";
   }
   await recordAppraisalEvent(env, id, "confirmation_sent", kind, at);
@@ -688,6 +693,21 @@ async function placeAppraisalRequest(env, input, now) {
   return { table: "appraisal_waitlist", id, kind: "waitlisted", slotDate, duplicate: false, at };
 }
 
+async function appraisalAbuseGuard(request, env, input, now) {
+  const day = now.toISOString().slice(0, 10);
+  const ipHash = await hashIp(request, `appraisal:${day}`);
+  const ipCount = await incrementUsageCounter(env, `appraisal-ip:${day}:${ipHash}`);
+  if (ipHash && ipCount > MAX_APPRAISAL_REQUESTS_PER_IP_PER_DAY) return "rate_limited";
+  const emailCount = await incrementUsageCounter(env, `appraisal-email:${day}:${input.email}`);
+  if (emailCount > MAX_APPRAISAL_REQUESTS_PER_EMAIL_PER_DAY) return "rate_limited";
+  const waitlist = await env.DB.prepare("SELECT COUNT(*) AS n FROM appraisal_waitlist WHERE month = ?1")
+    .bind(appraisalMonth(now))
+    .first();
+  const slots = await appraisalSlots(env, now);
+  if (slots.full && Number(waitlist?.n || 0) >= MAX_WAITLIST_PER_MONTH) return "waitlist_full";
+  return null;
+}
+
 function waitlistedPageResponse(slotDate) {
   return withSecurityHeaders(
     new Response(
@@ -729,6 +749,14 @@ async function appraisalRequestResponse(request, env, url) {
     body = {};
   }
 
+  const origin = request.headers.get("Origin");
+  if (
+    (origin && !isAllowedOrigin(origin, request, url)) ||
+    request.headers.get("Sec-Fetch-Site") === "cross-site"
+  ) {
+    return jsonResponse({ ok: false, error: "cross_site_blocked" }, { status: 403 });
+  }
+
   const { input, invalid } = appraisalInput(body);
   if (invalid.length) {
     if (wantsHtmlRedirect(request)) {
@@ -743,7 +771,15 @@ async function appraisalRequestResponse(request, env, url) {
   let placed;
   let confirmation;
   try {
-    placed = await placeAppraisalRequest(env, input, appraisalNow(env));
+    const now = appraisalNow(env);
+    const refusal = await appraisalAbuseGuard(request, env, input, now);
+    if (refusal) {
+      return jsonResponse(
+        { ok: false, error: refusal },
+        { status: refusal === "rate_limited" ? 429 : 409 }
+      );
+    }
+    placed = await placeAppraisalRequest(env, input, now);
     confirmation = await sendConfirmationOnce(
       env, placed.table, placed.id, input, placed.kind, placed.slotDate, placed.at
     );
@@ -759,7 +795,6 @@ async function appraisalRequestResponse(request, env, url) {
     {
       ok: true,
       status: placed.kind,
-      requestId: placed.id,
       duplicate: placed.duplicate,
       nextSlotDate: placed.slotDate,
       confirmation
