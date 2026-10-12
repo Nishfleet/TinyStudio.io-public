@@ -4,7 +4,7 @@ TinyStudio is a boutique that finds where a high-ticket service website loses mo
 
 ## Current plan
 
-[docs/PLAN.md](docs/PLAN.md) is the single current plan. It defines the pages, the architecture and the milestones. Specs 001 to 004 are superseded by the plan.
+[docs/PLAN.md](docs/PLAN.md) is the single current plan. It defines the pages, the architecture and the milestones. Specs 001 to 004 are superseded by the plan and have been removed.
 
 ## Pages
 

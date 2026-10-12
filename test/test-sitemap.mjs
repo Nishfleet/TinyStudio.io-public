@@ -1,14 +1,14 @@
 // Sitemap regression test for the complete public surface.
 //
 // The sitemap previously listed only the root, /offer.md and /llms.txt, so the
-// four remaining human-facing pages (/audit, /agents, /pricing, /specimen)
+// remaining human-facing pages (/appraisal, /pricing, /specimen)
 // were invisible to crawlers even though robots.txt allows them all. This test
 // locks the complete indexable surface and the urlset shape:
 //
-//   1. the exact ordered loc set stays the five pages plus the two
+//   1. the exact ordered loc set stays the six pages plus the two
 //      machine-readable mirrors (adding, dropping or reordering a loc fails);
 //   2. every loc is an absolute https://tinystudio.io/ URL, HTML pages use the
-//      clean extensionless path (the worker serves /audit, /agents, /pricing,
+//      clean extensionless path (the worker serves /appraisal, /pricing,
 //      /specimen), and the trailing slash appears only on the root;
 //   3. /brief-requested (noindex signup redirect) and /agent-desk (legacy)
 //      never reappear;
@@ -33,11 +33,9 @@ const ROBOTS_PATH = "public/robots.txt";
 // fails deterministically.
 const EXPECTED_LOCS = [
   "https://tinystudio.io/",
-  "https://tinystudio.io/audit",
-  "https://tinystudio.io/agents",
+  "https://tinystudio.io/appraisal",
   "https://tinystudio.io/pricing",
   "https://tinystudio.io/specimen",
-  "https://tinystudio.io/msp",
   "https://tinystudio.io/privacy",
   "https://tinystudio.io/terms",
   "https://tinystudio.io/contact",
@@ -147,10 +145,10 @@ test("robots.txt keeps pointing at the sitemap", () => {
   assert.ok(robots.includes("Sitemap: https://tinystudio.io/sitemap.xml"), "robots.txt must keep the Sitemap directive");
 });
 
-test("checker rejects the old three-URL sitemap (missing /audit /agents /pricing /specimen)", () => {
+test("checker rejects the old three-URL sitemap (missing /appraisal /pricing /specimen)", () => {
   const issues = sitemapIssues(OLD_THREE_URL_SITEMAP);
-  assert.ok(issues.some((issue) => issue.includes("missing: https://tinystudio.io/audit")), `got: ${issues.join("; ")}`);
-  assert.ok(issues.some((issue) => issue.includes("/agents")), `got: ${issues.join("; ")}`);
+  assert.ok(issues.some((issue) => issue.includes("missing: https://tinystudio.io/appraisal")), `got: ${issues.join("; ")}`);
+  assert.ok(issues.some((issue) => issue.includes("/privacy")), `got: ${issues.join("; ")}`);
   assert.ok(issues.some((issue) => issue.includes("/pricing")), `got: ${issues.join("; ")}`);
   assert.ok(issues.some((issue) => issue.includes("/specimen")), `got: ${issues.join("; ")}`);
 });
@@ -201,10 +199,10 @@ test("checker rejects a reordered or duplicated loc set", () => {
     <loc>https://tinystudio.io/pricing</loc>
   </url>
   <url>
-    <loc>https://tinystudio.io/audit</loc>
+    <loc>https://tinystudio.io/appraisal</loc>
   </url>
   <url>
-    <loc>https://tinystudio.io/agents</loc>
+    <loc>https://tinystudio.io/contact</loc>
   </url>
   <url>
     <loc>https://tinystudio.io/specimen</loc>

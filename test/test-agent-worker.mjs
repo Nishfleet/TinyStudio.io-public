@@ -1218,6 +1218,36 @@ test("www host never serves a second copy of the public site", async () => {
   }
 });
 
+test("/audit and /audit.html permanently redirect to /appraisal, keeping the query", async () => {
+  const env = {
+    ASSETS: { fetch: async () => new Response("<html>asset</html>", { status: 200 }) }
+  };
+  for (const path of ["/audit", "/audit.html"]) {
+    const res = await worker.fetch(new Request(`https://tinystudio.io${path}?utm_source=x`), env);
+    assert.equal(res.status, 301, `${path} must redirect`);
+    assert.equal(res.headers.get("Location"), "https://tinystudio.io/appraisal?utm_source=x");
+  }
+});
+
+test("/appraisal is served as an asset and the retired Agent Desk, desk and MSP paths are not", async () => {
+  const served = [];
+  const env = {
+    ASSETS: {
+      fetch: async (request) => {
+        served.push(new URL(request.url).pathname);
+        return new Response("<html>asset</html>", { status: 200 });
+      }
+    }
+  };
+  const ok = await worker.fetch(new Request("https://tinystudio.io/appraisal", { headers: { Accept: "text/html" } }), env);
+  assert.equal(ok.status, 200);
+  assert.deepEqual(served, ["/appraisal"], "/appraisal must be fetched as its own asset");
+  for (const path of ["/agent-desk.html", "/agents.css", "/msp.js", "/styles.css", "/script.js"]) {
+    const res = await worker.fetch(new Request(`https://tinystudio.io${path}`), env);
+    assert.equal(res.status, 404, `${path} must be gone`);
+  }
+});
+
 test("canonical host redirect leaves the apex and the retired hosts alone", async () => {
   const env = {
     ASSETS: { fetch: async () => new Response("<html>apex site</html>", { status: 200 }) }

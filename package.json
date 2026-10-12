@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "TinyStudio public website: The Website Appraisal and the human-reviewed desk on Cloudflare Workers.",
+  "description": "TinyStudio public website: the Website Correction ($10,000 per site) on Cloudflare Workers.",
   "scripts": {
     "dev": "wrangler dev --remote --ip 127.0.0.1 --port 8788 --persist-to /tmp/tinystudio-agent-worker",
     "check": "node test/check-site.mjs",

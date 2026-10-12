@@ -30,9 +30,9 @@ import { chromium } from "playwright";
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const VIEWPORTS = [240, 260, 280, 320];
 // The packet's named routes: the home hero-mock card is served at /, and
-// /appraisal and /desk resolve to the same homepage (the live site serves
-// the homepage for those paths). The distinct appraisal/desk pages (/audit,
-// /agents) are covered by the sibling test:narrow-pages regression.
+// /appraisal and /desk resolve to the same homepage here (the live site serves
+// the homepage for unknown paths). The distinct /appraisal page is covered by
+// the sibling test:narrow-pages regression.
 const ROUTES = ["/", "/appraisal", "/desk"];
 
 const CONTENT_TYPES = {

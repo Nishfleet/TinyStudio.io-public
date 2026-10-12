@@ -21,11 +21,9 @@ import { readFileSync } from "node:fs";
 
 const PAGES = [
   "public/index.html",
-  "public/audit.html",
-  "public/agents.html",
+  "public/appraisal.html",
   "public/pricing.html",
   "public/specimen.html",
-  "public/msp.html",
   "public/brief-requested.html",
   "public/privacy.html",
   "public/terms.html",
@@ -36,11 +34,9 @@ const PAGES = [
 // skip (or drops the single h1) changes these and fails the test.
 const EXPECTED_OUTLINES = {
   "public/index.html": [1, 2, 2, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 2],
-  "public/audit.html": [1, 2, 2, 3, 3, 3, 3, 2, 2, 2, 2, 2],
-  "public/agents.html": [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+  "public/appraisal.html": [1, 2, 2, 3, 3, 3, 3, 2, 2, 2, 2, 2],
   "public/pricing.html": [1, 2, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 2, 2],
   "public/specimen.html": [1, 2, 2, 2, 2, 3, 2, 2],
-  "public/msp.html": [1, 2, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2],
   "public/brief-requested.html": [1, 2, 2, 2],
   "public/privacy.html": [1, 2, 2, 2],
   "public/terms.html": [1, 2, 2, 2],

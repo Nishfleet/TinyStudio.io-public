@@ -38,7 +38,7 @@ nav{display:flex;justify-content:space-between;align-items:center;padding:30px 0
 .phead{padding:80px 0 0;max-width:900px}
 .phead .orn{color:var(--brass);margin-bottom:24px;display:block}
 .phead h1{font-family:'Fraunces',serif;font-weight:200;font-size:70px;line-height:1.03;letter-spacing:-.032em;
-  /* longest hero word ("specialists," on /agents) overflows at 280px without this */
+  /* longest hero word (a long unbreakable word in a hero h1) overflows at 280px without this */
   overflow-wrap:anywhere;word-break:normal}
 .phead h1 em{font-style:italic;font-weight:300;
   background:linear-gradient(92deg,var(--brass) 12%,#C9A566 58%,var(--brass) 92%);
