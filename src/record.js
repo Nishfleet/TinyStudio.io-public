@@ -7,6 +7,7 @@ import costing from "../config/costing.json" with { type: "json" };
 const ROWS = new Map(costing.rows.map((row) => [row.faultType, row]));
 
 export function costFault(fault, inputs) {
+  if (!(inputs.dealValue > 0) || !(inputs.monthlyLeads > 0)) throw new Error("deal value and monthly leads must be above zero");
   const row = ROWS.get(fault.type);
   if (!row) return { fault, row: null, monthlyCost: null };
   const monthlyCost = Math.round(inputs.monthlyLeads * (row.deltaPct / 100) * inputs.dealValue);
@@ -19,6 +20,7 @@ export function reviewFaults(faults, review) {
   if (!review || typeof review.summary !== "string" || !review.summary.trim()) {
     throw new Error("reviewer summary missing");
   }
+  if (!Array.isArray(review.keep)) throw new Error("reviewer keep list missing");
   const kept = new Set(review.keep);
   return { faults: faults.filter((fault) => kept.has(fault.id)), summary: review.summary.trim() };
 }
@@ -123,6 +125,7 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
   ).bind(id, requestId, version, at).run();
   await env.DB.prepare("INSERT INTO appraisal_events (request_id, type, detail, created_at) VALUES (?1, 'record_rendered', ?2, ?3)")
     .bind(requestId, `${id} v${version}`, at).run();
-  await env.EMAIL.send(recordEmail({ env, request, recordId: id, origin }));
+  // One email per record: a re-render updates the link's page and mails nothing.
+  if (version === 1) await env.EMAIL.send(recordEmail({ env, request, recordId: id, origin }));
   return { id, version };
 }

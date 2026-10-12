@@ -124,8 +124,16 @@ test("no email without a record link, and the record opens at /records/{id}", as
   // A second state change re-renders the same record id at a higher version.
   const again = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z");
   assert.deepEqual({ id: again.id, version: again.version }, { id, version: 2 });
+  assert.equal(sent.length, 1, "a re-render sends no second email");
   const events = sqlite.prepare("SELECT type FROM appraisal_events WHERE request_id = 'req-1' AND type = 'record_rendered'").all();
   assert.equal(events.length, 2, "every state change writes an event row");
+});
+
+test("bad inputs fail the publish instead of printing $NaN", async () => {
+  const { env, sqlite } = freshEnv();
+  sqlite.prepare("UPDATE appraisal_requests SET avg_deal_value = 0").run();
+  await assert.rejects(publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "x"), /above zero/);
+  await assert.rejects(publishRecord(env, "req-1", { faults, review: { keep: null, summary: "S" } }, "https://tinystudio.io", "x"), /keep list/);
 });
 
 test("renderRecord is pure: same inputs, same bytes", () => {
