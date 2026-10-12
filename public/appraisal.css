@@ -1,4 +1,4 @@
-.stat{font-family:'Fraunces',serif;font-weight:200;font-size:128px;line-height:.84;
+.stat{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:200;font-size:128px;line-height:.84;
     letter-spacing:-.05em;color:#F2EADC;white-space:nowrap}
   .stat s{text-decoration:none;color:var(--brass-lt)}
   .bandgrid{display:grid;grid-template-columns:auto 1fr;gap:66px;align-items:center}
@@ -6,7 +6,7 @@
   .check{padding-right:32px;border-right:1px solid var(--hair)}
   .check:last-child{border-right:0;padding-right:0}
   .check:not(:first-child){padding-left:32px}
-  .num{font-family:'Fraunces',serif;font-style:italic;font-weight:200;font-size:36px;color:var(--brass-lt);
+  .num{font-family:'Fraunces','Fraunces Fallback',serif;font-style:italic;font-weight:200;font-size:36px;color:var(--brass-lt);
     margin-bottom:14px;line-height:1}
   .check h3{font-size:16.5px;font-weight:600;margin-bottom:9px;letter-spacing:-.008em}
   .check p{font-size:14.5px;line-height:1.7;color:var(--muted)}
@@ -15,7 +15,7 @@
     border-bottom:1px solid var(--hair);transition:padding-left var(--mid) var(--ease)}
   .row:hover{padding-left:9px}
   .row .t{font-size:15.5px;color:var(--soft)}
-  .row .v{font-family:'Fraunces',serif;font-size:15px;color:var(--brass);white-space:nowrap}
+  .row .v{font-family:'Fraunces','Fraunces Fallback',serif;font-size:15px;color:var(--brass);white-space:nowrap}
 
 /* extracted from inline style attributes — CSP style-src 'self' blocks those */
 .xa1{color:var(--brass)}

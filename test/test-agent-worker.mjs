@@ -1146,26 +1146,24 @@ test("signup handler redirects a rejected email to /?signal=invalid so the homep
   assert.equal(insert, undefined, "rejected signup must not persist a row");
 });
 
-test("worker serves the same-origin font promotion script (render-blocking fix b8f6046e942a)", async () => {
-  // The production CSP (script-src 'self', no unsafe-inline) blocks inline
-  // onload handlers, so the pages promote the preloaded Google Fonts css2
-  // stylesheet through public/fonts.js. The worker must serve it (it sits in
-  // the PUBLIC_ASSET_PATHS allow-list) or the fonts silently never apply.
+test("worker serves the self-hosted font assets", async () => {
   const served = new Map([
-    ["/fonts.js", "text/javascript;charset=UTF-8"]
+    ["/fonts.css", "text/css;charset=UTF-8"],
+    ["/fonts/fraunces-latin-opsz-normal.woff2", "font/woff2"]
   ]);
   const env = {
     ASSETS: {
       fetch(request) {
         const path = new URL(request.url).pathname;
         if (!served.has(path)) return Promise.resolve(new Response("missing", { status: 404 }));
-        return Promise.resolve(new Response("// font promotion", { status: 200, headers: { "Content-Type": served.get(path) } }));
+        return Promise.resolve(new Response("font", { status: 200, headers: { "Content-Type": served.get(path) } }));
       }
     }
   };
-  const res = await worker.fetch(new Request("https://tinystudio.io/fonts.js"), env);
-  assert.equal(res.status, 200);
-  assert.match(res.headers.get("Content-Type") || "", /javascript/);
+  for (const path of served.keys()) {
+    const res = await worker.fetch(new Request(`https://tinystudio.io${path}`), env);
+    assert.equal(res.status, 200, path);
+  }
 });
 
 test("worker does not serve unlisted asset-like paths outside the public allow-list", async () => {
