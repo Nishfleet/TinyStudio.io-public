@@ -55,7 +55,7 @@
     transition:transform var(--mid) var(--ease),box-shadow var(--mid) var(--ease)}
   form button:hover{transform:translateY(-1.5px)}
   .signal{display:block;margin:18px auto 0;max-width:500px;padding:10px 18px;font-size:14px;line-height:1.6;
-    color:var(--sig);background:rgba(255,253,248,.74);border:1px solid rgba(176,74,46,.35);
+    color:var(--sig);background:rgba(255,253,248,.74);border:1px solid rgba(156,63,37,.35);
     border-radius:12px;text-align:center}
   .signal[hidden]{display:none}
   .signal:focus{outline:none}
@@ -95,7 +95,7 @@
   .flag{position:absolute;display:flex;align-items:center;gap:8px;font-family:'Karla','Karla Fallback',sans-serif;
     font-size:9px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;color:var(--sig);white-space:normal;max-width:100%}
   .pin{width:17px;height:17px;border-radius:50%;border:1px solid var(--sig);display:flex;
-    align-items:center;justify-content:center;font-size:9px;background:rgba(176,74,46,.09)}
+    align-items:center;justify-content:center;font-size:9px;background:rgba(156,63,37,.09)}
   .lk{position:absolute;height:1px;background:var(--sig);opacity:.42}
   .specbody{min-width:0}
   .specbody h2{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:200;font-size:42px;letter-spacing:-.028em;line-height:1.1;max-width:14ch}
@@ -209,7 +209,7 @@
 
 /* extracted from inline style attributes — CSP style-src 'self' blocks those */
 .xi1{margin:26px auto 0;display:inline-flex;align-items:center;gap:13px;background:rgba(255,253,248,.8);border:1px solid var(--line);border-radius:999px;padding:11px 22px 11px 16px;box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 14px 34px -24px rgba(25,20,16,.35)}
-.xi2{width:7px;height:7px;border-radius:50%;background:#B04A2E;display:block;box-shadow:0 0 0 4px rgba(176,74,46,.14)}
+.xi2{width:7px;height:7px;border-radius:50%;background:var(--sig);display:block;box-shadow:0 0 0 4px rgba(156,63,37,.14)}
 .xi3{font-size:13.5px;color:var(--soft)}
 .xi4{color:var(--ink);font-weight:600}
 .xi5{height:14px;width:30%}

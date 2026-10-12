@@ -1124,16 +1124,19 @@ const staleOfferPhrases = [
 const retiredTerms = [/delivery guarantee/i, /month[- ]one (is )?(refund|deliverables)/i, /months two and three/i, /months 2[–-]3/i, /growth desk/i];
 // Walk public/ recursively: a flat readdirSync of public/ silently skips
 // public/records/**, so a retired term on a record page would never be read.
-const walkPublic = (dir = "public", out = []) => {
+const walkPublic = (dir = "public", ext = /\.(html|txt|md)$/, out = []) => {
   for (const entry of readdirSync(new URL(`../${dir}`, import.meta.url), { withFileTypes: true })) {
     const rel = `${dir}/${entry.name}`;
-    if (entry.isDirectory()) walkPublic(rel, out);
-    else if (/\.(html|txt|md)$/.test(entry.name)) out.push(rel);
+    if (entry.isDirectory()) walkPublic(rel, ext, out);
+    else if (ext.test(entry.name)) out.push(rel);
   }
   return out;
 };
 // Captured engine answers in the evidence JSON are recorded history, not our copy.
-const stripEvidenceJson = (text) => text.replace(/<script type="application\/json"[\s\S]*?<\/script>/g, "");
+// Quote-tolerant on purpose: a page that writes the attribute with single quotes
+// must still be stripped, or the scan reports a retired term that is not in copy.
+const stripEvidenceJson = (text) =>
+  text.replace(/<script\b[^>]*type\s*=\s*["']application\/json["'][^>]*>[\s\S]*?<\/script>/gi, "");
 for (const file of walkPublic()) {
   const text = stripEvidenceJson(read(file));
   for (const pattern of retiredTerms) {
@@ -1171,6 +1174,17 @@ for (const file of walkPublic()) {
 for (const file of ["public/index.html", "public/terms.html", "public/offer.md", "public/llms.txt", "public/pricing.html"]) {
   if (!/homepage and the three pages that matter/i.test(stripEvidenceJson(read(file)))) {
     failures.push(`${file} must state the appraisal scope in PLAN.md section 3's words: "your homepage and the three pages that matter".`);
+  }
+}
+// The severity token moved from a warm rust to --sig (#9C3F25) in the token
+// re-tune. Four rgba() tints and one hard-coded dot colour kept the old value,
+// so the tint stopped matching the token. Banning the literal catches the drift
+// wherever it reappears, instead of relying on someone noticing a screenshot.
+const retiredSigLiterals = [/rgba\(\s*176\s*,\s*74\s*,\s*46/i, /#B04A2E/i];
+for (const file of walkPublic("public", /\.css$/)) {
+  const text = read(file);
+  for (const pattern of retiredSigLiterals) {
+    if (pattern.test(text)) failures.push(`${file} still carries a retired --sig literal: ${pattern}. Use the --sig token.`);
   }
 }
 for (const phrase of staleOfferPhrases) {
