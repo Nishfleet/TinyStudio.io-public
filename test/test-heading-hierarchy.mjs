@@ -40,7 +40,7 @@ const EXPECTED_OUTLINES = {
   "public/pricing.html": [1, 2, 2, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 2, 2],
   "public/specimen.html": [1, 2, 2, 2, 2, 3, 2, 2],
   "public/method.html": [1, 2, 3, 3, 3, 3, 2, 2, 3, 3, 3, 3, 3],
-  "public/records/sample.html": [1, 2, 3, 2],
+  "public/records/sample.html": [1, 2, 3, 2, 2],
   "public/brief-requested.html": [1, 2, 2, 2],
   "public/privacy.html": [1, 2, 2, 2],
   "public/terms.html": [1, 2, 2, 2],

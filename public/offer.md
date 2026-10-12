@@ -1,4 +1,4 @@
-# The Website Appraisal
+# The Website Correction
 
 TinyStudio's current offer: the Website Correction. It starts with the free Website Appraisal, the leak audit of high-ticket service homepages, which is yours to keep. The human-reviewed desk then fixes what the audit finds and proves the fix. The Correction's price and terms are on https://tinystudio.io/pricing.
 
@@ -23,7 +23,7 @@ When an engine answers one of the controlled questions a buyer asks before commi
 
 ## Current Offer
 
-The Website Appraisal is the free leak audit of high-ticket service homepages, reviewed by a person, not autonomous software. The Website Correction fixes what the audit finds and proves the fix: appraisal, proposal, correction, proof, then fourteen days of tracking. It is paid once, not monthly.
+The Website Appraisal, the free first step, is the free leak audit of high-ticket service homepages, reviewed by a person, not autonomous software. The Website Correction fixes what the audit finds and proves the fix: appraisal, proposal, correction, proof, then fourteen days of tracking. It is paid once, not monthly.
 
 The appraisal is a written report on one page of your choosing — each fault named, in order of what it costs you, with the fix beside each. It is yours to keep and to hand to any developer, including one who is not us.
 
