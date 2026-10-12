@@ -1122,11 +1122,55 @@ const staleOfferPhrases = [
 // The retired Growth Desk terms (month-one refund, three-month retainer) must
 // not return on any public page: docs/PLAN.md sets one $10,000 one-off offer.
 const retiredTerms = [/delivery guarantee/i, /month[- ]one (is )?(refund|deliverables)/i, /months two and three/i, /months 2[–-]3/i, /growth desk/i];
-for (const file of readdirSync(new URL("../public", import.meta.url)).filter((name) => /\.(html|txt|md)$/.test(name))) {
-  // Captured engine answers in the evidence JSON are recorded history, not our copy.
-  const text = read(`public/${file}`).replace(/<script type="application\/json"[\s\S]*?<\/script>/g, "");
+// Walk public/ recursively: a flat readdirSync of public/ silently skips
+// public/records/**, so a retired term on a record page would never be read.
+const walkPublic = (dir = "public", out = []) => {
+  for (const entry of readdirSync(new URL(`../${dir}`, import.meta.url), { withFileTypes: true })) {
+    const rel = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) walkPublic(rel, out);
+    else if (/\.(html|txt|md)$/.test(entry.name)) out.push(rel);
+  }
+  return out;
+};
+// Captured engine answers in the evidence JSON are recorded history, not our copy.
+const stripEvidenceJson = (text) => text.replace(/<script type="application\/json"[\s\S]*?<\/script>/g, "");
+for (const file of walkPublic()) {
+  const text = stripEvidenceJson(read(file));
   for (const pattern of retiredTerms) {
-    if (pattern.test(text)) failures.push(`public/${file} must not revive the retired Growth Desk terms: ${pattern}`);
+    if (pattern.test(text)) failures.push(`${file} must not revive the retired Growth Desk terms: ${pattern}`);
+  }
+}
+// The exception above is a real hole, so it is pinned here: the appraisal page
+// keeps "Growth Desk" and "delivery guarantee" only inside its evidence JSON,
+// and the scan passes only because that block is stripped. If the strip ever
+// stops matching, this guard fails before a retired term can ship in copy.
+const appraisalEvidence = read("public/appraisal.html");
+if (!/<script type="application\/json"/.test(appraisalEvidence)) {
+  failures.push("public/appraisal.html must keep its captured AI-search evidence in a <script type=\"application/json\"> block.");
+}
+if (/growth desk/i.test(stripEvidenceJson(appraisalEvidence))) {
+  failures.push("public/appraisal.html must keep \"Growth Desk\" only inside its evidence JSON, never in copy.");
+}
+if (!/growth desk/i.test(appraisalEvidence)) {
+  failures.push("public/appraisal.html evidence JSON must still hold the recorded \"Growth Desk\" answers (recorded history).");
+}
+// The appraisal scope is one fact with one wording: docs/PLAN.md section 3, "Every
+// fault on the homepage and the three pages that matter". Two pages naming two
+// different scopes for the same $10,000 is exactly the drift the retired
+// "one page of your choosing" / "one page you name" wording caused, so both are
+// banned site-wide and the plan wording is required wherever the scope is stated.
+const retiredScopePhrases = [/one page of your choosing/i, /one page you name/i];
+for (const file of walkPublic()) {
+  const text = stripEvidenceJson(read(file));
+  for (const pattern of retiredScopePhrases) {
+    if (pattern.test(text)) {
+      failures.push(`${file} states the retired appraisal scope ${pattern}; PLAN.md section 3 scopes the appraisal to the homepage and the three pages that matter.`);
+    }
+  }
+}
+for (const file of ["public/index.html", "public/terms.html", "public/offer.md", "public/llms.txt", "public/pricing.html"]) {
+  if (!/homepage and the three pages that matter/i.test(stripEvidenceJson(read(file)))) {
+    failures.push(`${file} must state the appraisal scope in PLAN.md section 3's words: "your homepage and the three pages that matter".`);
   }
 }
 for (const phrase of staleOfferPhrases) {

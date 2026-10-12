@@ -56,7 +56,7 @@ homepages, reviewed by a person, not autonomous software. The Website Correction
 proposal, correction, proof, then fourteen days of tracking. It is paid once,
 not monthly.
 
-The appraisal is a written report on one page of your choosing — each fault
+The appraisal is a written report on your homepage and the three pages that matter — each fault
 named, in order of what it costs you, with the fix beside each. It is yours
 to keep and to hand to any developer, including one who is not us.
 

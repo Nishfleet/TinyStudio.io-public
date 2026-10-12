@@ -75,7 +75,7 @@
     background:radial-gradient(60% 90% at 88% 10%,rgba(201,165,102,.20),transparent 68%)}
   .finding .stat{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:200;font-size:132px;line-height:.84;
     letter-spacing:-.05em;color:#F2EADC;white-space:nowrap;position:relative;z-index:2}
-  .finding .stat s{text-decoration:none;color:var(--brass)}
+  .finding .stat s{text-decoration:none;color:var(--brass-lt)}
   .finding .body{position:relative;z-index:2}
   .finding h2{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:200;font-size:34px;line-height:1.22;letter-spacing:-.02em;max-width:22ch}
   .finding p{margin-top:18px;font-size:15.5px;line-height:1.75;color:#B3A794;max-width:52ch}

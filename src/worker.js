@@ -79,6 +79,9 @@ const PUBLIC_ASSET_PATHS = new Set([
 const APPRAISAL_REDIRECT_PATHS = new Set(["/audit", "/audit.html"]);
 
 // docs/PLAN.md names the offer page /correction; the price page is /pricing.
+// The redirect is 302, not 301: a 301 is cached by browsers with no expiry, and
+// PLAN.md section 5 makes /correction its own offer page in a later milestone.
+// A visitor who lands on a permanent redirect now would never see that page.
 const CORRECTION_REDIRECT_PATHS = new Set(["/correction", "/correction.html"]);
 
 const STALE_PUBLIC_PATHS = new Set([
@@ -1523,7 +1526,7 @@ export default {
     ) {
       const target = new URL("/pricing", url);
       target.search = url.search;
-      return withSecurityHeaders(Response.redirect(target.toString(), 301));
+      return withSecurityHeaders(Response.redirect(target.toString(), 302));
     }
 
     if (url.pathname === "/api/signups") {

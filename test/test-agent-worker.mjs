@@ -1203,7 +1203,9 @@ test("/correction redirects to /pricing for GET and HEAD, keeps the query, and n
   for (const method of ["GET", "HEAD"]) {
     for (const path of ["/correction", "/correction.html"]) {
       const res = await worker.fetch(new Request(`https://tinystudio.io${path}?utm_source=x`, { method }), {});
-      assert.equal(res.status, 301, `${method} ${path}`);
+      // 302, never 301: a 301 is cached with no expiry, and PLAN.md section 5
+      // makes /correction its own offer page in a later milestone.
+      assert.equal(res.status, 302, `${method} ${path}`);
       assert.equal(res.headers.get("Location"), "https://tinystudio.io/pricing?utm_source=x");
     }
   }
