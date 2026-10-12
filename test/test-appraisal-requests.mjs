@@ -100,8 +100,6 @@ test("requests 1 to 6 are accepted and request 7 goes to the waitlist with the n
   assert.deepEqual(waitlist.map((row) => ({ ...row })), [
     { email: "owner7@site7.example", month: "2026-10", slot_date: "2026-11-01" }
   ]);
-  console.log("D1 requests:", sqlite.prepare("SELECT id, site_url, email, month FROM appraisal_requests ORDER BY created_at, email").all().map((r) => ({ ...r })));
-  console.log("D1 waitlist:", waitlist.map((row) => ({ ...row })));
 });
 
 test("a new month starts the counter again", async () => {

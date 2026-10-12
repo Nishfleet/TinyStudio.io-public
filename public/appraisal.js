@@ -218,16 +218,19 @@
           if (!result.ok) {
             say(result.error === 'invalid_request'
               ? 'Check these fields and send again: ' + (result.fields || []).join(', ') + '.'
-              : 'We could not save the request. Nothing was sent; try again in a minute.');
+              : 'We could not save the request. Try again in a minute; sending the same details again is safe.');
             return;
           }
-          say(result.status === 'accepted'
-            ? 'Request received. We emailed you once to confirm.'
-            : 'You are on the waitlist. The next open slot is ' + result.nextSlotDate + '. We emailed you once to confirm.');
+          var sent = result.confirmation === 'failed'
+            ? ' The confirmation email did not go out; send the form again and we will retry it.'
+            : ' We emailed you once to confirm.';
+          say((result.status === 'accepted'
+            ? 'Request received.'
+            : 'You are on the waitlist. The next open slot is ' + result.nextSlotDate + '.') + sent);
           form.reset();
           loadSlots();
         })
-        .catch(function () { say('We could not reach the server. Nothing was sent; try again.'); });
+        .catch(function () { say('We could not confirm the request arrived. Sending the same details again is safe.'); });
     });
   }
 })();

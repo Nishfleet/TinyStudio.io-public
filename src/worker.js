@@ -607,12 +607,26 @@ async function existingAppraisal(env, input, month) {
   return null;
 }
 
+// Safe to repeat: the unique request_id means a retry repairs a missing job
+// and never adds a second one.
+async function queueAppraisalAudit(env, requestId, at) {
+  const queued = await env.DB.prepare(
+    "INSERT OR IGNORE INTO appraisal_audit_jobs (id, request_id, status, created_at) VALUES (?1, ?2, 'queued', ?3)"
+  )
+    .bind(crypto.randomUUID(), requestId, at)
+    .run();
+  if (queued.meta?.changes) await recordAppraisalEvent(env, requestId, "audit_queued", "seo-fix-kit", at);
+}
+
 async function placeAppraisalRequest(env, input, now) {
   const at = now.toISOString();
   const month = appraisalMonth(now);
 
   const existing = await existingAppraisal(env, input, month);
-  if (existing) return { ...existing, duplicate: true, at };
+  if (existing) {
+    if (existing.table === "appraisal_requests") await queueAppraisalAudit(env, existing.id, at);
+    return { ...existing, duplicate: true, at };
+  }
 
   const id = crypto.randomUUID();
   const slots = await appraisalSlots(env, now);
@@ -643,12 +657,7 @@ async function placeAppraisalRequest(env, input, now) {
   if (accepted.meta?.changes) {
     await recordAppraisalEvent(env, id, "request_accepted", referred ? "referral" : "capacity", at);
     if (referred) await recordAppraisalEvent(env, id, "referral_used", input.referral, at);
-    await env.DB.prepare(
-      "INSERT OR IGNORE INTO appraisal_audit_jobs (id, request_id, status, created_at) VALUES (?1, ?2, 'queued', ?3)"
-    )
-      .bind(crypto.randomUUID(), id, at)
-      .run();
-    await recordAppraisalEvent(env, id, "audit_queued", "seo-fix-kit", at);
+    await queueAppraisalAudit(env, id, at);
     return { table: "appraisal_requests", id, kind: "accepted", slotDate: null, duplicate: false, referred, at };
   }
 
@@ -664,13 +673,17 @@ async function placeAppraisalRequest(env, input, now) {
   if (raced) return { ...raced, duplicate: true, at };
 
   const slotDate = nextSlotDate(now);
-  await env.DB.prepare(
+  const waitlisted = await env.DB.prepare(
     `INSERT OR IGNORE INTO appraisal_waitlist
        (id, site_url, business_type, avg_deal_value, monthly_leads, name, email, month, slot_date, created_at)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`
   )
     .bind(id, input.website, input.businessType, input.dealValue, input.monthlyLeads, input.name, input.email, month, slotDate, at)
     .run();
+  if (!waitlisted.meta?.changes) {
+    const winner = await existingAppraisal(env, input, month);
+    return { ...winner, duplicate: true, at };
+  }
   await recordAppraisalEvent(env, id, "waitlisted", slotDate, at);
   return { table: "appraisal_waitlist", id, kind: "waitlisted", slotDate, duplicate: false, at };
 }
