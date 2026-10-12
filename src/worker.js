@@ -51,10 +51,10 @@ const PUBLIC_ASSET_PATHS = new Set([
   "/specimen.js",
   "/brief-requested.css",
   "/brief-requested.js",
-  // Same-origin font promotion for the non-blocking Google Fonts stylesheet
-  // (render-blocking fix b8f6046e942a). The production CSP forbids inline
-  // onload handlers, so public/fonts.js promotes the preloaded css2 URL.
-  "/fonts.js",
+  "/fonts.css",
+  "/fonts/fraunces-latin-opsz-normal.woff2",
+  "/fonts/fraunces-latin-opsz-italic.woff2",
+  "/fonts/karla-latin-wght-normal.woff2",
   "/favicon.svg",
   // Legacy /favicon.ico fallback. Browsers, search-engine crawlers, and
   // screenshot services still hit /favicon.ico even when every page declares
