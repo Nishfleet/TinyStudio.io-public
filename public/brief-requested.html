@@ -18,7 +18,7 @@
      construction. The worker injects the gtag loader into this page's
      response (and generates brief-requested.js) at request time when
      GOOGLE_ADS_CONVERSION_ID and GOOGLE_ADS_CONVERSION_LABEL are configured
-     — see specs/003-wellness-clinic-launch/tracking-setup.md. Without them
+     — see the GOOGLE_ADS_CONVERSION_* note in src/worker.js. Without them
      nothing fires, so a dead tag can never ship. Fires once, on page load,
      on this noindex page only.
 ────────────────────────────────────────────────────────────────────────── -->
@@ -31,8 +31,7 @@
   <nav>
     <a class="logo" href="/">Tiny<span>Studio</span></a>
     <div class="navlinks">
-      <a href="/audit">The appraisal</a>
-      <a href="/agents">The desk</a>
+      <a href="/appraisal">The appraisal</a>
       <a href="/pricing">Pricing</a>
     </div>
   </nav>

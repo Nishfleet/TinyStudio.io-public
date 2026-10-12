@@ -3,16 +3,11 @@ import { execFileSync } from "node:child_process";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-// The leak-audit site took the root; the retired self-serve Agent Desk is
-// still served at /agent-desk and /agent-desk.html as a frozen legacy surface
-// (de-indexed, no page links to it). The current homepage (index.html) owns
-// the site's copy contract, so the required-copy and forbidden-claim guards
-// read it; the desk-markup, legacy-form and retired-head checks below follow
-// the retired page so the still-served surface keeps working as shipped.
+// The Website Appraisal site owns the root. The retired self-serve Agent Desk
+// surface (/agent-desk, its page, script and styles) was removed in M0; only the
+// /api/agent-audit endpoint stays. The homepage (index.html) owns the site's
+// copy contract, so the required-copy and forbidden-claim guards read it.
 const index = read("public/index.html");
-const retiredDesk = read("public/agent-desk.html");
-const styles = read("public/styles.css");
-const script = read("public/script.js");
 const llms = read("public/llms.txt");
 const offer = read("public/offer.md");
 const robots = read("public/robots.txt");
@@ -38,32 +33,6 @@ const requiredIndexCopy = [
   "Show me where our site undersells us",
   "hello@tinystudio.io",
   "TinyStudio is the business behind this site"
-];
-
-const requiredAgentStack = [
-  "Offer Agent",
-  "Funnel Agent",
-  "Creative Agent",
-  "Qualification Agent",
-  "Follow-Up Agent",
-  "CRM Agent",
-  "Tracking Agent",
-  "Decision Agent"
-];
-
-const requiredScriptCopy = [
-  "/api/agent-audit",
-  "SECTION_LABELS",
-  "normalizeSections",
-  "renderMarkdown",
-  "escapeHtml",
-  "ERROR_MESSAGES",
-  "showEmpty",
-  "same_origin_required",
-  "Add email and a business snapshot first.",
-  "Agents are building the pipeline loop...",
-  "Pipeline loop generated",
-  "Copy section"
 ];
 
 const requiredWorkerCopy = [
@@ -133,9 +102,6 @@ const requiredPublicArtifacts = [
   "not autonomous software",
   "No call at any point.",
   "There are no revenue, ranking, ROAS, conversion, booked-call, or sales-volume guarantees",
-  "Client-side code does not call model providers",
-  "No campaign publishing",
-  "No ad spend changes",
   "https://tinystudio.io/pricing",
   "Six appraisals a month, done by hand. When the sixth is taken, the intake closes until the next."
 ];
@@ -162,14 +128,6 @@ const forbiddenClaims = [
 
 for (const text of requiredIndexCopy) {
   if (!index.includes(text)) failures.push(`Missing homepage copy: ${text}`);
-}
-
-for (const text of requiredAgentStack) {
-  if (!retiredDesk.includes(text)) failures.push(`Missing Agent Desk agent: ${text}`);
-}
-
-for (const text of requiredScriptCopy) {
-  if (!script.includes(text)) failures.push(`Missing agent script behavior: ${text}`);
 }
 
 for (const text of requiredWorkerCopy) {
@@ -233,62 +191,15 @@ for (const text of requiredPublicArtifacts) {
   if (!normalized(offer).includes(needle)) failures.push(`Missing offer fact in offer.md: ${text}`);
 }
 
-function formFieldTags(html) {
-  return [...html.matchAll(/<(input|textarea|select)\b[^>]*>/gi)].map((match) => match[0]);
-}
-
-function fieldName(tag) {
-  return tag.match(/\bname="([^"]+)"/i)?.[1] || "";
-}
-
-const formFields = formFieldTags(retiredDesk);
-const requiredFields = formFields
-  .filter((tag) => /\srequired(?:\s|>|=)/i.test(tag))
-  .map(fieldName)
-  .filter(Boolean)
-  .sort();
-const expectedRequiredFields = ["business", "email"];
-
-if (JSON.stringify(requiredFields) !== JSON.stringify(expectedRequiredFields)) {
-  failures.push(`Agent Desk must require only email and business fields. Found required fields: ${requiredFields.join(", ") || "none"}`);
-}
-
-for (const optionalName of [
-  "market",
-  "funnel",
-  "offer",
-  "audience",
-  "proof",
-  "followup",
-  "constraints",
-  "weeklySpend",
-  "rawLeads",
-  "qualifiedLeads",
-  "bookedCalls",
-  "showedCalls",
-  "closedDeals",
-  "cashCollected",
-  "bottleneck"
-]) {
-  const field = formFields.find((tag) => fieldName(tag) === optionalName);
-  if (!field) {
-    failures.push(`Missing optional Agent Desk field: ${optionalName}`);
-  } else if (/\srequired(?:\s|>|=)/i.test(field)) {
-    failures.push(`Optional Agent Desk field must not be required: ${optionalName}`);
-  }
-}
-
 const siteHome = read("public/index.html");
-const siteAudit = read("public/audit.html");
+const siteAudit = read("public/appraisal.html");
 
 // Monthly cap phrase on every conversion surface must stay canonical:
 // the short "Six a month." promise, never the product-name drift "Six audits a month.".
 const monthlyCapPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
-  ["desk page", read("public/agents.html")],
   ["pricing page", read("public/pricing.html")],
-  ["msp page", read("public/msp.html")]
 ];
 for (const [pageName, pageHtml] of monthlyCapPages) {
   if (!/\bsix a month\b/i.test(pageHtml)) {
@@ -306,7 +217,6 @@ const noCallIntakePages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
   ["pricing page", read("public/pricing.html")],
-  ["msp page", read("public/msp.html")]
 ];
 for (const [pageName, pageHtml] of noCallIntakePages) {
   if (!/No call at any point\./i.test(pageHtml)) {
@@ -391,10 +301,6 @@ if (!worker.includes("htmlRedirect(url, \"invalid\")")) {
 }
 
 
-if (!retiredDesk.includes("role=\"tabpanel\"") || !retiredDesk.includes("aria-labelledby=\"output-tab-pipelineBrief\"")) {
-  failures.push("Agent output must expose a proper tabpanel relationship.");
-}
-
 // Pricing closing-callout regression (review item: the /pricing closing band
 // ended in a dead end — "The appraisal costs you an email" with no way to send
 // one — while every other served conversion surface carried a real intake
@@ -422,28 +328,6 @@ if (!/Request the appraisal/i.test(pricingForm)) {
   failures.push('Pricing closing callout submit button must read "Request the appraisal".');
 }
 
-// Desk page in-content request CTA regression (review item: the /agents desk
-// page ended at its closing urgency band with no in-content conversion afford
-// — the only request link was the nav CTA). The closing .band must keep the
-// "Request the appraisal" pill linking to the same request surface as the nav
-// CTA (/#start — the desk page carries no form of its own), and agents.css
-// must keep the >=44px pill styling. STATIC SOURCE GUARD (regex over the
-// served HTML/CSS), not a behavioral test: CI has no browser.
-const deskPage = read("public/agents.html");
-const deskBand = deskPage.match(/<div class="band">([\s\S]*?)<\/div>\s*<footer>/)?.[1] ?? "";
-if (!deskBand) {
-  failures.push("Desk page must keep its closing urgency band before the footer.");
-} else if (!/<a\b[^>]*class="cta"[^>]*href="\/#start"[^>]*>Request the appraisal<\/a>/.test(deskBand)) {
-  failures.push("Desk closing urgency band must carry a .cta link to /#start labelled \"Request the appraisal\".");
-}
-const agentsCss = read("public/agents.css");
-if (!agentsCss.includes(".band .cta")) {
-  failures.push("agents.css must style the band conversion CTA (.band .cta).");
-}
-if (!/\.band \.cta\{[^}]*padding:16px 24px/.test(agentsCss)) {
-  failures.push("Desk band CTA must keep a >=44px tap target (padding:16px 24px).");
-}
-
 // Mobile layout regression: at 390x844 the /audit page previously overflowed
 // horizontally (navlinks measured to x=569, the 53-of-89 stat to x=451).
 // The mobile treatment must live in audit.css behind the shared 760px
@@ -452,7 +336,7 @@ if (!/\.band \.cta\{[^}]*padding:16px 24px/.test(agentsCss)) {
 // no browser. The behavioral, measured layout proof for this fix lives in
 // docs/evidence/audit-mobile-overflow-390x844-2026-08-06.md (unfixed 567px
 // scrollWidth at 390x844, fixed 390px, desktop 1280px unchanged).
-const auditCss = read("public/audit.css");
+const auditCss = read("public/appraisal.css");
 const auditMobile = auditCss.match(/@media \(max-width:760px\)\{([\s\S]*)\}\s*$/)?.[1] ?? "";
 
 if (!auditMobile) {
@@ -525,10 +409,8 @@ if (overflowReceipt) {
 const currentClaimPages = [
   siteHome,
   siteAudit,
-  read("public/agents.html"),
   read("public/pricing.html"),
   read("public/specimen.html"),
-  read("public/msp.html")
 ];
 
 for (const claim of forbiddenClaims) {
@@ -570,10 +452,6 @@ if (!packageJson.includes("\"test:worker\"") || !packageJson.includes("test/test
   failures.push("Worker agent contract tests must be wired into package scripts.");
 }
 
-if (!packageJson.includes("\"test:ui\"") || !packageJson.includes("test/test-agent-ui.mjs")) {
-  failures.push("Agent UI interaction tests must be wired into package scripts.");
-}
-
 if (!packageJson.includes("\"dev\": \"wrangler dev --remote")) {
   failures.push("Dev script must run the Worker preview, not a static-only server.");
 }
@@ -587,11 +465,7 @@ if (!robots.includes("Allow: /")) {
 }
 
 if (!sitemap.includes("https://tinystudio.io/")) {
-  failures.push("Sitemap should expose the root Agent Desk URL.");
-}
-
-if (!styles.includes(".agent-shell") || !styles.includes(".agent-form") || !styles.includes(".agent-output")) {
-  failures.push("Missing Agent Desk visual styles.");
+  failures.push("Sitemap should expose the root URL.");
 }
 
 // Responsive regression guard: each public route's stylesheet must keep its
@@ -600,8 +474,7 @@ const responsiveCss = [
   ["shared.css", ["@media (max-width:760px)", ".wrap{padding:0 20px}", ".navlinks{flex-wrap:wrap"]],
   ["index.css", ["@media (max-width:760px)", ".wrap{padding:0 20px}", ".navlinks{flex-wrap:wrap"]],
   ["pricing.css", ["@media (max-width:760px)", ".plan{grid-template-columns:1fr"]],
-  ["agents.css", ["@media (max-width:760px)", ".ag{grid-template-columns:1fr", ".gatebox{grid-template-columns:1fr"]],
-  ["msp.css", ["@media (max-width:760px)", ".bandgrid{grid-template-columns:1fr", ".checks{grid-template-columns:1fr"]]
+  ["appraisal.css", ["@media (max-width:760px)", ".bandgrid{grid-template-columns:1fr"]]
 ];
 for (const [file, needles] of responsiveCss) {
   const css = read(`public/${file}`);
@@ -629,17 +502,12 @@ const tapTargetCss = [
   ["index.css",
     [".logo{padding:11px 0}", ".navlinks a{padding:15px 0}", ".navcta{padding:15px 20px}", "footer a{padding:16px 0}"],
     ["border-radius:999px;padding:16px 20px"]],
-  ["audit.css",
+  ["appraisal.css",
     [".navcta{flex:1 1 100%;text-align:center;padding:15px 20px}"],
     []],
   ["brief-requested.css",
     [],
-    ["padding:15px 0;text-decoration:underline"]],
-  ["styles.css",
-    [".brand {\n    padding: 6px 0;", "input,\n  select {\n    min-height: 44px;", ".output-tabs button {\n    min-height: 44px;", ".agent-footer a {\n    padding: 14px 0;"],
-    ["cursor: pointer;\n  min-height: 44px;\n  border: 1px solid var(--ink);",
-     ".output-actions button {\n  min-height: 44px;",
-     "justify-content: space-between;\n  gap: 12px;\n  min-height: 44px;"]]
+    ["padding:15px 0;text-decoration:underline"]]
 ];
 for (const [file, blockNeedles, fileNeedles] of tapTargetCss) {
   const css = read(`public/${file}`);
@@ -724,10 +592,8 @@ const fontCssHref = "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz
 const fontPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
-  ["desk page", read("public/agents.html")],
   ["pricing page", read("public/pricing.html")],
   ["specimen page", read("public/specimen.html")],
-  ["msp page", read("public/msp.html")],
   ["brief-requested page", read("public/brief-requested.html")]
 ];
 
@@ -909,7 +775,7 @@ if (aiQuestions && aiEvidence) {
     }
   }
 
-  const auditScript = read("public/audit.js");
+  const auditScript = read("public/appraisal.js");
 
   if (!siteAudit.includes('id="ai-search-evidence"') || !siteAudit.includes('data-ai-search-evidence')) {
     failures.push("Audit page must mount the AI-search evidence artifact.");
@@ -1182,8 +1048,7 @@ const servedPageUrls = new Set(
     .filter((url) => url !== "https://tinystudio.io/llms.txt" && url !== "https://tinystudio.io/offer.md")
 );
 for (const [clean, html] of [
-  ["/audit", "/audit.html"],
-  ["/agents", "/agents.html"],
+  ["/appraisal", "/appraisal.html"],
   ["/pricing", "/pricing.html"],
   ["/specimen", "/specimen.html"]
 ]) {
@@ -1249,10 +1114,8 @@ if (aiQuestions && Array.isArray(aiQuestions.questions)) {
 const ownedPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
-  ["desk page", read("public/agents.html")],
   ["specimen page", read("public/specimen.html")],
   ["pricing page", read("public/pricing.html")],
-  ["msp page", read("public/msp.html")],
   ["brief-requested page", read("public/brief-requested.html")]
 ];
 
@@ -1307,8 +1170,8 @@ if (!llms.includes("https://tinystudio.io/offer.md")) {
 if (!offer.includes("https://tinystudio.io/llms.txt")) {
   failures.push("offer.md must link its machine-readable mirror: llms.txt.");
 }
-if (!llms.includes("https://tinystudio.io/audit")) {
-  failures.push("llms.txt must point at the audit page that carries the AI-search evidence artifact.");
+if (!llms.includes("https://tinystudio.io/appraisal")) {
+  failures.push("llms.txt must point at the appraisal page that carries the AI-search evidence artifact.");
 }
 
 // The machine-readable pair states the current offer in the site's own words
@@ -1329,11 +1192,14 @@ for (const phrase of staleOfferPhrases) {
     failures.push(`offer.md must not revive the retired offer framing: ${phrase}`);
   }
 }
-if (/\$\s?\d/.test(llms)) {
-  failures.push("llms.txt must not restate a dollar amount; the pricing page owns the price.");
+// The one price the pair may state is the plan's: $10,000 per site (docs/PLAN.md).
+const stateOnlyPlanPrice = (content) =>
+  /\$\s?\d/.test(content.replaceAll("$10,000 per site", ""));
+if (stateOnlyPlanPrice(llms)) {
+  failures.push("llms.txt may state only the $10,000 per site price; the pricing page owns the terms.");
 }
-if (/\$\s?\d/.test(offer)) {
-  failures.push("offer.md must not restate a dollar amount; the pricing page owns the price.");
+if (stateOnlyPlanPrice(offer)) {
+  failures.push("offer.md may state only the $10,000 per site price; the pricing page owns the terms.");
 }
 if (/\brefund\w*\b/i.test(llms)) {
   failures.push("llms.txt must not restate refund terms; the pricing page owns them.");
@@ -1350,9 +1216,6 @@ if (!siteAudit.includes('id="identity"')) {
 }
 if (!offer.includes("## Identity")) {
   failures.push("offer.md must carry the machine-readable Identity section.");
-}
-if (!offer.includes("is not the current offer")) {
-  failures.push("offer.md must keep the legacy Agent Desk demotion statement.");
 }
 
 const staleIdentityStrings = [
@@ -1375,64 +1238,6 @@ for (const [pageName, pageHtml] of ownedPages) {
   }
 }
 
-// ---- Retired Agent Desk index guard (dogfood: Google still presents the
-// retired self-serve "TinyStudio Agent Desk" title/snippet for tinystudio.io)
-// ----------------------------------------------------------------------------
-// The self-serve Agent Desk moved off the root when the leak-audit site took
-// over; public/agent-desk.html is still served at /agent-desk and
-// /agent-desk.html as a legacy surface. It is absent from the sitemap, no page
-// links to it, and llms.txt/offer.md demote it ("is not the current offer") —
-// but its head still carried the retired product's title and no robots
-// exclusion, so Google kept presenting that title/snippet for tinystudio.io.
-// The captured evidence is evidence-fixtures/ai-search/evidence.json, q5 /
-// google (2026-08-06): title "tinystudio.io - TinyStudio Agent Desk" against
-// the homepage URL, the legacy page's title consolidated through its canonical.
-// The legacy page must therefore stay out of the index: its head keeps a
-// robots noindex, nofollow meta, and its title and description frame the
-// surface as retired, so neither the search index nor a scraper can re-present
-// the retired self-serve product as the current offer. Its canonical and
-// og:url must name the legacy page itself — the clean /agent-desk address
-// that serves 200 — never the apex root: while the page declared the root as
-// its canonical, Google consolidated the retired title onto the homepage URL
-// (the q5/google capture), and a canonical that points at the root keeps
-// handing the retired name to the homepage's SERP entry.
-const retiredDeskHead = retiredDesk.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i)?.[1] ?? "";
-const robotsMeta = /<meta\b(?=[^>]*\bname="robots")(?=[^>]*\bcontent="noindex,\s*nofollow")[^>]*>/i;
-if (!robotsMeta.test(retiredDeskHead)) {
-  failures.push("Retired Agent Desk page must keep a robots noindex, nofollow meta in its head.");
-}
-if (!/\bretired\b/i.test(retiredDeskHead)) {
-  failures.push("Retired Agent Desk page head must frame the surface as retired (title and/or description).");
-}
-const retiredDeskDescription =
-  retiredDeskHead.match(/<meta\b[^>]*\bname="description"[^>]*>/i)?.[0] ?? "";
-if (!/\bretired\b/i.test(retiredDeskDescription)) {
-  failures.push("Retired Agent Desk description must frame the surface as retired.");
-}
-// The retired page must never claim the apex root. Exactly one canonical and
-// one og:url, both naming the clean /agent-desk address that serves 200.
-const retiredDeskLive = retiredDesk.replace(/<!--[\s\S]*?-->/g, "");
-const retiredDeskCanonical =
-  retiredDeskLive.match(/<link\b[^>]*\brel\s*=\s*["']canonical["'][^>]*>/gi) ?? [];
-if (retiredDeskCanonical.length !== 1) {
-  failures.push(`Retired Agent Desk canonical must appear exactly once (found ${retiredDeskCanonical.length}).`);
-} else {
-  const href = retiredDeskCanonical[0].match(/\bhref\s*=\s*["']([^"']*)["']/i)?.[1] ?? "";
-  if (href.trim() !== "https://tinystudio.io/agent-desk") {
-    failures.push(`Retired Agent Desk canonical must point at https://tinystudio.io/agent-desk (found "${href}").`);
-  }
-}
-const retiredDeskOgUrl =
-  retiredDeskLive.match(/<meta\b[^>]*\bproperty\s*=\s*["']og:url["'][^>]*>/gi) ?? [];
-if (retiredDeskOgUrl.length !== 1) {
-  failures.push(`Retired Agent Desk og:url must appear exactly once (found ${retiredDeskOgUrl.length}).`);
-} else {
-  const content = retiredDeskOgUrl[0].match(/\bcontent\s*=\s*["']([^"']*)["']/i)?.[1] ?? "";
-  if (content.trim() !== "https://tinystudio.io/agent-desk") {
-    failures.push(`Retired Agent Desk og:url must point at https://tinystudio.io/agent-desk (found "${content}").`);
-  }
-}
-
 // ---- Meta descriptions (dogfood) -------------------------------------------
 // The leak audit this site sells flags a homepage whose served HTML carries no
 // description, so the site's own five public pages must not carry the same
@@ -1442,10 +1247,8 @@ if (retiredDeskOgUrl.length !== 1) {
 const metaDescriptionPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
-  ["desk page", read("public/agents.html")],
   ["pricing page", read("public/pricing.html")],
   ["specimen page", read("public/specimen.html")],
-  ["msp page", read("public/msp.html")]
 ];
 
 const seenDescriptions = new Map();
@@ -1495,13 +1298,10 @@ for (const [pageName, pageHtml] of metaDescriptionPages) {
 // served HTML page — including one added tomorrow — is guarded by default.
 const ICON_PAGE_NAMES = new Map([
   ["index.html", "homepage"],
-  ["audit.html", "audit page"],
-  ["agents.html", "desk page"],
+  ["appraisal.html", "appraisal page"],
   ["pricing.html", "pricing page"],
   ["specimen.html", "specimen page"],
-  ["msp.html", "msp page"],
-  ["brief-requested.html", "brief-requested page"],
-  ["agent-desk.html", "agent-desk page"]
+  ["brief-requested.html", "brief-requested page"]
 ]);
 const publicHtmlFiles = readdirSync(new URL("../public", import.meta.url))
   .filter((name) => name.endsWith(".html"))
@@ -1557,12 +1357,9 @@ if (!worker.includes('"/apple-touch-icon.png"')) {
 const faviconPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
-  ["desk page", read("public/agents.html")],
   ["pricing page", read("public/pricing.html")],
   ["specimen page", read("public/specimen.html")],
-  ["msp page", read("public/msp.html")],
   ["brief-requested page", read("public/brief-requested.html")],
-  ["agent-desk page", read("public/agent-desk.html")]
 ];
 
 for (const [pageName, pageHtml] of faviconPages) {
@@ -1634,12 +1431,9 @@ if (!worker.includes('image/x-icon')) {
 const beaconPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
-  ["desk page", read("public/agents.html")],
   ["pricing page", read("public/pricing.html")],
   ["specimen page", read("public/specimen.html")],
-  ["msp page", read("public/msp.html")],
   ["brief-requested page", read("public/brief-requested.html")],
-  ["agent-desk page", read("public/agent-desk.html")]
 ];
 
 for (const [pageName, pageHtml] of beaconPages) {
@@ -1677,11 +1471,9 @@ if (!worker.includes("https://cloudflareinsights.com")) {
 // once.
 const socialSharePages = [
   ["homepage", siteHome, "https://tinystudio.io/"],
-  ["audit page", siteAudit, "https://tinystudio.io/audit"],
-  ["desk page", read("public/agents.html"), "https://tinystudio.io/agents"],
+  ["audit page", siteAudit, "https://tinystudio.io/appraisal"],
   ["pricing page", read("public/pricing.html"), "https://tinystudio.io/pricing"],
   ["specimen page", read("public/specimen.html"), "https://tinystudio.io/specimen"],
-  ["msp page", read("public/msp.html"), "https://tinystudio.io/msp"],
   ["privacy page", read("public/privacy.html"), "https://tinystudio.io/privacy"],
   ["terms page", read("public/terms.html"), "https://tinystudio.io/terms"],
   ["contact page", read("public/contact.html"), "https://tinystudio.io/contact"]
@@ -1755,11 +1547,9 @@ for (const [pageName, pageHtml, pageUrl] of socialSharePages) {
 // block may restate a dollar amount.
 const structuredDataPages = [
   ["homepage", siteHome, "https://tinystudio.io/"],
-  ["audit page", siteAudit, "https://tinystudio.io/audit"],
-  ["desk page", read("public/agents.html"), "https://tinystudio.io/agents"],
+  ["audit page", siteAudit, "https://tinystudio.io/appraisal"],
   ["pricing page", read("public/pricing.html"), "https://tinystudio.io/pricing"],
   ["specimen page", read("public/specimen.html"), "https://tinystudio.io/specimen"],
-  ["msp page", read("public/msp.html"), "https://tinystudio.io/msp"]
 ];
 
 const ORGANIZATION_ID = "https://tinystudio.io/#organization";
@@ -1915,20 +1705,16 @@ for (const [pageName, pageHtml, pageUrl] of structuredDataPages) {
 const internalLinkPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
-  ["desk page", read("public/agents.html")],
   ["pricing page", read("public/pricing.html")],
   ["specimen page", read("public/specimen.html")],
-  ["msp page", read("public/msp.html")],
   ["brief-requested page", read("public/brief-requested.html")]
 ];
 
 const htmlPageTargets = {
   "index.html": "/",
-  "audit.html": "/audit",
-  "agents.html": "/agents",
+  "appraisal.html": "/appraisal",
   "pricing.html": "/pricing",
   "specimen.html": "/specimen",
-  "msp.html": "/msp",
   "privacy.html": "/privacy",
   "terms.html": "/terms",
   "contact.html": "/contact",
@@ -1996,11 +1782,9 @@ for (const [pageName, pageHtml] of internalLinkPages) {
 // neither counts as a linker.
 const indexablePages = [
   { path: "/", html: siteHome },
-  { path: "/audit", html: siteAudit },
-  { path: "/agents", html: read("public/agents.html") },
+  { path: "/appraisal", html: siteAudit },
   { path: "/pricing", html: read("public/pricing.html") },
   { path: "/specimen", html: read("public/specimen.html") },
-  { path: "/msp", html: read("public/msp.html") },
   { path: "/privacy", html: read("public/privacy.html") },
   { path: "/terms", html: read("public/terms.html") },
   { path: "/contact", html: read("public/contact.html") }
@@ -2062,11 +1846,9 @@ for (const page of indexablePages) {
 // clean extensionless address.
 const canonicalPages = [
   ["homepage", siteHome, "https://tinystudio.io/"],
-  ["audit page", siteAudit, "https://tinystudio.io/audit"],
-  ["desk page", read("public/agents.html"), "https://tinystudio.io/agents"],
+  ["audit page", siteAudit, "https://tinystudio.io/appraisal"],
   ["pricing page", read("public/pricing.html"), "https://tinystudio.io/pricing"],
   ["specimen page", read("public/specimen.html"), "https://tinystudio.io/specimen"],
-  ["msp page", read("public/msp.html"), "https://tinystudio.io/msp"],
   ["privacy page", read("public/privacy.html"), "https://tinystudio.io/privacy"],
   ["terms page", read("public/terms.html"), "https://tinystudio.io/terms"],
   ["contact page", read("public/contact.html"), "https://tinystudio.io/contact"]
@@ -2121,10 +1903,8 @@ for (const [pageName, pageHtml, expected] of canonicalPages) {
 const titlePages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
-  ["desk page", read("public/agents.html")],
   ["pricing page", read("public/pricing.html")],
   ["specimen page", read("public/specimen.html")],
-  ["msp page", read("public/msp.html")],
   ["brief-requested page", read("public/brief-requested.html")]
 ];
 

@@ -14,13 +14,12 @@ When an engine answers one of the controlled questions a buyer asks before commi
 
 - q1-what-tinystudio-does (What TinyStudio does): https://tinystudio.io/ (homepage)
 - q2-what-tinystudio-charges (What TinyStudio charges): https://tinystudio.io/pricing
-- q3-where-tinystudio-is-based (Where TinyStudio is based): https://tinystudio.io/audit
-- q4-who-tinystudio-works-with (Who TinyStudio works with): https://tinystudio.io/audit
+- q3-where-tinystudio-is-based (Where TinyStudio is based): https://tinystudio.io/appraisal
+- q4-who-tinystudio-works-with (Who TinyStudio works with): https://tinystudio.io/appraisal
 - q5-what-is-tinystudio-io (What is tinystudio.io): https://tinystudio.io/ (homepage)
-- q6-client-work (Does TinyStudio publish client work): https://tinystudio.io/audit
+- q6-client-work (Does TinyStudio publish client work): https://tinystudio.io/appraisal
 - q7-what-tinystudio-io-charges (What tinystudio.io charges): https://tinystudio.io/pricing
 - q8-conversion-audit (Is TinyStudio a conversion audit service): https://tinystudio.io/ (homepage)
-- msp-buyer-intent (The MSP/IT buyer-intent page): https://tinystudio.io/msp
 
 ## Current Offer
 
@@ -36,11 +35,11 @@ A "conversion audit" search intent is answered truthfully: the appraisal is the 
 
 ## Buyer
 
-High-ticket service businesses — clinics, surgeons, dentists, spas, dealers, brokers — and clients are never named. The MSP/IT buyer-intent page (https://tinystudio.io/msp) speaks to MSP, managed IT and cybersecurity firms about the same appraisal.
+High-ticket service businesses — clinics, surgeons, dentists, spas, dealers, brokers — and clients are never named.
 
 ## Price And Terms
 
-https://tinystudio.io/pricing
+$10,000 per site. https://tinystudio.io/pricing
 
 ## Review Boundary
 
@@ -49,16 +48,6 @@ Human review gates fit, claims, client-facing work, delivery/acceptance, and ren
 ## Not Promised
 
 There are no revenue, ranking, ROAS, conversion, booked-call, or sales-volume guarantees.
-
-## Legacy Agent Desk
-
-The earlier self-serve Agent Desk (one-shot Pipeline Brief) is demoted and is not the current offer. Its safety rails stand:
-
-- No campaign publishing
-- No ad spend changes
-- No ad account connection
-- No prospect message sending
-- Client-side code does not call model providers, platform admin APIs, ad accounts, databases, or private credentials directly.
 
 ## Data Handling
 

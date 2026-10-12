@@ -1,38 +1,43 @@
 # TinyStudio.io
 
-TinyStudio's public website: The Website Appraisal — the free leak audit of
-high-ticket service homepages — and the human-reviewed desk that closes what
-the audit finds.
+TinyStudio is a boutique that finds where a high-ticket service website loses money, proves it, fixes it, and proves the fix. The offer is the Website Correction: $10,000 per site, six a month, with a free Appraisal first.
 
-## Current Plan
+## Current plan
 
-The current product contract is `specs/004-website-appraisal/plan.md`. Specs
-001 and 002 are historical records of the retired Agent Desk, and spec 003 is
-a superseded campaign plan.
+[docs/PLAN.md](docs/PLAN.md) is the single current plan. It defines the pages, the architecture and the milestones. Specs 001 to 004 are superseded by the plan and have been removed.
 
-## What This Repo Owns
+## Pages
 
-- The public `tinystudio.io` and `www.tinystudio.io` Website Appraisal site: the homepage, the appraisal flow, the human-reviewed desk, pricing, specimen, the MSP/IT buyer-intent page at `/msp`, and the agent-readable truth at `/llms.txt` and `/offer.md`.
-- The retired self-serve Agent Desk, still served at `/agent-desk` as a legacy surface, and the legacy `/api/agent-audit` generation endpoint, which remain operational but are not the current product.
-- Email capture through `/api/signups`, stored in Cloudflare D1.
-- Lightweight agent usage metadata in Cloudflare D1, including daily rate-limit counters.
-- The intentional retirement responses for `app.tinystudio.io` and `api.tinystudio.io`.
-- Agent-readable public product truth at `/llms.txt` and `/offer.md`.
+- `/` the pitch and the appraisal request form
+- `/appraisal` what the appraisal is and how the six-a-month queue works
+- `/pricing` the price and terms
+- `/specimen` a specimen appraisal of a public site
+- `/contact`, `/privacy`, `/terms`
+- `/llms.txt` and `/offer.md`, the agent-readable offer
+- `/brief-requested` the confirmation page after a request
 
-## What This Repo Does Not Own
+The plan also lists `/correction`, `/method` and `/records/{id}`; these are built in milestones M1 to M3.
 
-- Any live private TinyStudio app/API product.
-- Client folders, analytics exports, payment data, private sprint work, or ad-platform credentials.
-- Revenue claims, ROAS claims, booked-call claims, ranking claims, sales-lift promises, autonomous ad buying, ad spend changes, campaign publishing, or ad-platform write actions.
-- Storage of submitted business snapshots, optional detail inputs, weekly metrics, or generated artifacts; the public app processes submitted context to generate output and stores only email plus lightweight usage metadata.
+## Endpoints
 
-## Commands
+- `/api/signups` stores an appraisal request in Cloudflare D1.
+- `/api/agent-audit` is the existing audit generation endpoint.
+- `/health` reports readiness.
+- `app.tinystudio.io` and `api.tinystudio.io` answer with a 410 retirement response.
+
+## Run and deploy
 
 ```bash
-npm test
-npm run dev
+npm ci
+npm test               # site check, headings, sitemap, worker, UI, contract, viewport
+npm run check          # static site and link check only
+npm run dev            # wrangler dev on 127.0.0.1:8788
 npm run deploy:dry-run
-npm run deploy
+npm run deploy         # applies D1 migrations, then wrangler deploy
 ```
 
 Deploys are guarded by the machine-level `safe-deploy` wrapper.
+
+## Boundaries
+
+This repo holds no client folders, analytics exports, payment data or ad-platform credentials. It makes no revenue, ranking or sales-lift promises: TinyStudio promises proof, not outcomes.

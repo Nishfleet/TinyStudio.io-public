@@ -1,18 +1,15 @@
 // TinyStudio — narrow-viewport overflow regression across all five public
 // pages (sol-sweep finding product-live/tinystudio-io-agents-280px-heading-overflow).
 //
-// The /agents hero h1 ("Seven specialists, one human signature.") carries an
-// 11-character unbreakable word ("specialists,") at the 70px Fraunces serif
-// size; without `overflow-wrap: anywhere` on the shared `.phead h1` rule,
-// the document scrolls horizontally at the 280px viewport (doc scrollWidth
-// 291 vs clientWidth 280; h1 scrollWidth 271 inside a 240px content box) and
-// the same defect class is invisible to the 320/360/390 sweep only because
-// the words on /, /audit, /pricing, /specimen happen to break naturally.
+// A long unbreakable word in a hero h1 at the 70px Fraunces serif size
+// overflows the narrow viewports unless the shared `.phead h1` rule carries
+// `overflow-wrap: anywhere`; the defect class is invisible to the 320/360/390
+// sweep when the words happen to break naturally.
 //
 // This check runs real Chromium against each page served statically and
 // asserts, at 240/260/280/300/320/360/390px viewports, that
-// `documentElement.scrollWidth === documentElement.clientWidth` on the four
-// routes this packet owns — /agents, /audit, /pricing, /specimen. The home
+// `documentElement.scrollWidth === documentElement.clientWidth` on the three
+// routes this packet owns — /appraisal, /pricing, /specimen. The home
 // page (/) is also measured, but its 240px-only overflow is the
 // `.browser`/`.mock` hero-mock card covered by the in-progress
 // hero-mock-240px packet, which is out of scope here; home failures are
@@ -29,21 +26,19 @@ import { chromium } from "playwright";
 
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const VIEWPORTS = [240, 260, 280, 300, 320, 360, 390];
-// The six live pages: home (/), /agents, /audit, /pricing, /specimen, /msp.
+// The live pages: home (/), /appraisal, /pricing, /specimen.
 // Each is served as a static HTML file in public/ with its own CSS.
 const PAGES = [
   { path: "/", file: "index.html" },
-  { path: "/agents", file: "agents.html" },
-  { path: "/audit", file: "audit.html" },
+  { path: "/appraisal", file: "appraisal.html" },
   { path: "/pricing", file: "pricing.html" },
-  { path: "/specimen", file: "specimen.html" },
-  { path: "/msp", file: "msp.html" }
+  { path: "/specimen", file: "specimen.html" }
 ];
 // The routes this packet owns: every page except the home page, whose
 // 240px-only hero-mock overflow is the responsibility of the
 // hero-mock-240px packet. Failures on those owned routes gate exit code;
 // home-page failures are reported but do not gate (out of scope).
-const OWNED_PATHS = new Set(["/agents", "/audit", "/pricing", "/specimen", "/msp"]);
+const OWNED_PATHS = new Set(["/appraisal", "/pricing", "/specimen"]);
 
 const CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -63,11 +58,9 @@ function startServer() {
       const url = new URL(req.url, "http://127.0.0.1");
       let rel = decodeURIComponent(url.pathname);
       if (rel === "/") rel = "/index.html";
-      else if (rel === "/agents") rel = "/agents.html";
-      else if (rel === "/audit") rel = "/audit.html";
+      else if (rel === "/appraisal") rel = "/appraisal.html";
       else if (rel === "/pricing") rel = "/pricing.html";
       else if (rel === "/specimen") rel = "/specimen.html";
-      else if (rel === "/msp") rel = "/msp.html";
       const file = normalize(join(PUBLIC_DIR, rel));
       if (!file.startsWith(PUBLIC_DIR)) {
         res.writeHead(403).end("forbidden");
@@ -152,4 +145,4 @@ if (failures.length) {
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log("All four owned routes keep document scrollWidth === clientWidth at 240-390px.");
+console.log("All three owned routes keep document scrollWidth === clientWidth at 240-390px.");

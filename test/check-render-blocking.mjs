@@ -42,11 +42,9 @@ const STUB_CSS = "/* TinyStudio render-blocking check: stubbed font stylesheet *
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const PAGES = [
   ["homepage", "index.html"],
-  ["audit page", "audit.html"],
-  ["desk page", "agents.html"],
+  ["appraisal page", "appraisal.html"],
   ["pricing page", "pricing.html"],
   ["specimen page", "specimen.html"],
-  ["msp page", "msp.html"],
   ["brief-requested page", "brief-requested.html"]
 ];
 
@@ -212,4 +210,4 @@ if (failures.length) {
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log("All six pages load the font stylesheet without render-blocking under the production CSP.");
+console.log("All five pages load the font stylesheet without render-blocking under the production CSP.");

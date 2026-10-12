@@ -26,18 +26,12 @@ const PUBLIC_ASSET_PATHS = new Set([
   "/index.html",
   // Leak-audit site. Extensionless twins are listed because the signup
   // redirect targets /brief-requested and Cloudflare serves the .html for it.
-  "/audit.html",
-  "/audit",
-  "/agents.html",
-  "/agents",
+  "/appraisal.html",
+  "/appraisal",
   "/pricing.html",
   "/pricing",
   "/specimen.html",
   "/specimen",
-  // MSP/IT buyer-intent surface for The Website Appraisal. Extensionless twin
-  // is listed because the signup redirect and nav link to the clean form.
-  "/msp.html",
-  "/msp",
   "/privacy.html",
   "/privacy",
   "/terms.html",
@@ -49,27 +43,18 @@ const PUBLIC_ASSET_PATHS = new Set([
   "/shared.css",
   "/index.css",
   "/index.js",
-  "/audit.css",
-  "/audit.js",
-  "/agents.css",
-  "/agents.js",
+  "/appraisal.css",
+  "/appraisal.js",
   "/pricing.css",
   "/pricing.js",
   "/specimen.css",
   "/specimen.js",
-  "/msp.css",
-  "/msp.js",
   "/brief-requested.css",
   "/brief-requested.js",
   // Same-origin font promotion for the non-blocking Google Fonts stylesheet
   // (render-blocking fix b8f6046e942a). The production CSP forbids inline
   // onload handlers, so public/fonts.js promotes the preloaded css2 URL.
   "/fonts.js",
-  // The Agent Desk, now the engine behind the free brief rather than the product.
-  "/agent-desk.html",
-  "/agent-desk",
-  "/styles.css",
-  "/script.js",
   "/favicon.svg",
   // Legacy /favicon.ico fallback. Browsers, search-engine crawlers, and
   // screenshot services still hit /favicon.ico even when every page declares
@@ -85,6 +70,9 @@ const PUBLIC_ASSET_PATHS = new Set([
   "/llms.txt",
   "/offer.md"
 ]);
+
+// /audit was renamed /appraisal; keep old links and search results working.
+const APPRAISAL_REDIRECT_PATHS = new Set(["/audit", "/audit.html"]);
 
 const STALE_PUBLIC_PATHS = new Set([
   "/pipeline-sprint/",
@@ -113,12 +101,12 @@ const MAX_REQUEST_BYTES = 24000;
 const SOFT_AGENT_RUNS_PER_EMAIL_PER_DAY = 5;
 const MAX_AGENT_RUNS_PER_IP_PER_DAY = 20;
 // Public promise: "Six a month. When the sixth is taken, the intake closes
-// until the next." (homepage, /audit, /pricing, /agents, llms.txt). The
+// until the next." (homepage, /appraisal, /pricing, llms.txt). The
 // signup endpoint must honor it: the sixth valid signup in a calendar month
 // is accepted, and any further POST in the same month gets a truthful
 // closed-intake response instead of a normal success.
 const MAX_APPRAISALS_PER_MONTH = 6;
-// The current product's public intake (homepage and /audit) posts to
+// The current product's public intake (homepage and /appraisal) posts to
 // /api/signups. Its rows and the public /health surface must be labeled with
 // the current offer — The Website Appraisal — never the retired self-serve
 // Agent Desk, which keeps its own "agent-self-serve" labels on the legacy
@@ -1511,6 +1499,15 @@ export default {
 
     if (host === "api.tinystudio.io") {
       return retiredApiResponse();
+    }
+
+    if (
+      (request.method === "GET" || request.method === "HEAD") &&
+      APPRAISAL_REDIRECT_PATHS.has(url.pathname)
+    ) {
+      const target = new URL("/appraisal", url);
+      target.search = url.search;
+      return withSecurityHeaders(Response.redirect(target.toString(), 301));
     }
 
     if (url.pathname === "/api/signups") {
