@@ -1,0 +1,12 @@
+@font-face{font-family:'Fraunces';font-style:normal;font-weight:100 900;font-display:optional;
+  src:url(fonts/fraunces-latin-opsz-normal.woff2) format('woff2')}
+@font-face{font-family:'Fraunces';font-style:italic;font-weight:100 900;font-display:optional;
+  src:url(fonts/fraunces-latin-opsz-italic.woff2) format('woff2')}
+@font-face{font-family:'Karla';font-style:normal;font-weight:200 800;font-display:optional;
+  src:url(fonts/karla-latin-wght-normal.woff2) format('woff2')}
+@font-face{font-family:'Fraunces Fallback';font-weight:100 900;
+  src:local('Times New Roman'),local('Liberation Serif'),local('Tinos');
+  size-adjust:100%;ascent-override:97.8%;descent-override:25.5%;line-gap-override:0%}
+@font-face{font-family:'Karla Fallback';font-weight:200 800;
+  src:local('Arial'),local('Liberation Sans'),local('Arimo');
+  size-adjust:103.9%;ascent-override:88.3%;descent-override:24.3%;line-gap-override:0%}

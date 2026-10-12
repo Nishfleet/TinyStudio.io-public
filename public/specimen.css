@@ -4,7 +4,7 @@
   .stamp{color:var(--sig);border:1px solid var(--sig);padding:6px 12px;border-radius:2px}
   .f{padding:34px 0;border-bottom:1px solid var(--hair)}
   .f .top{display:flex;gap:18px;align-items:baseline}
-  .f .idx{font-family:'Fraunces',serif;font-style:italic;font-weight:200;font-size:30px;color:var(--brass);line-height:1}
+  .f .idx{font-family:'Fraunces','Fraunces Fallback',serif;font-style:italic;font-weight:200;font-size:30px;color:var(--brass);line-height:1}
   .f h2{font-size:22px;font-weight:600;letter-spacing:-.014em;line-height:1.3}
   .f .body{margin-left:48px}
   .f p{margin-top:12px;font-size:16px;line-height:1.74;color:var(--soft)}
@@ -17,7 +17,7 @@
   .fix b{color:var(--brass-ink);font-weight:600}
   .notrun{margin-top:40px;background:rgba(176,74,46,.05);border:1px solid rgba(176,74,46,.22);
     border-radius:10px;padding:26px 30px}
-  .notrun h3{font-family:'Fraunces',serif;font-weight:300;font-size:21px;letter-spacing:-.018em;color:var(--sig)}
+  .notrun h3{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:300;font-size:21px;letter-spacing:-.018em;color:var(--sig)}
   .notrun p{margin-top:11px;font-size:15px;line-height:1.72;color:var(--soft)}
 
 /* extracted from inline style attributes — CSP style-src 'self' blocks those */

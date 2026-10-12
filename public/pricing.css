@@ -3,13 +3,13 @@
     box-shadow:0 1px 0 rgba(255,255,255,.85) inset,0 40px 84px -50px rgba(25,20,16,.3)}
   .plan .l{padding:46px 50px;border-right:1px solid var(--line)}
   .plan .r{padding:46px 50px;text-align:right}
-  .plan h2{font-family:'Fraunces',serif;font-weight:200;font-size:36px;letter-spacing:-.025em;line-height:1.12;max-width:15ch}
+  .plan h2{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:200;font-size:36px;letter-spacing:-.025em;line-height:1.12;max-width:15ch}
   .plan .inc{margin-top:28px;list-style:none}
   .plan .inc li{font-size:15.5px;line-height:1.5;color:var(--soft);padding:11px 0 11px 26px;position:relative;
     border-bottom:1px solid var(--hair)}
   .plan .inc li:last-child{border-bottom:0}
   .plan .inc li::before{content:'';position:absolute;left:0;top:19px;width:10px;height:1px;background:var(--brass)}
-  .plan .big{font-family:'Fraunces',serif;font-weight:200;font-size:82px;letter-spacing:-.05em;line-height:.86}
+  .plan .big{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:200;font-size:82px;letter-spacing:-.05em;line-height:.86}
   .plan .per{margin-top:14px;color:var(--muted)}
   .plan .warranty{margin-top:30px;padding-top:22px;border-top:1px solid var(--line);text-align:left;
     font-size:13.5px;line-height:1.68;color:var(--soft)}
