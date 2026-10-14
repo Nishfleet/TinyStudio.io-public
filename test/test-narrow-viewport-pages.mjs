@@ -1,23 +1,3 @@
-// TinyStudio — narrow-viewport overflow regression across all five public
-// pages (sol-sweep finding product-live/tinystudio-io-agents-280px-heading-overflow).
-//
-// A long unbreakable word in a hero h1 at the 70px Fraunces serif size
-// overflows the narrow viewports unless the shared `.phead h1` rule carries
-// `overflow-wrap: anywhere`; the defect class is invisible to the 320/360/390
-// sweep when the words happen to break naturally.
-//
-// This check runs real Chromium against each page served statically and
-// asserts, at 240/260/280/300/320/360/390px viewports, that
-// `documentElement.scrollWidth === documentElement.clientWidth` on the three
-// routes this packet owns — /appraisal, /pricing, /specimen. The home
-// page (/) is also measured, but its 240px-only overflow is the
-// `.browser`/`.mock` hero-mock card covered by the in-progress
-// hero-mock-240px packet, which is out of scope here; home failures are
-// reported but do not gate this packet's exit code so CI does not block on
-// an unrelated defect.
-//
-// Run: node test/test-narrow-viewport-pages.mjs  (or `npm run test:narrow-pages`)
-
 import http from "node:http";
 import { readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
@@ -26,18 +6,14 @@ import { chromium } from "playwright";
 
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const VIEWPORTS = [240, 260, 280, 300, 320, 360, 390];
-// The live pages: home (/), /appraisal, /pricing, /specimen.
-// Each is served as a static HTML file in public/ with its own CSS.
+
 const PAGES = [
   { path: "/", file: "index.html" },
   { path: "/appraisal", file: "appraisal.html" },
   { path: "/pricing", file: "pricing.html" },
   { path: "/specimen", file: "specimen.html" }
 ];
-// The routes this packet owns: every page except the home page, whose
-// 240px-only hero-mock overflow is the responsibility of the
-// hero-mock-240px packet. Failures on those owned routes gate exit code;
-// home-page failures are reported but do not gate (out of scope).
+
 const OWNED_PATHS = new Set(["/appraisal", "/pricing", "/specimen"]);
 
 const CONTENT_TYPES = {

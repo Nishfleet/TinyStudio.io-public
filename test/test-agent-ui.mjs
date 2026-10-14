@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 
-// ---- AI-search evidence artifact ---------------------------------------
-
 const AI_QUESTIONS = JSON.parse(
   readFileSync(new URL("../evidence-fixtures/ai-search/controlled-questions.json", import.meta.url), "utf8")
 );
@@ -309,8 +307,6 @@ test("AI-search remediation links resolve defensively and reject cross-host or i
   assert.doesNotMatch(invalidHtml, /javascript:/);
 });
 
-// ---- Candidate 2: identity tie, offer mirror, source-host validation --------
-
 const HOME_HTML = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 const AUDIT_HTML = readFileSync(new URL("../public/appraisal.html", import.meta.url), "utf8");
 const LLMS_TXT = readFileSync(new URL("../public/llms.txt", import.meta.url), "utf8");
@@ -370,9 +366,7 @@ const IDENTITY_MIRROR_FACTS = [
 ];
 
 test("identity disambiguation facts are mirrored by llms.txt and offer.md", () => {
-  // The engines' wrong answers (evidence.json) were built from exactly these
-  // same-name businesses, so the disambiguation list must live in both files
-  // of the machine-readable pair, and the pair must link each other.
+
   for (const fact of IDENTITY_MIRROR_FACTS) {
     assert.ok(LLMS_TXT.toLowerCase().includes(fact.toLowerCase()), `llms.txt must state: ${fact}`);
     assert.ok(OFFER_MD.toLowerCase().includes(fact.toLowerCase()), `offer.md must state: ${fact}`);
@@ -384,13 +378,7 @@ test("identity disambiguation facts are mirrored by llms.txt and offer.md", () =
 });
 
 test("every controlled question maps to a preferred source page, mirrored by llms.txt and offer.md", () => {
-  // Dogfood finding 4473a99a9bc9 ("AI Answer Readiness: preferred source
-  // pages are unclear"): an engine that cited tinystudio.io described the
-  // retired Agent Desk, and the pricing answer came back "Missing: pricing".
-  // The machine-readable pair must declare, per controlled question, the
-  // preferred source page an engine should read first — exactly one served
-  // page per question, the clean /pricing for price questions, and the same
-  // mapping in both files.
+
   const ANSWER_READINESS_HEADING = "## Answer Readiness: Preferred Source Pages";
   for (const [name, text] of [
     ["llms.txt", LLMS_TXT],
@@ -430,9 +418,7 @@ test("every controlled question maps to a preferred source page, mirrored by llm
 });
 
 test("offer facts are mirrored by llms.txt and offer.md", () => {
-  // Whitespace- and case-insensitive, matching the check-site guard: one file
-  // may head a fact while the other embeds it mid-sentence, and llms.txt
-  // wraps its prose across lines.
+
   const normalized = (text) => text.toLowerCase().replace(/\s+/g, " ");
   for (const fact of OFFER_FACTS) {
     assert.ok(normalized(LLMS_TXT).includes(normalized(fact)), `llms.txt must state: ${fact}`);
@@ -454,10 +440,7 @@ test("offer facts are mirrored by llms.txt and offer.md", () => {
 });
 
 test("llms.txt and offer.md point at the clean /pricing and never restate refund terms or any price but $10,000 per site", () => {
-  // The pricing page owns price, refund and guarantee terms; the machine-
-  // readable pair points at its clean /pricing address instead of restating
-  // dollar amounts, refund language, or the retired Website Correction /
-  // founder-pilot framing.
+
   for (const [name, text] of [
     ["llms.txt", LLMS_TXT],
     ["offer.md", OFFER_MD]

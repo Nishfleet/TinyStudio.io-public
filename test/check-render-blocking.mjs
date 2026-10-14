@@ -1,24 +1,9 @@
-// TinyStudio - browser font and render-blocking guard.
-//
-// Serves the six public pages statically under the exact production
-// Content-Security-Policy the worker emits and asserts in real Chromium:
-//
-//   1. no request leaves the origin (fonts are self-hosted, no Google chain),
-//   2. the only render-blocking resources are same-origin stylesheets,
-//   3. both families are declared, the font files are served under the CSP and
-//      nothing preloads them (a preload defeats font-display: optional).
-//
-// Run: npm run check:render-blocking  (it builds public/fonts first)
-
 import http from "node:http";
 import { readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
-// Mirrors SECURITY_HEADERS in src/worker.js. The promotion script is only
-// required because this exact header forbids inline handlers; the check must
-// run under it or it would not exercise the production shape.
 const PRODUCTION_CSP =
   "default-src 'self'; img-src 'self' data:; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
 

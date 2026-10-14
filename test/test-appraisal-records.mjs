@@ -57,7 +57,7 @@ test("costing: every row cites a source, and a figure is leads x delta x deal va
   const { env, objects } = freshEnv();
   const { id } = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
   const html = objects.get(`records/${id}.html`);
-  // 40 leads x 4.42% x $8,000 = $14,144, traced to row slow-load and both inputs.
+
   assert.match(html, /data-cite="row:slow-load input:dealValue input:monthlyLeads">\$14,144</);
   assert.match(html, /data-cite="row:slow-load">4\.42%</);
   assert.match(html, /data-cite="input:dealValue">\$8,000</);
@@ -77,8 +77,7 @@ test("quality gate: no uncited number in a rendered record", async () => {
       assert.ok((kind === "row" && ids.has(name)) || (kind === "input" && ["dealValue", "monthlyLeads"].includes(name)), `bad citation ${ref}`);
     }
   }
-  // Any digit run in the body text outside a cited figure, the title, the
-  // record's own metadata and the fault/summary text the reviewer supplied is a defect.
+
   const body = html
     .replace(/<span class="fig"[^>]*>[^<]*<\/span>/g, "")
     .replace(/<style>[\s\S]*?<\/style>/, "")
@@ -121,7 +120,6 @@ test("no email without a record link, and the record opens at /records/{id}", as
   const missing = await worker.fetch(new Request(`https://tinystudio.io/records/${crypto.randomUUID()}`), env);
   assert.equal(missing.status, 404);
 
-  // A second state change re-renders the same record id at a higher version.
   const again = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z");
   assert.deepEqual({ id: again.id, version: again.version }, { id, version: 2 });
   assert.equal(sent.length, 1, "a re-render sends no second email");
