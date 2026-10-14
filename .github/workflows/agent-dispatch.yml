@@ -18,6 +18,20 @@ on:
         description: 'miss-review to replay a miss on issue, orchestrate to hand a parked issue to the orchestrator, empty for a normal sweep'
         required: false
         type: string
+  # dequeued/auto_merge_disabled/closed feed the ejected and close jobs; the
+  # six after them are hold-risky's exact if-list in
+  # Nishfleet/fleet-ops/.github/workflows/agent-dispatch.yml@main. hold-risky
+  # is the only door into review-risky, and without these types it never ran
+  # here (fleet-ops#9293; same list as 0509). Per type: opened/reopened hold a
+  # risky PR from birth (risk is read from changed paths, not only the
+  # needs-coordinator label), synchronize re-holds after every push because an
+  # approval names one head sha, labeled re-holds when needs-coordinator lands,
+  # ready_for_review catches a PR armed while draft, and auto_merge_enabled is
+  # the arm event itself, the moment an arm needs an approval behind it. The
+  # job only calls the API: nothing in the reusable workflow checks out PR
+  # code, and its ejected job runs only for a same-repo claim/issue-* head, so
+  # a fork's PR never reaches a runner or a token. Every dispatch run lands in
+  # the reusable workflow's concurrency group (one sweep, events per run id).
   pull_request_target:
     types: [dequeued, auto_merge_disabled, closed, auto_merge_enabled, synchronize, labeled, opened, reopened, ready_for_review]
   workflow_run:
