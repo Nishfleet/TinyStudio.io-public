@@ -47,3 +47,30 @@ jobs:
           sudo mv /tmp/gitleaks /usr/local/bin/
       - name: Scan
         run: gitleaks detect --source . --no-banner --redact
+
+  # The widened pull_request_target list in agent-dispatch.yml must cover
+  # hold-risky's if-list in Nishfleet/fleet-ops@main; that drift is what left
+  # review-risky dead on this repo (fleet-ops#9293). Read-only: two public
+  # raw fetches, no checkout, no token. Fleet-ops unreachable or its list
+  # unreadable fails the job, so a silent pass is impossible.
+  trigger-stub:
+    name: Trigger stub covers hold-risky
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Compare the stub's pull_request_target types with hold-risky's if-list
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/Nishfleet/fleet-ops/main/.github/workflows/agent-dispatch.yml -o /tmp/fleet-dispatch.yml
+          curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}/.github/workflows/agent-dispatch.yml" -o /tmp/stub.yml
+          stub=$(awk '/^  pull_request_target:/,/^  workflow_run:/' /tmp/stub.yml | grep types | grep -o '\[.*\]' | tr -d '[]' | tr ',' '\n' | tr -d ' ' | sort)
+          hold=$(awk '/^  hold-risky:/,/^    outputs:/' /tmp/fleet-dispatch.yml | grep -o '"[a-z_]*"' | tr -d '"' | sort -u)
+          if [ -z "$hold" ]; then
+            echo "::error::could not read hold-risky's if-list from Nishfleet/fleet-ops@main"
+            exit 1
+          fi
+          missing=$(comm -23 <(echo "$hold") <(echo "$stub"))
+          if [ -n "$missing" ]; then
+            echo "::error::hold-risky needs pull_request_target types the stub does not forward: $missing"
+            exit 1
+          fi
+          echo "stub forwards every type hold-risky's if-list needs: $(echo "$hold" | tr '\n' ' ')"
