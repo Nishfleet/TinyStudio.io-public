@@ -1,8 +1,5 @@
 import costing from "../config/costing.json" with { type: "json" };
 
-// M1c costing layer and Appraisal Record render (docs/PLAN.md 6.3 and 7).
-// Every number in a record is built here from a costing row and the customer's
-// two inputs, and is printed with the ids it traces to.
 
 const ROWS = new Map(costing.rows.map((row) => [row.faultType, row]));
 
@@ -14,8 +11,6 @@ export function costFault(fault, inputs) {
   return { fault, row, monthlyCost };
 }
 
-// The reviewer step: every fault is read, anything not kept is removed, and one
-// paragraph summarises the rest. A record cannot render without both.
 export function reviewFaults(faults, review) {
   if (!review || typeof review.summary !== "string" || !review.summary.trim()) {
     throw new Error("reviewer summary missing");
@@ -31,8 +26,6 @@ function esc(value) {
 
 const money = (n) => `$${n.toLocaleString("en-US")}`;
 
-// A figure is a <span data-cite="..."> naming the costing row and the inputs it
-// came from, so CI can fail any number that has no citation.
 function cited(text, cite) {
   return `<span class="fig" data-cite="${esc(cite)}">${esc(text)}</span>`;
 }
@@ -108,9 +101,6 @@ export function recordEmail({ env, request, recordId, origin }) {
 export const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const recordKey = (id) => `records/${id}.html`;
 
-// Render once per state change: reuse the request's record id, bump the version,
-// overwrite the R2 object, write the event row. The email goes only after the
-// object is stored, and always carries the record link.
 export async function publishRecord(env, requestId, { faults, review }, origin, at) {
   const request = await env.DB.prepare("SELECT * FROM appraisal_requests WHERE id = ?1").bind(requestId).first();
   if (!request) throw new Error("appraisal request not found");
@@ -125,7 +115,6 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
   ).bind(id, requestId, version, at).run();
   await env.DB.prepare("INSERT INTO appraisal_events (request_id, type, detail, created_at) VALUES (?1, 'record_rendered', ?2, ?3)")
     .bind(requestId, `${id} v${version}`, at).run();
-  // One email per record: a re-render updates the link's page and mails nothing.
   if (version === 1) await env.EMAIL.send(recordEmail({ env, request, recordId: id, origin }));
   return { id, version };
 }

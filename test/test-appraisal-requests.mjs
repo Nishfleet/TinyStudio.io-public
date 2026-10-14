@@ -266,7 +266,7 @@ test("a burst from one address is cut off before it can send mail to arbitrary a
 });
 
 test("one email address is rate limited across addresses, and and the waitlist has a monthly ceiling", async () => {
-  const { sqlite, env } = freshEnv();
+  const { env } = freshEnv();
   const codes = [];
   for (let n = 1; n <= 4; n += 1) {
     codes.push((await submit(env, { website: `s${n}.example` }, { "CF-Connecting-IP": `203.0.113.${n}` })).status);
