@@ -1,18 +1,3 @@
-// Product-contract regression test for the TinyStudio repository truth.
-//
-// docs/PLAN.md (The Website Correction) is the single current plan. This test
-// guards the repository contract deterministically:
-//
-//   1. docs/PLAN.md exists, is marked as the current plan, names the offer and
-//      the $10,000 per site price, and keeps the no-guarantee boundary;
-//   2. README.md and MEMORY.md point at docs/PLAN.md and say specs 001 to 004
-//      are superseded; README.md stays short;
-//   3. the retired surfaces stay removed: specs/, the /agent-desk page and its
-//      assets, and the pages the plan does not list (agents, msp, audit);
-//   4. the worker keeps /api/signups, /api/agent-audit, the 410 retirement
-//      responses for app. and api., and a /audit -> /appraisal redirect;
-//   5. package.json describes the current product and wires this test.
-
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";

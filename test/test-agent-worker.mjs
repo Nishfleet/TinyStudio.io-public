@@ -50,11 +50,6 @@ class FakeStatement {
     return this;
   }
 
-  // Storage-failure injection: the owning FakeDB may map a method ("run" or
-  // "first", i.e. a usage-counter read/write) to a SQL predicate. When the
-  // predicate matches, the statement rejects exactly like a real D1 call on a
-  // broken or missing table — and before the call is recorded, so a failed
-  // write never shows up as usage.
   failIfInjected(method) {
     const failure = this.db.failures?.[method];
     if (failure && failure(this.sql)) {
@@ -95,9 +90,6 @@ class FakeDB {
   }
 }
 
-// A FakeDB whose statements reject when the SQL matches the configured
-// failure. runSql targets write paths (.run), firstSql targets the usage
-// counter upsert (.first on agent_usage_limits).
 function failingDB({ runSql, firstSql } = {}) {
   return new FakeDB({
     failures: {
@@ -1045,8 +1037,7 @@ test("signup handler accepts a bare-domain website with a test email and stores 
   assert.ok(insert, "signup handler must persist through the existing email_signups path");
   assert.equal(insert.values[0], "audit-check+test@example.com");
   assert.equal(insert.values[7], "https://example.com");
-  // The current appraisal intake must label its rows with the current offer,
-  // never the retired self-serve Agent Desk surface name.
+
   assert.equal(insert.values[1], "website-appraisal", "current intake signups must carry the current-offer source label");
   assert.notEqual(insert.values[1], "agent-self-serve", "current intake signups must not carry the retired Agent Desk source label");
 });
@@ -1075,13 +1066,7 @@ test("worker /health names the current Website Appraisal surface, not the retire
 });
 
 test("worker /health verdict keys off the current intake path, not the retired Agent Desk machinery", async () => {
-  // The current product depends on the D1 email_signups table behind
-  // /api/signups. The retired Agent Desk's AI binding and agent tables must
-  // not gate the current product's readiness verdict: a green /health while
-  // the signup path is broken would be a false positive, and a red /health
-  // when the appraisal intake is healthy would be a false alarm. The env
-  // deliberately carries no AI binding — the current product has no model
-  // dependency.
+
   class HealthStatement extends FakeStatement {
     async all() {
       this.db.calls.push({ method: "all", sql: this.sql, values: this.values });
@@ -1119,9 +1104,7 @@ test("legacy /api/agent-audit still labels its rows with the retired self-serve 
 });
 
 test("signup handler redirects a rejected email to /?signal=invalid so the homepage can render it", async () => {
-  // The browser's type=email accepts "a@b", but the worker's stricter regex
-  // requires a dot in the domain. The rejection must 303 back to the homepage
-  // with ?signal=invalid (rendered by public/index.js), not fail silently.
+
   const db = new FakeDB();
   const env = { DB: db, AI: new FakeAI("") };
   const res = await worker.fetch(
@@ -1171,14 +1154,6 @@ test("worker does not serve unlisted asset-like paths outside the public allow-l
   const res = await worker.fetch(new Request("https://tinystudio.io/not-listed.js"), env);
   assert.equal(res.status, 404);
 });
-
-// --- Canonical host redirect (dogfood: the retired "TinyStudio Agent Desk"
-// title/snippet kept surfacing for tinystudio.io) ---
-//
-// www.tinystudio.io is routed at this worker by wrangler.jsonc and used to
-// answer 200 with a duplicate of the public site, so Google held it as its own
-// site with its own, stale site name. It must now redirect permanently to the
-// apex host that robots.txt, sitemap.xml and every canonical already name.
 
 test("www host redirects permanently to the canonical apex host", async () => {
   const res = await worker.fetch(new Request("https://www.tinystudio.io/"), {});
@@ -1280,15 +1255,6 @@ test("retired API host frames the current offer as The Website Appraisal, not th
   assert.doesNotMatch(body.message, /self-serve Agent Desk/, "retired API host message must not point at the retired Agent Desk as the current offer");
 });
 
-// --- Signup daily rate limits (daily_ip_limit / daily_email_limit) ---
-//
-// Production enforces two independent daily caps before any agent run:
-// MAX_AGENT_RUNS_PER_IP_PER_DAY (20) and SOFT_AGENT_RUNS_PER_EMAIL_PER_DAY
-// (5), both keyed by UTC day in agent_usage_limits.bucket_key. The shared
-// FakeDB above returns count 1 for every upsert, so neither cap could ever
-// trip in the suite; these tests drive real per-bucket counters and assert
-// the exact boundary, the two limits' independence, and the day rollover.
-
 class CountingStatement extends FakeStatement {
   async first() {
     this.db.calls.push({ method: "first", sql: this.sql, values: this.values });
@@ -1332,8 +1298,6 @@ test("per-IP daily signup limit: 20 succeed, the 21st from the same IP returns 4
     assert.equal(res.status, 200, `request ${i} (the 20th is the exact per-IP boundary) must succeed`);
   }
 
-  // Fresh email, same IP: the IP cap must fire on its own, not be masked by
-  // an email cap (each email above is distinct, so email counts never rise).
   const blocked = await runAgentLimit(
     db,
     ai,
@@ -1362,8 +1326,6 @@ test("per-email daily signup limit: 5 succeed, the 6th for the same email return
     assert.equal(res.status, 200, `request ${i} (the 5th is the exact per-email boundary) must succeed`);
   }
 
-  // Fresh IP, same email: the email cap must fire on its own, not be masked
-  // by an IP cap (each IP above is distinct, so IP counts never rise).
   const blocked = await runAgentLimit(
     db,
     ai,
@@ -1435,15 +1397,6 @@ test("daily IP limit resets after the day rolls over (controlled clock, no sleep
   assert.equal(allowed.status, 200, "the same IP must be allowed again once the day rolls over");
 });
 
-// --- Storage-failure honesty (storage_unavailable on missing or broken D1) ---
-//
-// The suite must fail closed when D1 is absent or a signup/usage write throws:
-// /api/signups must never return 201 (nor its "saved" thank-you redirect) and
-// /api/agent-audit must never claim success, run the model, or record usage,
-// when the storage path failed. These tests drive the FakeDB failure injection
-// (run/first rejection) and a DB-less env, and they must go red if the no-DB
-// guards are removed or write errors are swallowed.
-
 function signupRequest({ accept = "application/json" } = {}) {
   return new Request("https://tinystudio.io/api/signups", {
     method: "POST",
@@ -1458,7 +1411,7 @@ function signupRequest({ accept = "application/json" } = {}) {
 }
 
 test("storage failure: signup returns 503 storage_unavailable when D1 is absent (no success signal)", async () => {
-  const res = await worker.fetch(signupRequest(), {}); // no DB binding at all
+  const res = await worker.fetch(signupRequest(), {});
 
   assert.equal(res.status, 503);
   assert.equal(res.headers.get("Location"), null, "no success redirect may be issued without storage");
@@ -1476,8 +1429,6 @@ test("storage failure: signup returns 503 storage_unavailable when the D1 insert
   assert.equal(body.ok, false);
   assert.equal(body.error, "storage_unavailable");
 
-  // An HTML caller must not reach the "saved" thank-you page either: that
-  // redirect is the product's success/conversion signal.
   const htmlRes = await worker.fetch(signupRequest({ accept: "text/html" }), env);
   assert.equal(htmlRes.status, 503, "the saved redirect must not fire when the write failed");
   assert.equal(htmlRes.headers.get("Location"), null);
@@ -1485,7 +1436,7 @@ test("storage failure: signup returns 503 storage_unavailable when the D1 insert
 
 test("storage failure: agent audit returns 503 storage_unavailable when D1 is absent and never runs the model", async () => {
   const ai = new FakeAI(VALID_AGENT_OUTPUT);
-  const res = await worker.fetch(agentRequest(validBody()), { AI: ai }); // no DB binding
+  const res = await worker.fetch(agentRequest(validBody()), { AI: ai });
 
   assert.equal(res.status, 503);
   const body = await res.json();
@@ -1547,18 +1498,6 @@ test("storage failure: agent audit returns 503 storage_unavailable when the emai
   assert.equal(body.model, undefined, "no success payload may claim a model");
 });
 
-// --- real D1 schema: the migrations must build the schema the worker SQL runs against ---
-//
-// The FakeDB tests above prove the worker's *behavior* with a fake storage
-// layer, so they cannot detect when a migration edit (valid SQL or not)
-// drifts the production schema away from what src/worker.js actually issues.
-// These tests apply every real migration file to a fresh in-memory
-// node:sqlite database, run the exact signup/agent statements from
-// src/worker.js against that schema, reapply the migrations the way D1 does
-// (name-tracked, idempotent), and pin the resulting column/index contract.
-// Any valid-SQL column drift in a migration — renamed, added, or removed
-// columns; changed types or defaults; dropped indexes — fails the suite.
-
 const MIGRATION_FILES = [
   "0001_email_signups.sql",
   "0002_agent_runs.sql",
@@ -1566,10 +1505,6 @@ const MIGRATION_FILES = [
   "0004_signup_website.sql"
 ];
 
-// D1 records each applied migration by file name in a d1_migrations table and
-// skips files already recorded, so re-running `wrangler d1 migrations apply`
-// is a no-op. Mirror those semantics so idempotent reapply is proven against
-// the real runner behavior, not a fake.
 function applyD1Migrations(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS d1_migrations (
@@ -1591,8 +1526,6 @@ function applyD1Migrations(db) {
   return appliedNow;
 }
 
-// Column contract the worker SQL depends on, exactly as the four migration
-// files build it (PRAGMA table_info row order = CREATE TABLE column order).
 const EXPECTED_COLUMNS = {
   email_signups: [
     { name: "id", type: "INTEGER", notnull: 0, pk: 1, dflt_value: null },
@@ -1671,9 +1604,6 @@ function schemaFingerprint(db) {
   return fingerprint;
 }
 
-// The drift sentinel: any valid-SQL change to the migrations that alters the
-// column or index contract above turns the schema test red, even when the
-// worker's own SQL would still run.
 function assertSchemaDriftFree(db) {
   const tables = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -1694,9 +1624,6 @@ function assertSchemaDriftFree(db) {
   }
 }
 
-// The exact statements src/worker.js issues against D1 — saveEmailSignup,
-// incrementUsageCounter, the agent_runs insert, and the health check — copied
-// verbatim so a schema drift that would break production SQL fails here first.
 const WORKER_SIGNUP_SQL = `
   INSERT INTO email_signups (email, source, page_path, referer, user_agent, created_at, updated_at, website)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -1752,11 +1679,11 @@ test("the exact worker signup SQL runs on the migrated schema with its upsert se
   db.prepare(WORKER_SIGNUP_SQL).run(
     "audit-check+test@example.com", "agent-self-serve", "/", null, "tinystudio-worker-test", now, now, "https://example.com"
   );
-  // Same email without a website: the worker's COALESCE must keep the first URL.
+
   db.prepare(WORKER_SIGNUP_SQL).run(
     "audit-check+test@example.com", "agent-self-serve", "/audit", null, "tinystudio-worker-test", now, now, null
   );
-  // A later website on the same email: the worker's upsert must adopt it.
+
   db.prepare(WORKER_SIGNUP_SQL).run(
     "audit-check+test@example.com", "agent-self-serve", "/audit", null, "tinystudio-worker-test", now, now, "https://new.example.com"
   );
@@ -1803,13 +1730,6 @@ test("the exact worker agent SQL runs on the migrated schema: usage counters inc
   db.close();
 });
 
-// ---- Google Ads conversion tag (funnel measurement) ------------------------
-// The funnel's only conversion measurement was dead by construction: the
-// brief-requested page hardcoded the AW-XXXXXXXXX placeholder, and the
-// production CSP blocked googletagmanager.com, so the event could never
-// record. The tag must therefore be generated by the worker from env values
-// and only emitted on /brief-requested when both are configured; with either
-// missing or malformed, the page ships with no tag at all.
 const BRIEF_REQUESTED_HTML = '<!doctype html><html><head><title>brief</title></head><body>ok</body></html>';
 
 function adsEnv(overrides = {}) {
@@ -1857,7 +1777,6 @@ test("worker injects the configured Google Ads conversion tag on /brief-requeste
   assert.ok(js.includes("gtag('config', 'AW-1234567890')"), "generated script must configure the real conversion id");
   assert.ok(js.includes("AW-1234567890/AbCdEfGhIjKlMnOpQrSt"), "generated script must send the real conversion label");
 
-  // Every other page keeps the strict CSP even when the tag is configured.
   const other = await worker.fetch(new Request("https://tinystudio.io/pricing.html"), env);
   const otherCsp = other.headers.get("Content-Security-Policy") || "";
   assert.ok(!otherCsp.includes("googletagmanager.com"), "other pages must keep the strict CSP");
@@ -1877,20 +1796,6 @@ test("worker refuses to emit a Google Ads tag for a partial or malformed convers
   }
 });
 
-// --- Monthly "six a month" intake cap (backlog item 594) ---
-//
-// The site publicly promises "Six a month. When the sixth is taken, the
-// intake closes until the next." on five surfaces. These tests drive a
-// counting fake that returns the next count for each signup:YYYY-MM bucket
-// (mirroring the worker's incrementUsageCounter upsert) and assert the exact
-// boundary: the sixth signup is accepted, the seventh is told the truth
-// (JSON "intake_closed" for API clients, a self-contained 409 page for
-// browser form posts), nothing is stored on the closed seventh, and an
-// invalid email consumes no slot.
-
-// Scripted counter for the monthly signup cap: every INSERT into
-// agent_usage_limits returns the next count for its bucket key, mirroring
-// the worker's incrementUsageCounter upsert (RETURNING count).
 class CountingFakeDB extends FakeDB {
   constructor() {
     super();
@@ -1944,13 +1849,11 @@ test("signup handler accepts six signups in a calendar month, then closes the in
   assert.equal(body.error, "intake_closed");
   assert.match(body.message, /six appraisals for this month are taken/, "the closed signal must state the six-a-month truth");
 
-  // The cap counter must be a single calendar-month bucket.
   const buckets = [...db.counts.keys()];
   assert.equal(buckets.length, 1, "all signups in one month share one bucket");
   assert.match(buckets[0], /^signup:\d{4}-\d{2}$/, "the bucket key must be signup:YYYY-MM");
   assert.equal(db.counts.get(buckets[0]), 7, "the counter records all seven attempts so the intake stays closed");
 
-  // No seventh row is persisted: exactly six INSERTs into email_signups.
   const signupInserts = db.calls.filter((call) => call.sql.includes("INSERT INTO email_signups"));
   assert.equal(signupInserts.length, 6, "the closed seventh signup must not be stored");
 });
