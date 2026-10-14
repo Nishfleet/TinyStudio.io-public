@@ -731,7 +731,7 @@ if (aiQuestions && aiEvidence) {
     let embedded = null;
     try {
       embedded = JSON.parse(bundleMatch[1]);
-    } catch (error) {
+    } catch {
       failures.push("Audit page AI-search bundle must be valid JSON.");
     }
     if (embedded) {
@@ -811,7 +811,7 @@ if (aiQuestions && aiEvidence) {
       if (typeof source.title !== "string" || !source.title.trim()) {
         failures.push(`AI-search source must carry a title: ${run.questionId}/${run.engine} ${JSON.stringify(source.url)}`);
       }
-      let parsedUrl = null;
+      let parsedUrl;
       try {
         parsedUrl = new URL(source.url);
       } catch {
@@ -837,7 +837,7 @@ if (aiQuestions && aiEvidence) {
   // offline, so CI never depends on the network.
   for (const run of runs) {
     for (const source of run.sources || []) {
-      let parsedUrl = null;
+      let parsedUrl;
       try {
         parsedUrl = new URL(source.url);
       } catch {
@@ -1518,7 +1518,7 @@ for (const [pageName, pageHtml, pageUrl] of structuredDataPages) {
     failures.push(`Structured data on ${pageName} must sit inside <head>.`);
   }
 
-  let graph = null;
+  let graph;
   try {
     graph = JSON.parse(blocks[0]);
   } catch (error) {

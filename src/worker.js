@@ -1,8 +1,6 @@
 import { RECORD_ID, recordKey } from "./record.js";
 
 const SECURITY_HEADERS = {
-  // Verified missing on the live host before adding: HTTPS already works on
-  // tinystudio.io, www, and app, so a year-long max-age with subdomains is safe.
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
@@ -12,22 +10,12 @@ const SECURITY_HEADERS = {
     "default-src 'self'; img-src 'self' data:; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
 };
 
-// Page-scoped CSP for /brief-requested ONLY when the Google Ads conversion
-// tag is configured. gtag.js loads from googletagmanager.com and beacons to
-// Google's measurement endpoints; the global CSP above blocks both, which
-// made even a real conversion id dead on arrival. The allowances are scoped
-// to this one noindex page's response so every other page keeps the strict
-// CSP. Only reachable when GOOGLE_ADS_CONVERSION_ID / _LABEL are configured
-// (see googleAdsConversion below); when they are not, the page ships with
-// the strict CSP and no tag at all.
 const GOOGLE_ADS_CSP =
   "default-src 'self'; img-src 'self' data: https://www.googleadservices.com; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' https://static.cloudflareinsights.com https://www.googletagmanager.com; connect-src 'self' https://cloudflareinsights.com https://www.googletagmanager.com https://googleads.g.doubleclick.net https://www.googleadservices.com https://www.google-analytics.com https://stats.g.doubleclick.net; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
 
 const PUBLIC_ASSET_PATHS = new Set([
   "/",
   "/index.html",
-  // Leak-audit site. Extensionless twins are listed because the signup
-  // redirect targets /brief-requested and Cloudflare serves the .html for it.
   "/appraisal.html",
   "/appraisal",
   "/pricing.html",
@@ -58,12 +46,6 @@ const PUBLIC_ASSET_PATHS = new Set([
   "/fonts/fraunces-latin-opsz-italic.woff2",
   "/fonts/karla-latin-wght-normal.woff2",
   "/favicon.svg",
-  // Legacy /favicon.ico fallback. Browsers, search-engine crawlers, and
-  // screenshot services still hit /favicon.ico even when every page declares
-  // <link rel="icon">. /favicon.svg is the canonical asset; we serve its
-  // bytes at the .ico path below so the request stops 404-ing. Without this,
-  // public/favicon.ico is not in the asset bucket and isAssetLikePath would
-  // return asset_not_found for the path.
   "/favicon.ico",
   "/apple-touch-icon.png",
   "/og-image.png",
@@ -73,7 +55,6 @@ const PUBLIC_ASSET_PATHS = new Set([
   "/offer.md"
 ]);
 
-// /audit was renamed /appraisal; keep old links and search results working.
 const APPRAISAL_REDIRECT_PATHS = new Set(["/audit", "/audit.html"]);
 
 const STALE_PUBLIC_PATHS = new Set([
@@ -102,21 +83,8 @@ const MAX_FIELD_LENGTH = 1800;
 const MAX_REQUEST_BYTES = 24000;
 const SOFT_AGENT_RUNS_PER_EMAIL_PER_DAY = 5;
 const MAX_AGENT_RUNS_PER_IP_PER_DAY = 20;
-// Public promise: "Six a month. When the sixth is taken, the intake closes
-// until the next." (homepage, /appraisal, /pricing, llms.txt). The
-// signup endpoint must honor it: the sixth valid signup in a calendar month
-// is accepted, and any further POST in the same month gets a truthful
-// closed-intake response instead of a normal success.
 const MAX_APPRAISALS_PER_MONTH = 6;
-// Abuse bounds on the anonymous appraisal endpoint: a confirmation email goes
-// to whatever address the caller types. Per-caller rate limits use the stock
-// Workers Rate Limiting binding (APPRAISAL_LIMITER); the waitlist has a monthly ceiling.
 const MAX_WAITLIST_PER_MONTH = 50;
-// The current product's public intake (homepage and /appraisal) posts to
-// /api/signups. Its rows and the public /health surface must be labeled with
-// the current offer — The Website Appraisal — never the retired self-serve
-// Agent Desk, which keeps its own "agent-self-serve" labels on the legacy
-// /api/agent-audit path.
 const APPRAISAL_SURFACE = "website-appraisal";
 const CURRENCY_AMOUNT_PATTERN = String.raw`(?:(?:₹|\$|€|£|inr|usd|us\$|aud|cad|sgd|gbp|eur|rs\.?|rupees?)\s*\d[\d,.]*(?:\s*(?:k|lakh|lakhs|l|cr))?|\d[\d,.]*\s*(?:inr|usd|aud|cad|sgd|gbp|eur|rupees?))`;
 const METRIC_VALUE_PATTERN = String.raw`(?:${CURRENCY_AMOUNT_PATTERN}|\b\d[\d,.]*\b)`;
@@ -307,9 +275,6 @@ function normalizeWebsite(value) {
 function htmlRedirect(url, signal) {
   const nextUrl = new URL(url);
   if (signal === "saved") {
-    // Success lands on the thank-you page, which is the only page that fires
-    // the Google Ads conversion. A no-JS browser must reach it too, or it
-    // converts silently and untracked.
     nextUrl.pathname = "/brief-requested";
     nextUrl.search = "";
   } else {
@@ -319,10 +284,6 @@ function htmlRedirect(url, signal) {
   return withSecurityHeaders(Response.redirect(nextUrl.toString(), 303));
 }
 
-// Truthful closed-intake page for the monthly "six a month" cap. The form
-// posts with Accept: text/html, so a redirect would need homepage machinery
-// to render; a self-contained response (the same pattern as the retired-host
-// pages) tells the visitor the truth in place, with no JS and no new asset.
 function closedIntakeResponse() {
   return withSecurityHeaders(
     new Response(
@@ -431,12 +392,6 @@ async function signupResponse(request, env, url) {
     return jsonResponse({ ok: false, error: "invalid_email" }, { status: 400 });
   }
 
-  // Monthly intake cap (the "six a month" promise). The bucket key uses the
-  // calendar month so the counter resets naturally on the first of the next
-  // month; the increment is the reservation, so the sixth request passes and
-  // every request after it in the same month is told the truth: the intake
-  // is closed until the next. The counter write is a storage operation, so a
-  // missing or broken D1 must fail closed (503), never accept the signup.
   let monthCount;
   try {
     const monthBucket = `signup:${new Date().toISOString().slice(0, 7)}`;
@@ -470,10 +425,6 @@ async function signupResponse(request, env, url) {
   return jsonResponse({ ok: true, message: "signal_saved" }, { status: 201 });
 }
 
-// M1b: the appraisal request form (docs/PLAN.md 6.2). The six-a-month counter is
-// computed from appraisal_requests rows for the current UTC month, never from a
-// stored number. A full month sends the request to the waitlist with the next
-// open slot date; a valid unused referral code skips the waitlist (6.9).
 function appraisalNow(env) {
   return new Date(env.APPRAISAL_NOW || Date.now());
 }
@@ -570,9 +521,6 @@ function confirmationMessage(env, input, kind, slotDate) {
   };
 }
 
-// Exactly one confirmation per request: the UPDATE claims the send, so a retry
-// of the same submission finds confirmation_sent_at set and sends nothing. A
-// failed send releases the claim so the next retry can send.
 async function sendConfirmationOnce(env, table, id, input, kind, slotDate, at) {
   const claim = await env.DB.prepare(
     `UPDATE ${table} SET confirmation_sent_at = ?1 WHERE id = ?2 AND confirmation_sent_at IS NULL`
@@ -613,8 +561,6 @@ async function existingAppraisal(env, input, month) {
   return null;
 }
 
-// Safe to repeat: the unique request_id means a retry repairs a missing job
-// and never adds a second one.
 async function queueAppraisalAudit(env, requestId, at) {
   const queued = await env.DB.prepare(
     "INSERT OR IGNORE INTO appraisal_audit_jobs (id, request_id, status, created_at) VALUES (?1, ?2, 'queued', ?3)"
@@ -646,8 +592,6 @@ async function placeAppraisalRequest(env, input, now) {
     referred = Boolean(claim.meta?.changes);
   }
 
-  // One statement decides acceptance, so two requests racing for the sixth
-  // place cannot both win: the capacity test and the insert are atomic.
   const accepted = await env.DB.prepare(
     `INSERT OR IGNORE INTO appraisal_requests
        (id, site_url, business_type, avg_deal_value, monthly_leads, name, email, month, referral_code, created_at)
@@ -674,7 +618,6 @@ async function placeAppraisalRequest(env, input, now) {
       .bind(input.referral, id)
       .run();
   }
-  // The place was taken, or a racing duplicate beat this insert to the key.
   const raced = await existingAppraisal(env, input, month);
   if (raced) return { ...raced, duplicate: true, at };
 
@@ -830,10 +773,6 @@ async function incrementUsageCounter(env, bucketKey) {
 
 async function enforceAgentLimits(request, env, email, url) {
   try {
-    // Test-only clock override: production never binds AGENT_LIMITS_NOW, so
-    // runtime behaviour is unchanged when it is absent. The worker test suite
-    // uses it to roll the daily limit bucket across midnight deterministically
-    // (no sleeping).
     const bucket = new Date(env.AGENT_LIMITS_NOW || Date.now()).toISOString().slice(0, 10);
     const ipHash = await hashIp(request, bucket);
 
@@ -1643,12 +1582,6 @@ async function agentAuditResponse(request, env, url) {
 }
 
 async function healthResponse(env) {
-  // The current product (The Website Appraisal) depends on exactly one
-  // backend: the D1 `email_signups` table behind /api/signups. The retired
-  // self-serve Agent Desk's machinery (the AI binding and its own agent_runs /
-  // agent_usage_limits tables) is reported as legacy state, never as the
-  // current product's readiness: /health must not go red when the appraisal
-  // intake is healthy, nor green when the signup path is broken.
   const checks = {
     db: Boolean(env.DB),
     signupsTable: false,
@@ -1671,7 +1604,6 @@ async function healthResponse(env) {
     }
   }
 
-  // The current-product readiness verdict keys off the intake path only.
   const ok = checks.db && checks.signupsTable;
 
   return jsonResponse(
@@ -1765,15 +1697,6 @@ function isHtmlNavigation(request) {
   return (request.method === "GET" || request.method === "HEAD") && accept.includes("text/html");
 }
 
-// ---- Google Ads conversion tag (funnel measurement) -----------------------
-// The funnel's only conversion measurement used to be dead by construction:
-// brief-requested.html shipped a hardcoded gtag loader with a placeholder
-// conversion id, and the production CSP blocked googletagmanager.com
-// entirely, so the event could never record. The tag is now generated at
-// request time from env values and only emitted on /brief-requested when
-// BOTH are configured and well-formed; a partial or malformed config emits
-// nothing rather than a dead tag. The strict patterns also mean the values
-// are safe to interpolate into the generated script.
 const GOOGLE_ADS_ID_PATTERN = /^AW-\d{6,15}$/;
 const GOOGLE_ADS_LABEL_PATTERN = /^[A-Za-z0-9_-]{10,50}$/;
 
@@ -1800,8 +1723,6 @@ gtag('event', 'conversion', {
 `;
 }
 
-// M1c: the Appraisal Record, static HTML from R2, reachable only by its
-// unguessable id. No login, no listing; anything else is a plain 404.
 async function recordResponse(request, env, url) {
   const id = url.pathname.slice("/records/".length);
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -1827,21 +1748,6 @@ export default {
     const url = new URL(request.url);
     const host = url.hostname.toLowerCase();
 
-    // ---- Canonical host redirect (dogfood: Google still presents the retired
-    // self-serve "TinyStudio Agent Desk" title/snippet for tinystudio.io) ----
-    // wrangler.jsonc routes www.tinystudio.io/* at this worker, but nothing
-    // ever sent that host anywhere: it answered 200 with a byte-identical copy
-    // of the public site, on a second hostname and over plain http. Google
-    // therefore holds www.tinystudio.io as its own site, with its own site
-    // name, and that entity still carries the retired "TinyStudio Agent Desk"
-    // name from when the self-serve desk owned the root — which is why the
-    // retired product name keeps surfacing for this site even though the apex
-    // host's own title, description and site name are long since correct.
-    // robots.txt, sitemap.xml and every canonical and og:url on the site name
-    // https://tinystudio.io as the single address, so the duplicate host is
-    // sent there permanently and drops out of the index. A page-level
-    // canonical is only a hint; a 301 is the directive that retires the
-    // duplicate site entity along with its stale name.
     if (host === "www.tinystudio.io") {
       const canonical = new URL(url);
       canonical.protocol = "https:";
@@ -1896,14 +1802,6 @@ export default {
       return healthResponse(env);
     }
 
-    // Legacy /favicon.ico fallback. Browsers and crawlers still hit
-    // /favicon.ico even when every served page declares
-    // <link rel="icon" href="/favicon.svg">, and the asset bucket only
-    // contains /favicon.svg, so the generic allow-list branch below would
-    // 404 it. Fetch the SVG bytes and return them with the conservative
-    // image/x-icon content-type (browsers accept SVG bytes here). Modern
-    // browsers that already saw the <link rel="icon"> declaration will
-    // keep using /favicon.svg; this path only fires for legacy clients.
     if (url.pathname === "/favicon.ico") {
       const icoResponse = await env.ASSETS.fetch(
         assetRequest(url, request, "/favicon.svg")
@@ -1911,9 +1809,6 @@ export default {
       if (icoResponse.ok) {
         const headers = new Headers(icoResponse.headers);
         headers.set("Content-Type", "image/x-icon");
-        // Allow the legacy fallback to be cached separately from the
-        // canonical SVG. A year is fine — the asset is content-hashed by
-        // the served URL, not by query string.
         headers.set(
           "Cache-Control",
           "public, max-age=31536000, immutable"

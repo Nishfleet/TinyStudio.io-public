@@ -18,11 +18,6 @@
   }
   document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', r) : r();
 
-  // ---- AI-search evidence artifact ------------------------------------
-  // Controlled questions and captured runs live in evidence-fixtures/ai-search/
-  // and are embedded on the audit page as JSON. This renderer turns them into
-  // the evidence table. Every text node is escaped; links are rendered only for
-  // http(s) URLs; the four states are strict and stay visually distinct.
   var AI_STATES = ['found', 'wrong', 'absent', 'not-tested'];
   var AI_LABELS = { found: 'Found', wrong: 'Wrong', absent: 'Absent', 'not-tested': 'Not tested' };
 
@@ -42,7 +37,7 @@
     try {
       var parsed = new URL(s);
       return parsed.hostname.indexOf('.') !== -1 ? parsed.href : '';
-    } catch (e) {
+    } catch {
       return '';
     }
   }
@@ -61,7 +56,7 @@
       if (!url) return false;
       try {
         return new URL(url).hostname === siteHost;
-      } catch (e) {
+      } catch {
         return false;
       }
     });
@@ -77,7 +72,7 @@
       var resolved = new URL(page, site);
       if (resolved.hostname !== siteHost) return '';
       return safeUrl(resolved.href) || '';
-    } catch (e) {
+    } catch {
       return '';
     }
   }
@@ -153,7 +148,7 @@
     var data;
     try {
       data = JSON.parse(source.textContent);
-    } catch (e) {
+    } catch {
       return;
     }
     var html = renderArtifact(data);
@@ -172,9 +167,6 @@
   }
 
   document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', bootAiSearch) : bootAiSearch();
-  // ---- Request form: live counter and in-place result ------------------
-  // The counter is read from /api/appraisal-slots, which counts D1 rows for the
-  // current month. Without JS the form still posts and the worker answers.
   var form = document.getElementById('start');
   var counter = document.querySelector('[data-slots-counter]');
   var status = document.querySelector('[data-slots-status]');
@@ -197,7 +189,7 @@
     return fetch('/api/appraisal-slots', { headers: { Accept: 'application/json' } })
       .then(function (res) { return res.json(); })
       .then(showSlots)
-      .catch(function () { /* the static promise text stays; the worker still enforces the cap */ });
+      .catch(function (err) { console.error(err); });
   }
 
   if (form && window.fetch) {

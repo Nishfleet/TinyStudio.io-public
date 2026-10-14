@@ -18,14 +18,6 @@
   document.readyState==='loading'?document.addEventListener('DOMContentLoaded',run):run();
 })();
 
-// Signup rejection signal: the worker 303-redirects failed signups back to
-// /?signal=invalid (the homepage form and the /audit form both post to
-// /api/signups). No page code used to read that signal, so a visitor whose
-// email the server rejected (the server regex is stricter than the browser's
-// type=email check — e.g. "a@b" passes client-side but not server-side) was
-// silently bounced to the homepage with no explanation. Reveal the banner,
-// move focus to it for assistive tech, then strip the query so a refresh
-// (or a copied link) does not re-show the error.
 (function(){
   var match=(location.search||'').match(/[?&]signal=([^&]+)/);
   if(!match)return;
