@@ -3,10 +3,6 @@ import { execFileSync } from "node:child_process";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-// The Website Appraisal site owns the root. The retired self-serve Agent Desk
-// surface (/agent-desk, its page, script and styles) was removed in M0; only the
-// /api/agent-audit endpoint stays. The homepage (index.html) owns the site's
-// copy contract, so the required-copy and forbidden-claim guards read it.
 const index = read("public/index.html");
 const llms = read("public/llms.txt");
 const offer = read("public/offer.md");
@@ -19,11 +15,6 @@ const wranglerConfig = JSON.parse(wrangler);
 
 const failures = [];
 
-// The required copy of the CURRENT homepage (public/index.html, "The Website
-// Appraisal"): the offer line, the capacity and no-call promises, the claims
-// policy, the primary CTA, and the contact and identity anchors. The retired
-// Agent Desk page carries its own framing guards below; its self-serve copy
-// is no longer the site's copy contract.
 const requiredIndexCopy = [
   "TinyStudio — The Website Appraisal",
   "the free leak audit of high-ticket service homepages",
@@ -134,12 +125,6 @@ for (const text of requiredWorkerCopy) {
   if (!worker.includes(text)) failures.push(`Missing worker agent behavior: ${text}`);
 }
 
-// The current-product readiness verdict must key off the intake path only.
-// The Website Appraisal depends on the D1 email_signups table behind
-// /api/signups; the retired Agent Desk's AI binding and agent tables are
-// reported as legacy state, never as the current product's readiness. A
-// regression that lets the legacy machinery gate /health — or that drops the
-// intake table from the check — would make the machine-readable truth lie.
 const requiredHealthCopy = [
   "surface: APPRAISAL_SURFACE",
   "signupsTable",
@@ -157,13 +142,6 @@ if (worker.includes("checks.ai && checks.db")) {
   failures.push("Worker /health verdict must not gate on the retired Agent Desk AI binding");
 }
 
-// Monthly intake cap (the "six a month" public promise). The site promises
-// "when the sixth is taken, the intake closes until the next" on five
-// surfaces; the signup handler must honor it: a calendar-month counter that
-// rejects the seventh signup with a truthful closed-intake response (JSON
-// error "intake_closed" for API clients, a self-contained 409 page for form
-// posts). These are STATIC SOURCE GUARDS, not behavioral tests — the
-// behavioral proof lives in test-agent-worker.mjs.
 if (!worker.includes("MAX_APPRAISALS_PER_MONTH")) {
   failures.push("Worker must define MAX_APPRAISALS_PER_MONTH (the six-a-month cap).");
 }
@@ -181,10 +159,7 @@ if (!worker.includes("The six appraisals for this month are taken")) {
 }
 
 for (const text of requiredPublicArtifacts) {
-  // llms.txt and offer.md are mirrors of the same offer contract. A fact must
-  // appear in BOTH (case-insensitively, since one file may head it while the
-  // other embeds it mid-sentence, and llms.txt wraps prose across lines), so
-  // neither file can silently drift.
+
   const normalized = (content) => content.toLowerCase().replace(/\s+/g, " ");
   const needle = normalized(text);
   if (!normalized(llms).includes(needle)) failures.push(`Missing offer fact in llms.txt: ${text}`);
@@ -194,8 +169,6 @@ for (const text of requiredPublicArtifacts) {
 const siteHome = read("public/index.html");
 const siteAudit = read("public/appraisal.html");
 
-// Monthly cap phrase on every conversion surface must stay canonical:
-// the short "Six a month." promise, never the product-name drift "Six audits a month.".
 const monthlyCapPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
@@ -210,9 +183,6 @@ for (const [pageName, pageHtml] of monthlyCapPages) {
   }
 }
 
-// Public-promise regression: the "No call at any point" promise must appear on
-// every intake surface that posts to /api/signups, not only the homepage and
-// the MSP page. The canonical mirrors are guarded by requiredPublicArtifacts.
 const noCallIntakePages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
@@ -224,10 +194,6 @@ for (const [pageName, pageHtml] of noCallIntakePages) {
   }
 }
 
-// Conversion-friction regression: the signup website field must accept a bare
-// business domain (example.com) at the browser level instead of requiring a
-// scheme via type="url", while still rejecting malformed entries and staying
-// required. The server's normalizeWebsite keeps the URL-safety gate.
 const VALID_WEBSITES = ["example.com", "www.example.com", "https://example.com", "example.com/page", "https://example.com/"];
 const INVALID_WEBSITES = ["example", "not a domain", "example..com", "example.com/with space", "https://"];
 
@@ -261,13 +227,6 @@ for (const [pageName, pageHtml] of [["homepage", siteHome], ["audit page", siteA
   }
 }
 
-// Signup rejection-signal guard (dogfood: failed-signup dead end). The worker
-// 303-redirects a rejected signup back to /?signal=invalid (the server email
-// regex is stricter than the browser's type=email check — e.g. "a@b" passes
-// client-side but not server-side), so the homepage must render that state:
-// a role=alert banner, hidden until index.js reads the signal, moves focus
-// into it, and strips the query so a refresh or a copied link does not
-// re-show the error. These are STATIC SOURCE GUARDS, not behavioral tests.
 const signalBanner = siteHome.match(/<p\b[^>]*id="signal-invalid"[^>]*>/i)?.[0] || "";
 if (!signalBanner) {
   failures.push("Homepage must carry the id=\"signal-invalid\" signup rejection banner.");
@@ -300,15 +259,6 @@ if (!worker.includes("htmlRedirect(url, \"invalid\")")) {
   failures.push("Worker must keep 303-redirecting rejected signups to /?signal=invalid (the homepage banner renders it).");
 }
 
-
-// Pricing closing-callout regression (review item: the /pricing closing band
-// ended in a dead end — "The appraisal costs you an email" with no way to send
-// one — while every other served conversion surface carried a real intake
-// form). The band must keep the actual signup form: a form.lead inside the
-// .band posting website + email to /api/signups, both fields with a
-// persistent programmatic aria-label, and a submit button reading "Request
-// the appraisal". STATIC SOURCE GUARD (regex over pricing.html), matching the
-// repo's other source-string guards.
 const sitePricing = read("public/pricing.html");
 const pricingBand = sitePricing.match(/<div class="band">([\s\S]*?)<\/div>\s*<section id="confidential">/)?.[1] ?? "";
 const pricingForm = pricingBand.match(/<form\b[^>]*class="lead[^>]*"[^>]*>[\s\S]*?<\/form>/i)?.[0] ?? "";
@@ -328,14 +278,6 @@ if (!/Request the appraisal/i.test(pricingForm)) {
   failures.push('Pricing closing callout submit button must read "Request the appraisal".');
 }
 
-// Mobile layout regression: at 390x844 the /audit page previously overflowed
-// horizontally (navlinks measured to x=569, the 53-of-89 stat to x=451).
-// The mobile treatment must live in audit.css behind the shared 760px
-// breakpoint and stack every overflowing block. These checks below are
-// STATIC SOURCE GUARDS (regex over audit.css), not behavioral tests: CI has
-// no browser. The behavioral, measured layout proof for this fix lives in
-// docs/evidence/audit-mobile-overflow-390x844-2026-08-06.md (unfixed 567px
-// scrollWidth at 390x844, fixed 390px, desktop 1280px unchanged).
 const auditCss = read("public/appraisal.css");
 const auditMobile = auditCss.match(/@media \(max-width:760px\)\{([\s\S]*)\}\s*$/)?.[1] ?? "";
 
@@ -353,14 +295,6 @@ if (!auditMobile) {
   requireMobileRule("let proof rows wrap instead of overflowing", /\.row\{[^}]*flex-wrap:wrap/);
 }
 
-// Audit page in-content request CTA regression (review item: the /audit proof
-// page ended at the closing urgency band with no in-content conversion afford
-// — the only request link was the nav CTA; fixed by PR #159). The closing
-// .band must keep the "Request the appraisal" pill linking to the page's own
-// #start form, and the no-guarantees note that scopes it. audit.css must keep
-// the scoped .band .cta pill styling with a >=44px hit area, and the mobile
-// media query must stack the band. STATIC SOURCE GUARD (regex over the served
-// HTML/CSS), not a behavioral test: CI has no browser.
 const auditClosingBand = siteAudit.match(/<div class="band">([\s\S]*?)<\/div>\s*<section id="confidential">/)?.[1] ?? "";
 if (!auditClosingBand) {
   failures.push("Audit page must keep an in-content conversion CTA band between the proof and the footer.");
@@ -379,9 +313,6 @@ if (!/\.band \.cta\{[^}]*padding:16px 24px/.test(auditCss)) {
   failures.push("Audit band CTA must keep a >=44px tap target (padding:16px 24px).");
 }
 
-// The behavioral layout proof (real Chromium measurement, local static copy)
-// is checked in so the static guards above stay distinguishable from it.
-// Existence and section anchors only — this does not re-verify measurements.
 const overflowReceipt = existsSync("docs/evidence/audit-mobile-overflow-390x844-2026-08-06.md")
   ? read("docs/evidence/audit-mobile-overflow-390x844-2026-08-06.md")
   : null;
@@ -401,11 +332,6 @@ if (overflowReceipt) {
   }
 }
 
-// The forbidden-claim guard scans the CURRENT site's copy contract — the five
-// public pages plus the llms.txt / offer.md mirror pair. The retired Agent
-// Desk page and its script are a frozen, de-indexed legacy surface describing
-// a retired product; their copy is governed by the retired-framing guards
-// below, not by the current offer's claims policy.
 const currentClaimPages = [
   siteHome,
   siteAudit,
@@ -468,8 +394,6 @@ if (!sitemap.includes("https://tinystudio.io/")) {
   failures.push("Sitemap should expose the root URL.");
 }
 
-// Responsive regression guard: each public route's stylesheet must keep its
-// mobile block, or a 390px phone view regains horizontal overflow.
 const responsiveCss = [
   ["shared.css", ["@media (max-width:760px)", ".wrap{padding:0 20px}", ".navlinks{flex-wrap:wrap"]],
   ["index.css", ["@media (max-width:760px)", ".wrap{padding:0 20px}", ".navlinks{flex-wrap:wrap"]],
@@ -483,19 +407,8 @@ for (const [file, needles] of responsiveCss) {
   }
 }
 
-// Tap-target regression guard (finding: mobile tap targets under WCAG sizes).
-// On every served page the touch hit areas were below the 44px bar the finding
-// holds the site to: marketing nav links ~15px tall, the nav CTA ~35px, the
-// logo ~25px, footer links ~13px, and the primary lead-form CTA 42px. The fix
-// grows every interactive element in the mobile nav, footer and lead forms to
-// a >=44px hit area, scoped to the existing mobile blocks so desktop widths
-// are untouched. These are STATIC SOURCE GUARDS (exact-string and regex checks
-// over the served CSS), not behavioral tests: CI has no browser. The
-// behavioral, measured layout proof for this fix lives in
-// docs/evidence/tap-targets-2026-08-09.md (unfixed nav link ~15px, nav CTA
-// ~34px, lead CTA ~42px at 390x844; fixed all >=44px).
 const tapTargetCss = [
-  // [file, mobile-block needles, whole-file needles]
+
   ["shared.css",
     [".logo{padding:11px 0}", ".navlinks a{padding:15px 0}", ".navcta{padding:15px 20px}", "footer a{padding:16px 0}", "form.lead.two > input{padding:12px 14px;min-height:44px;box-sizing:border-box}", "form.lead.two > input + input{border-left:0;border-top:1px solid var(--line)}"],
     ["border-radius:999px;padding:16px 20px", "form.lead.two > input{padding:12px 18px 11px 24px;min-height:44px;box-sizing:border-box}"]],
@@ -520,9 +433,6 @@ for (const [file, blockNeedles, fileNeedles] of tapTargetCss) {
   }
 }
 
-// The behavioral tap-target proof (real Chromium measurement, local static
-// copy) is checked in so the static guards above stay distinguishable from it.
-// Existence and section anchors only — this does not re-verify measurements.
 const tapTargetReceipt = existsSync("docs/evidence/tap-targets-2026-08-09.md")
   ? read("docs/evidence/tap-targets-2026-08-09.md")
   : null;
@@ -534,19 +444,6 @@ if (tapTargetReceipt) {
   }
 }
 
-// Lead-form tablet squeeze guard (review finding on the homepage intake form):
-// the homepage form shares the .lead class with the checks-section header,
-// whose gap:70px / space-between / flex-end treatment leaked onto it and,
-// together with the nowrap submit button, squeezed the domain and email
-// inputs to ~100px at tablet width (measured 99/98px at 761px, 103/102px at
-// 768px, and never above 139px — the "yourwebsite.com" placeholder clipped —
-// at any width under the fix). The fix scopes the checks-header rules to
-// .checks .lead and gives the two-field form its own 900px stacking
-// breakpoint, so the one-line layout keeps >=208px inputs and anything
-// narrower goes full-width stacked. These are STATIC SOURCE GUARDS (regex
-// over the served CSS), not behavioral tests: CI has no browser. The
-// behavioral, measured layout proof lives in
-// docs/evidence/lead-form-tablet-squeeze-2026-08-10.md.
 const indexCss = read("public/index.css");
 if (!indexCss.includes(".checks .lead{display:flex;justify-content:space-between;align-items:flex-end;gap:70px}")) {
   failures.push("Homepage checks header must scope .lead to .checks .lead (the shared class leaks its gap onto the lead form).");
@@ -561,9 +458,6 @@ if (indexCss.includes("@media (max-width:760px){\n    form.two{flex-direction:co
   failures.push("Two-field lead form must not stack at 760px (squeezes the inputs to ~100px at tablet widths).");
 }
 
-// The behavioral lead-form proof (real Chromium measurement, local static
-// copy) is checked in so the static guards above stay distinguishable from it.
-// Existence and section anchors only — this does not re-verify measurements.
 const leadFormReceipt = existsSync("docs/evidence/lead-form-tablet-squeeze-2026-08-10.md")
   ? read("docs/evidence/lead-form-tablet-squeeze-2026-08-10.md")
   : null;
@@ -575,14 +469,6 @@ if (leadFormReceipt) {
   }
 }
 
-// Self-hosted font guards. The fonts used to come from Google Fonts (a
-// third-party origin chain: css2 on googleapis, then woff2 on gstatic) and
-// put ~700 ms of font loading into simulated mobile LCP. They are now built
-// from the pinned @fontsource-variable packages into public/fonts (gitignored,
-// generated by build-fonts.mjs, which wrangler runs through build.command) and
-// served same-origin with font-display: optional and no preload, so the font
-// is out of the LCP path. These are STATIC SOURCE GUARDS; the browser-side proof is
-// test/check-render-blocking.mjs.
 const fontPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
@@ -639,18 +525,6 @@ if (renderBlockingScript) {
   }
 }
 
-// ---- Google Ads conversion tag (funnel measurement) ------------------------
-// The funnel's only conversion measurement was dead by construction: the
-// brief-requested page hardcoded a gtag loader with the AW-XXXXXXXXX
-// placeholder, and the production CSP blocked googletagmanager.com entirely,
-// so the event could never record. The tag is now generated by the worker at
-// request time from GOOGLE_ADS_CONVERSION_ID / GOOGLE_ADS_CONVERSION_LABEL
-// and only emitted on /brief-requested when both are configured (see
-// specs/003-wellness-clinic-launch/tracking-setup.md). These STATIC SOURCE
-// GUARDS make the dead-by-construction shape impossible again: no placeholder
-// may exist in public/ or src/worker.js, no public file may hardcode the gtag
-// loader, the static brief-requested.js may not fire anything, and the worker
-// must keep the env-driven injection wired.
 const adsHtml = read("public/brief-requested.html");
 const adsScript = read("public/brief-requested.js");
 for (const placeholder of ["AW-XXXXXXXXX", "YYYYYYYYYYYYYYYYYYY"]) {
@@ -680,11 +554,6 @@ if (existsSync(new URL("../public/pipeline-sprint/index.html", import.meta.url))
   failures.push("Pipeline Sprint page should not remain as a separate stale public asset.");
 }
 
-// ---- AI-search evidence artifact ---------------------------------------
-// The audit page carries a controlled-test evidence artifact for AI-search
-// discoverability. Fixtures in evidence-fixtures/ai-search/ are the single
-// source of truth; the audit page embeds a copy of both files and this block
-// refuses to let the embedded bundle drift from them.
 const AI_STATES = ["found", "wrong", "absent", "not-tested"];
 let aiQuestions = null;
 let aiEvidence = null;
@@ -801,10 +670,6 @@ if (aiQuestions && aiEvidence) {
     }
   }
 
-  // Source-host validation: every source is a page the engine actually cited,
-  // so its URL must be a well-formed absolute http(s) URL with a real host, it
-  // must carry a title a machine reader can cite, and a run must not cite the
-  // same page twice.
   for (const run of runs) {
     const citedUrls = new Set();
     for (const source of run.sources || []) {
@@ -827,14 +692,6 @@ if (aiQuestions && aiEvidence) {
     }
   }
 
-  // External citation links (dogfood 78fcaed682fa, audit run
-  // 20260808T074205Z-msk2fl3n): the engine found apps.apple.com/app/tinystudio
-  // returning 404 on /audit.html (issue-19, "Broken external links on
-  // /audit.html"). The App Store family of hosts resolves only the
-  // id-carrying forms — https://apps.apple.com/app/<numeric-id> or
-  // https://apps.apple.com/<region>/app/<slug>/id<digits> — so a bare slug
-  // such as /app/tinystudio is structurally dead. This rule is checked
-  // offline, so CI never depends on the network.
   for (const run of runs) {
     for (const source of run.sources || []) {
       let parsedUrl;
@@ -855,10 +712,6 @@ if (aiQuestions && aiEvidence) {
     }
   }
 
-  // Strict state transition: "found" means the answer named the tested business
-  // and its facts checked out against the site — so the run must cite the
-  // business's own site. This prevents relabeling a wrong/absent result as
-  // found without the site itself among the cited pages.
   let businessHost = "";
   try {
     businessHost = new URL(aiEvidence.business.site).hostname;
@@ -882,9 +735,6 @@ if (aiQuestions && aiEvidence) {
     }
   }
 
-  // The homepage disambiguation block must answer every controlled question:
-  // each fixture question id appears in a data-ai-question attribute inside the
-  // id="identity" section, and every referenced id must exist in the fixture.
   const homepageIdentitySection = siteHome.match(/<section[^>]*id="identity"[\s\S]*?<\/section>/i)?.[0] || "";
   const referencedQuestionIds = [...homepageIdentitySection.matchAll(/\bdata-ai-question="([^"]+)"/gi)]
     .flatMap((match) => match[1].trim().split(/\s+/))
@@ -928,8 +778,6 @@ if (aiQuestions && aiEvidence) {
     if (pattern.test(artifactCopy)) failures.push(`Forbidden claim in AI-search artifact copy: ${pattern}`);
   }
 
-  // Backlog 80e53f3d7f: the /audit AI-search panel is a one-off human-labelled
-  // test, not a GEO dashboard or continuous monitor.
   const geoDistinctionPhrases = [
     "This is not a GEO dashboard",
     "not continuous monitoring",
@@ -960,24 +808,8 @@ if (aiQuestions && aiEvidence) {
   }
 }
 
-// ---- AI Answer Readiness (dogfood 4473a99a9bc9) ----------------------------
-// The audit run 20260808T074205Z-msk2fl3n found the engines' preferred
-// source pages unclear: q5/google cited tinystudio.io yet described the
-// retired Agent Desk, and q7/google came back with the note "Missing:
-// pricing". Nothing on the site told an engine which page owns which fact.
-// The machine-readable pair must therefore declare, per controlled question,
-// the preferred source page: the section must exist in BOTH llms.txt and
-// offer.md (the mirror rule), every controlled question must be mapped to
-// exactly one page the worker serves (sitemap membership), price questions
-// must map to the clean /pricing (the pricing page owns the price), and the
-// two files must carry the same question-to-page mapping.
 const ANSWER_READINESS_HEADING = "## Answer Readiness: Preferred Source Pages";
 
-// The sitemap lists the indexable public surface at its clean extensionless
-// addresses; the worker also serves each page at its canonical .html twin.
-// The preferred-source mapping uses the clean form that serves 200, never the
-// .html form the deployed worker 307-redirects. Membership accepts either
-// spelling (home stays "/").
 const servedPageUrls = new Set(
   [...sitemap.matchAll(/<loc>(https:\/\/tinystudio\.io\/[^<]*)<\/loc>/g)]
     .map((match) => match[1])
@@ -1035,18 +867,6 @@ if (aiQuestions && Array.isArray(aiQuestions.questions)) {
   }
 }
 
-// ---- TinyStudio identity clarification -------------------------------------
-// One precise identity must run through every owned public surface: TinyStudio
-// is the business behind tinystudio.io — the free leak audit of high-ticket
-// service homepages plus the human-reviewed desk that closes what it finds. The
-// clarification must be present on the homepage, the audit page, in llms.txt
-// and in offer.md, and the ambiguous or retired framings ("The Tiny Studio",
-// the spaced name form, and the self-serve Agent Desk product names) must not
-// reappear in visible copy. The embedded AI-search evidence bundle is a
-// verbatim record of captured engine answers that legitimately quotes other
-// businesses' names, so script blocks are stripped before the stale-string
-// scan. The homepage identity section also answers the controlled AI-search
-// questions one row at a time (see the data-ai-question tie above).
 const ownedPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
@@ -1063,9 +883,6 @@ const identityFacts = [
   "states no base city or office address"
 ];
 
-// llms.txt is the machine-readable surface; offer.md is its mirror. A fact a
-// machine reader needs to tell TinyStudio apart must appear in BOTH files, so
-// neither file can silently drift while the other keeps answering.
 for (const phrase of identityFacts) {
   if (!siteHome.includes(phrase)) failures.push(`Homepage must state the TinyStudio identity: ${phrase}`);
   if (!siteAudit.includes(phrase)) failures.push(`Audit page must state the TinyStudio identity: ${phrase}`);
@@ -1073,10 +890,6 @@ for (const phrase of identityFacts) {
   if (!offer.includes(phrase)) failures.push(`offer.md must state the TinyStudio identity: ${phrase}`);
 }
 
-// The same-name disambiguation list is the load-bearing part of the identity:
-// the engines' wrong answers (evidence-fixtures/ai-search/evidence.json) were
-// built from exactly these other businesses. The list must be mirrored between
-// llms.txt and offer.md, and the machine-readable pair must link each other.
 const identityDisambiguation = [
   "Mac subtitle app",
   "fibre-arts magazine",
@@ -1110,10 +923,6 @@ if (!llms.includes("https://tinystudio.io/appraisal")) {
   failures.push("llms.txt must point at the appraisal page that carries the AI-search evidence artifact.");
 }
 
-// The machine-readable pair states the current offer in the site's own words
-// and points at the clean /pricing for price and terms. It must not restate
-// the pricing page's specifics (dollar amounts, refund language) or revive
-// the retired Website Correction / founder-pilot / MSP-buyer framing.
 const staleOfferPhrases = [
   "Website Correction",
   "founder pilot",
@@ -1128,7 +937,7 @@ for (const phrase of staleOfferPhrases) {
     failures.push(`offer.md must not revive the retired offer framing: ${phrase}`);
   }
 }
-// The one price the pair may state is the plan's: $10,000 per site (docs/PLAN.md).
+
 const stateOnlyPlanPrice = (content) =>
   /\$\s?\d/.test(content.replaceAll("$10,000 per site", ""));
 if (stateOnlyPlanPrice(llms)) {
@@ -1155,11 +964,11 @@ if (!offer.includes("## Identity")) {
 }
 
 const staleIdentityStrings = [
-  "The Tiny Studio",  // collides with "The Tiny Studio LA", an unrelated venue
-  "Tiny Studio",      // the spaced name form is never used by this business
-  "self-serve",       // the retired Agent Desk framing
-  "Pipeline Brief",   // the retired Agent Desk deliverable
-  "Agent Desk"        // the retired product name
+  "The Tiny Studio",
+  "Tiny Studio",
+  "self-serve",
+  "Pipeline Brief",
+  "Agent Desk"
 ];
 
 for (const [pageName, pageHtml] of ownedPages) {
@@ -1174,12 +983,6 @@ for (const [pageName, pageHtml] of ownedPages) {
   }
 }
 
-// ---- Meta descriptions (dogfood) -------------------------------------------
-// The leak audit this site sells flags a homepage whose served HTML carries no
-// description, so the site's own five public pages must not carry the same
-// fault. Each page keeps exactly one valid, non-empty description meta tag in
-// its head, within a practical search-snippet length, distinct per page, and
-// free of the offer promises the repo refuses to make.
 const metaDescriptionPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
@@ -1216,22 +1019,6 @@ for (const [pageName, pageHtml] of metaDescriptionPages) {
   }
 }
 
-// ---- Apple touch icon (dogfood) ---------------------------------------------
-// The leak audit this site sells flags a homepage whose served HTML carries no
-// apple touch icon, leaving iOS Safari to derive a home-screen icon from a
-// screenshot of the page (finding 98a7bf8e08fc, "Apple touch icon missing on
-// home"), so none of the site's served pages may carry that fault either.
-// Every served HTML page keeps exactly one <link rel="apple-touch-icon">
-// inside its head, pointing at the served /apple-touch-icon.png asset, and
-// the asset itself must stay a tracked, valid PNG so a dropped or rewritten
-// file cannot silently leave the pages pointing at nothing.
-//
-// The page list is read off disk rather than hardcoded. A hardcoded list only
-// guards the pages that existed when it was written, so a newly added public
-// page shipping without the link would re-create the exact fault this finding
-// names while CI stayed green (verified 2026-08-20: an un-iconed new
-// public/*.html passed the old guard). Reading public/*.html means every
-// served HTML page — including one added tomorrow — is guarded by default.
 const ICON_PAGE_NAMES = new Map([
   ["index.html", "homepage"],
   ["appraisal.html", "appraisal page"],
@@ -1242,7 +1029,7 @@ const ICON_PAGE_NAMES = new Map([
 const publicHtmlFiles = readdirSync(new URL("../public", import.meta.url))
   .filter((name) => name.endsWith(".html"))
   .sort();
-// A rename or deletion must not silently shrink the guarded set either.
+
 for (const knownFile of ICON_PAGE_NAMES.keys()) {
   if (!publicHtmlFiles.includes(knownFile)) {
     failures.push(`Served page public/${knownFile} is missing; every public HTML page must stay served with an apple touch icon.`);
@@ -1282,14 +1069,6 @@ if (!worker.includes('"/apple-touch-icon.png"')) {
   failures.push("Worker must serve /apple-touch-icon.png from the public asset allow-list.");
 }
 
-// ---- Favicon (dogfood) -------------------------------------------------------
-// A homepage with no favicon link leaves every browser to fall back on
-// /favicon.ico, which this worker does not serve, so each page load fires a
-// 404 — even though /favicon.svg exists and is allow-listed. Every served
-// HTML page must keep exactly one <link rel="icon"> inside its head pointing
-// at the served /favicon.svg asset, and the asset itself must stay a tracked,
-// valid SVG so a dropped or rewritten file cannot silently leave the pages
-// pointing at nothing.
 const faviconPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
@@ -1326,18 +1105,7 @@ try {
 if (!worker.includes('"/favicon.svg"')) {
   failures.push("Worker must serve /favicon.svg from the public asset allow-list.");
 }
-// ---- /favicon.ico legacy fallback (item 017eb201fc) ------------------------
-// Browsers, search-engine crawlers, and screenshot services still hit
-// /favicon.ico even when every served page declares
-// <link rel="icon" href="/favicon.svg">. The asset bucket only contains
-// /favicon.svg, so without worker-level handling the request hits
-// isAssetLikePath and 404s. The worker must (a) allow-list /favicon.ico so
-// the legacy path reaches a handler, and (b) actually map the request to
-// the canonical /favicon.svg bytes — the only checkable guarantee in
-// source is that the worker allow-list contains both paths and a live
-// probe below confirms the served Content-Type and body. This guard
-// prevents an allow-list removal from silently re-404-ing the path that
-// search-engine link previews and bookmark imports still ask for.
+
 if (!worker.includes('"/favicon.ico"')) {
   failures.push("Worker must allow-list /favicon.ico so the legacy fallback path reaches a handler instead of 404-ing via isAssetLikePath.");
 }
@@ -1345,25 +1113,6 @@ if (!worker.includes('image/x-icon')) {
   failures.push("Worker /favicon.ico handler must serve SVG bytes with Content-Type: image/x-icon so legacy browsers and crawlers accept the response.");
 }
 
-// ---- Cloudflare Web Analytics beacon (dogfood 455ee8966b) -----------------
-// The leak audit's auto-injected Cloudflare Web Analytics beacon 404s on every
-// page load (diagnosis 2026-08-09, "the site's only analytics"). The root
-// cause is dashboard-level: the zone's automatic Web Analytics setup injects
-// a snippet whose 32-hex site token is rejected by Cloudflare's ingestion
-// endpoint, and the zone's same-origin /cdn-cgi/rum endpoint is not
-// provisioned, so the beacon's POST to /cdn-cgi/rum? is answered 404 by
-// Cloudflare's edge before the Worker is ever reached. No code in this repo
-// can restore the analytics — that requires dashboard access or a Web
-// Analytics API token, neither of which is available to this worktree. The
-// re-verify receipt (docs/evidence/web-analytics-beacon-404-reverify-2026-08-14.md)
-// documents that the symptom no longer occurs because the auto-injection is
-// no longer active.
-//
-// This guard closes the loop on the source side: no served HTML page may
-// re-introduce the broken beacon script tag (the only mechanism in this repo
-// that could put the 404 back), while the CSP must still permit the manual
-// JS-snippet path so a future dashboard-restore or hand-added snippet
-// continues to work without further security-header churn.
 const beaconPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
@@ -1390,21 +1139,6 @@ if (!worker.includes("https://cloudflareinsights.com")) {
   failures.push("Worker CSP must keep https://cloudflareinsights.com in connect-src so the manual JS-snippet path keeps working when dashboard access is restored.");
 }
 
-// ---- Social share tags (dogfood d87d715be3d0) -----------------------------
-// The leak audit this site sells flags a homepage whose served HTML cannot
-// tell a social platform what to show when the page is shared — the share
-// card comes back with no image, or a scraped guess. The audit run
-// 20260808T074205Z-msk2fl3n found exactly that fault on this site's own home
-// page (finding d87d715be3d0, "Social share image incomplete on home"):
-// public/index.html served zero og:/twitter: tags even though
-// public/og-image.png exists and is allow-listed in the worker. Each public
-// page must now carry a complete, per-page share set in its head: og:title,
-// og:description, og:type, og:url, og:image with width/height/alt, and the
-// Twitter Card mirror. og:description must equal the page's meta description
-// so the two cannot drift; og:image must be the absolute og-image.png URL and
-// its declared dimensions must match the actual PNG header; og:url must be
-// the page's own absolute URL; and every tag must sit inside <head>, exactly
-// once.
 const socialSharePages = [
   ["homepage", siteHome, "https://tinystudio.io/"],
   ["audit page", siteAudit, "https://tinystudio.io/appraisal"],
@@ -1416,9 +1150,6 @@ const socialSharePages = [
 ];
 const SOCIAL_IMAGE_URL = "https://tinystudio.io/og-image.png";
 
-// og: tags must use property=, twitter: tags must use name= (either is a
-// malformed tag that platforms ignore), and the attribute boundary must not
-// let data-property or data-name pass.
 const socialShareAttr = (key) => (key.startsWith("og:") ? "property" : "name");
 const shareTagIn = (html, key) =>
   [...html.matchAll(/<meta\b[^>]*>/gi)]
@@ -1436,16 +1167,16 @@ for (const [pageName, pageHtml, pageUrl] of socialSharePages) {
   const head = pageHtml.match(/<head\b[\s\S]*?<\/head>/i)?.[0] ?? "";
   const description = pageHtml.match(/<meta\b[^>]*\bname="description"[^>]*>/i)?.[0]?.match(/\bcontent="([^"]*)"/i)?.[1] ?? "";
   const expected = new Map([
-    ["og:title", ""], // non-empty, per page
+    ["og:title", ""],
     ["og:description", description],
     ["og:type", "website"],
     ["og:url", pageUrl],
     ["og:image", SOCIAL_IMAGE_URL],
     ["og:image:width", "1200"],
     ["og:image:height", "630"],
-    ["og:image:alt", ""], // non-empty, per page
+    ["og:image:alt", ""],
     ["twitter:card", "summary_large_image"],
-    ["twitter:title", ""], // non-empty, per page
+    ["twitter:title", ""],
     ["twitter:description", description],
     ["twitter:image", SOCIAL_IMAGE_URL]
   ]);
@@ -1469,18 +1200,6 @@ for (const [pageName, pageHtml, pageUrl] of socialSharePages) {
   }
 }
 
-// ---- Structured data (dogfood 975fdb784275) --------------------------------
-// The leak audit this site sells flags a homepage whose served HTML gives a
-// machine reader nothing to hold onto — no schema.org markup at all — so the
-// site's own five public pages must not carry that fault either. Each page
-// keeps exactly one application/ld+json block in its head: a @graph with a
-// stable Organization node (the same entity on every page), a WebSite node,
-// and the page's own WebPage node. Every value is bound to the page's own
-// head metadata — name to the og:title, description to the meta description,
-// url to the og:url — so the structured data cannot drift from what the page
-// actually says. The Organization node is identical on all five pages, and
-// the price stays where it belongs: pricing.html owns it, so no other page's
-// block may restate a dollar amount.
 const structuredDataPages = [
   ["homepage", siteHome, "https://tinystudio.io/"],
   ["audit page", siteAudit, "https://tinystudio.io/appraisal"],
@@ -1495,8 +1214,6 @@ const ORGANIZATION_LOGO = "https://tinystudio.io/apple-touch-icon.png";
 const ORGANIZATION_DESCRIPTION =
   siteHome.match(/<meta\b[^>]*\bname="description"[^>]*\bcontent="([^"]*)"/i)?.[1] ?? "";
 
-// The page node name is bound to the og:title, whose HTML entities (e.g. the
-// pricing page's "&amp;") must be decoded before comparison.
 const decodeEntities = (text) =>
   text.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 
@@ -1610,9 +1327,6 @@ for (const [pageName, pageHtml, pageUrl] of structuredDataPages) {
     }
   }
 
-  // The price is pricing.html's to state; no other page's structured data may
-  // restate a dollar amount (the pricing page mirrors its own meta
-  // description, which legitimately carries the price).
   if (pageName !== "pricing page" && /\$\s?\d/.test(blocks[0])) {
     failures.push(`Structured data on ${pageName} must not restate a dollar amount; pricing.html owns the price.`);
   }
@@ -1626,18 +1340,6 @@ for (const [pageName, pageHtml, pageUrl] of structuredDataPages) {
   }
 }
 
-// ---- Internal page links (dogfood 996dffe45ef7) ---------------------------
-// The leak audit this site sells flags a homepage whose internal links do not
-// point at the final destination URL: the dogfood run reported every .html
-// navigation target on home ("index.html" -> "/", "audit.html" -> "/audit",
-// "agents.html" -> "/agents", "pricing.html" -> "/pricing", "specimen.html" ->
-// "/specimen") as a redirecting internal link. The five public pages (and the
-// /brief-requested post-signup page, which carries the same logo/nav/back
-// shell) must therefore point every page link at the clean URL the worker
-// serves, never at a .html file that resolves to it. These are STATIC SOURCE
-// GUARDS (regex over the served files): CI has no browser, so they assert the
-// .html target shape cannot return, not that the redirects are absent on the
-// network.
 const internalLinkPages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
@@ -1654,21 +1356,10 @@ const htmlPageTargets = {
   "privacy.html": "/privacy",
   "terms.html": "/terms",
   "contact.html": "/contact",
-  // The post-signup page is served at both forms too (verified 2026-08-17:
-  // /brief-requested.html 307s to /brief-requested), so nothing may link to
-  // its redirecting twin either.
+
   "brief-requested.html": "/brief-requested"
 };
 
-// The fault is the DESTINATION, not the spelling. "audit.html",
-// "./audit.html", "/audit.html" and "https://tinystudio.io/audit.html" are the
-// same redirecting request on the network (each 307s to /audit), but the first
-// version of this guard compared the raw href against the bare filename only,
-// so three of those four spellings walked straight past it and the fault could
-// return without CI noticing. Normalize every same-origin anchor target to its
-// site-root-relative file name before the lookup. Off-site links, fragments
-// and non-navigational schemes (mailto:, tel:) are not page links and are
-// skipped.
 const siteHosts = new Set(["tinystudio.io", "www.tinystudio.io"]);
 
 function internalPageTarget(rawHref) {
@@ -1706,16 +1397,6 @@ for (const [pageName, pageHtml] of internalLinkPages) {
   }
 }
 
-// ---- Indexable-page orphan guard ------------------------------------------
-// A sitemap-listed page no other served page links to is an orphan: crawlers
-// find it via public/sitemap.xml, users and link equity cannot. The guarded
-// set is the six sitemap-listed indexable HTML pages (test-sitemap.mjs
-// EXPECTED_LOCS minus the /offer.md and /llms.txt machine-readable mirrors).
-// htmlPageTargets above is deliberately NOT reused: it also lists
-// brief-requested.html — the post-signup redirect target that is unlinked by
-// design — and agent-desk.html is the retired, noindex/nofollow,
-// unlink-by-design legacy surface. Neither page appears here as a target, and
-// neither counts as a linker.
 const indexablePages = [
   { path: "/", html: siteHome },
   { path: "/appraisal", html: siteAudit },
@@ -1745,8 +1426,6 @@ function indexableAnchorTarget(rawHref) {
     path = url.pathname;
   }
 
-  // Redirecting .html twins are owned by the existing guard above; they never
-  // count as clean inlinks here.
   if (/\.html?$/i.test(path.replace(/\/+$/, ""))) return "";
   if (!path.startsWith("/")) return "";
   return path === "/" ? "/" : path.replace(/\/+$/, "");
@@ -1768,18 +1447,6 @@ for (const page of indexablePages) {
   }
 }
 
-// ---- Canonical URLs (dogfood) ----------------------------------------------
-// The leak audit this site sells also flags a homepage whose served HTML
-// carries no canonical URL, leaving search engines to guess which address is
-// the page (finding 6631c0ab0454, "Missing canonical URL on home"), so the
-// site's own five public pages must not carry that fault either. Each page
-// keeps exactly one <link rel="canonical"> — parsed across the whole document,
-// ignoring commented-out markup and accepting single or double quotes — that
-// link sits inside the head and points at the absolute https://tinystudio.io
-// address of the page. The deployed worker 307-redirects every .html form to
-// its clean extensionless twin, so a canonical must name the address that
-// serves 200, never the redirecting form: every page's canonical names its
-// clean extensionless address.
 const canonicalPages = [
   ["homepage", siteHome, "https://tinystudio.io/"],
   ["audit page", siteAudit, "https://tinystudio.io/appraisal"],
@@ -1795,8 +1462,7 @@ const canonicalHrefPattern = /\bhref\s*=\s*["']([^"']*)["']/i;
 
 const seenCanonicals = new Map();
 for (const [pageName, pageHtml, expected] of canonicalPages) {
-  // A commented-out canonical is inert markup; it must neither satisfy the
-  // guarantee nor trip the duplicate check.
+
   const liveHtml = pageHtml.replace(/<!--[\s\S]*?-->/g, "");
   const links = [...liveHtml.matchAll(canonicalLinkPattern)].map((match) => match[0]);
   if (links.length !== 1) {
@@ -1825,17 +1491,6 @@ for (const [pageName, pageHtml, expected] of canonicalPages) {
   }
 }
 
-// ---- Document titles (brand consistency) ----------------------------------
-// Two served pages still branded themselves "The Tiny Studio" — the spaced
-// name the site's own identity copy disavows (it collides with "The Tiny
-// Studio LA" and other unrelated businesses) — while every other title said
-// "TinyStudio": /pricing served "Pricing & terms — The Tiny Studio" and
-// /brief-requested served "Request received — The Tiny Studio", both
-// byte-identical on origin/main. Title tags are a first-order SERP signal, so
-// every one of the six served appraisal pages must now name the brand in its
-// document title and must never return the spaced "The Tiny Studio" form.
-// The retired /agent-desk surface is deliberately excluded: its title frames
-// itself as retired and it is noindex.
 const titlePages = [
   ["homepage", siteHome],
   ["audit page", siteAudit],
@@ -1858,13 +1513,6 @@ for (const [pageName, pageHtml] of titlePages) {
   }
 }
 
-// ---- Intake field labels (activation) -------------------------------------
-// Both appraisal intake forms (homepage and /audit) must label each field
-// persistently AND programmatically: a visible <label> bound to the input via
-// label[for]/input[id], so the name survives typing and is exposed to
-// assistive tech and the browser's validation announcements. aria-label alone
-// is programmatic but invisible; placeholder-only labels disappear the moment
-// a buyer starts typing — neither is enough.
 const intakePages = [
   ["homepage", siteHome],
   ["audit page", siteAudit]
@@ -1888,15 +1536,6 @@ for (const [pageName, pageHtml] of intakePages) {
   }
 }
 
-// ---- Specimen in-content conversion CTA ------------------------------------
-// The /specimen proof page is where the homepage routes its "Read the
-// specimen" call-out, so the reader who finishes the sample needs an
-// in-content conversion CTA — not just the nav link — to request their own
-// appraisal. The page must keep a .band block carrying an explicit CTA link
-// to the request surface (/#start, same target as the nav CTA), and the
-// band CTA must keep a >=44px hit area to stay within the site's own
-// tap-target standard. These are STATIC SOURCE GUARDS (regex over the served
-// HTML/CSS), not behavioral tests: CI has no browser.
 const specimenCtaHtml = read("public/specimen.html");
 const specimenCtaBand = specimenCtaHtml.match(/<div class="band">([\s\S]*?)<\/div>\s*<footer>/);
 if (!specimenCtaBand) {

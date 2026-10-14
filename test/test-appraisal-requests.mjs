@@ -4,8 +4,6 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import worker from "../src/worker.js";
 
-// A D1-shaped wrapper over node:sqlite, so the worker's exact SQL runs on the
-// real migrations (every file in migrations/, in order).
 function d1(sqlite) {
   return {
     prepare(sql) {
@@ -31,7 +29,6 @@ function d1(sqlite) {
   };
 }
 
-// Same contract as the Workers Rate Limiting binding: limit({key}) -> {success}.
 function fakeLimiter(limit) {
   const seen = new Map();
   return {

@@ -1,20 +1,3 @@
-// Heading-hierarchy regression test for the six served public pages.
-//
-// The TinyStudio.io dogfood audit found skipped heading levels on the home,
-// agents, pricing, specimen and brief-requested pages (h1 -> h3, h2 -> h4).
-// This test parses the real heading outline of the served HTML and enforces
-// the corrected contract:
-//
-//   1. exactly one h1 per page, and it is the first heading;
-//   2. no skipped levels when the outline descends (each heading is at most
-//      one level deeper than the previous one; returning to a shallower
-//      level is fine);
-//   3. the exact corrected outline per page stays locked, so a future edit
-//      that reintroduces a skip fails deterministically.
-//
-// The same parser is used against embedded "known bad shape" fixtures so the
-// test also proves it rejects the pre-fix hierarchy, not just the current one.
-
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -30,8 +13,6 @@ const PAGES = [
   "public/contact.html"
 ];
 
-// The corrected outlines, locked as level sequences. Anything that reopens a
-// skip (or drops the single h1) changes these and fails the test.
 const EXPECTED_OUTLINES = {
   "public/index.html": [1, 2, 2, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 2],
   "public/appraisal.html": [1, 2, 2, 3, 3, 3, 3, 2, 2, 2, 2, 2],
@@ -43,10 +24,6 @@ const EXPECTED_OUTLINES = {
   "public/contact.html": [1, 2, 2, 2]
 };
 
-// Parse the headings that would actually be rendered: comments, <script> and
-// <style> content never contribute to the visual heading outline, so they are
-// stripped first. Handles attributes on heading tags (<h2 class="xi20">) and
-// nested inline markup in the heading text.
 export function headingOutline(html) {
   const rendered = html
     .replace(/<!--[\s\S]*?-->/g, "")
@@ -64,8 +41,6 @@ export function headingOutline(html) {
   return outline;
 }
 
-// Structural contract check. Returns a list of human-readable violations;
-// an empty list means the outline is correct.
 export function outlineIssues(outline) {
   const issues = [];
   if (outline.length === 0) {

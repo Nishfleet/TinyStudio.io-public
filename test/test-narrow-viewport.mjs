@@ -1,26 +1,3 @@
-// TinyStudio — narrow-viewport overflow regression for the homepage hero mock
-// (sol-sweep finding product-live/tinystudio-io-hero-mock-240px-overflow).
-//
-// The `.browser`/`.mock` hero preview card and its `.flag` annotations have no
-// minimum-width cap, so below ~252px the absolutely-positioned nowrap flags
-// stretched the card past the viewport and the whole document shifted
-// sideways (doc scrollWidth 252 at a 240px viewport). Earlier sweeps only
-// tested 320/360/390, so the sub-320 overflow was never caught.
-//
-// This check runs real Chromium against the homepage served statically (the
-// routes /, /appraisal and /desk — the latter two resolve to the homepage on
-// the live site) and asserts, at 240/260/280/320px viewports:
-//
-//   1. documentElement.scrollWidth === documentElement.clientWidth (no
-//      document-level horizontal overflow),
-//   2. the `.browser`/`.mock` card's right edge stays inside the viewport,
-//   3. every `.flag` annotation's right edge stays inside the card.
-//
-// The card is decorative; the failure mode it guards is the document shifting
-// sideways on real small-mobile devices.
-//
-// Run: node test/test-narrow-viewport.mjs  (or `npm run test:narrow`)
-
 import http from "node:http";
 import { readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
@@ -29,10 +6,7 @@ import { chromium } from "playwright";
 
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const VIEWPORTS = [240, 260, 280, 320];
-// The packet's named routes: the home hero-mock card is served at /, and
-// /appraisal and /desk resolve to the same homepage here (the live site serves
-// the homepage for unknown paths). The distinct /appraisal page is covered by
-// the sibling test:narrow-pages regression.
+
 const ROUTES = ["/", "/appraisal", "/desk"];
 
 const CONTENT_TYPES = {
@@ -52,7 +26,7 @@ function startServer() {
     const server = http.createServer((req, res) => {
       const url = new URL(req.url, "http://127.0.0.1");
       let rel = decodeURIComponent(url.pathname);
-      // Mirrors the live site: /appraisal and /desk serve the homepage.
+
       if (rel === "/" || rel === "/appraisal" || rel === "/desk") rel = "/index.html";
       const file = normalize(join(PUBLIC_DIR, rel));
       if (!file.startsWith(PUBLIC_DIR)) {

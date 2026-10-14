@@ -36,7 +36,7 @@ export default [
     languageOptions: { ecmaVersion: "latest", sourceType: "script", globals: globals.browser },
   },
   {
-    files: ["src/**/*.js", "public/**/*.js"],
+    files: ["src/**/*.js", "public/**/*.js", "test/**/*.mjs"],
     plugins: { "no-comments": noComments },
     linterOptions: { noInlineConfig: true, reportUnusedDisableDirectives: "error" },
     rules: {
