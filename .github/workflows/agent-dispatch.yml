@@ -18,8 +18,21 @@ on:
         description: 'miss-review to replay a miss on issue, orchestrate to hand a parked issue to the orchestrator, empty for a normal sweep'
         required: false
         type: string
+  # dequeued/auto_merge_disabled/closed feed the ejected and close jobs; the
+  # six after them are hold-risky's exact if-list in
+  # Nishfleet/fleet-ops/.github/workflows/agent-dispatch.yml@main. hold-risky
+  # is the only door into review-risky, and without these types it never ran
+  # here (fleet-ops#9293; same list as 0509). Per type: opened/reopened hold a
+  # risky PR from birth (risk is read from changed paths, not only the
+  # needs-coordinator label), synchronize re-holds after every push because an
+  # approval names one head sha, labeled re-holds when needs-coordinator lands,
+  # ready_for_review catches a PR armed while draft, and auto_merge_enabled is
+  # the arm event itself, the moment an arm needs an approval behind it. The
+  # job only calls the API, and its own if: keeps the fork-triggerable types
+  # off it (see the job). Every dispatch run lands in
+  # the reusable workflow's concurrency group (one sweep, events per run id).
   pull_request_target:
-    types: [dequeued, auto_merge_disabled, closed]
+    types: [dequeued, auto_merge_disabled, closed, auto_merge_enabled, synchronize, labeled, opened, reopened, ready_for_review]
   workflow_run:
     workflows: [CI]
     types: [completed]
@@ -27,6 +40,11 @@ on:
     - cron: '17 */6 * * *'
 jobs:
   dispatch:
+    # opened, reopened, synchronize and ready_for_review can be fired by anyone
+    # who opens a fork PR on this public repo, so they only start the job for a
+    # same-repo head. The other pull_request_target types need write access to
+    # trigger and run for any head.
+    if: ${{ github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository || contains(fromJSON('["auto_merge_enabled","labeled","closed","dequeued","auto_merge_disabled"]'), github.event.action) }}
     uses: Nishfleet/fleet-ops/.github/workflows/agent-dispatch.yml@main
     permissions:
       issues: write
