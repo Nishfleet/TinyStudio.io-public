@@ -28,9 +28,8 @@ on:
   # approval names one head sha, labeled re-holds when needs-coordinator lands,
   # ready_for_review catches a PR armed while draft, and auto_merge_enabled is
   # the arm event itself, the moment an arm needs an approval behind it. The
-  # job only calls the API: nothing in the reusable workflow checks out PR
-  # code, and its ejected job runs only for a same-repo claim/issue-* head, so
-  # a fork's PR never reaches a runner or a token. Every dispatch run lands in
+  # job only calls the API, and its own if: keeps the fork-triggerable types
+  # off it (see the job). Every dispatch run lands in
   # the reusable workflow's concurrency group (one sweep, events per run id).
   pull_request_target:
     types: [dequeued, auto_merge_disabled, closed, auto_merge_enabled, synchronize, labeled, opened, reopened, ready_for_review]
@@ -41,6 +40,11 @@ on:
     - cron: '17 */6 * * *'
 jobs:
   dispatch:
+    # opened, reopened, synchronize and ready_for_review can be fired by anyone
+    # who opens a fork PR on this public repo, so they only start the job for a
+    # same-repo head. The other pull_request_target types need write access to
+    # trigger and run for any head.
+    if: ${{ github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository || contains(fromJSON('["auto_merge_enabled","labeled","closed","dequeued","auto_merge_disabled"]'), github.event.action) }}
     uses: Nishfleet/fleet-ops/.github/workflows/agent-dispatch.yml@main
     permissions:
       issues: write
