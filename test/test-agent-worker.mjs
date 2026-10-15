@@ -1397,6 +1397,56 @@ test("daily IP limit resets after the day rolls over (controlled clock, no sleep
   assert.equal(allowed.status, 200, "the same IP must be allowed again once the day rolls over");
 });
 
+test("global daily agent audit cap: 50 runs a day across all callers, then 429 daily_global_limit without running the model", async () => {
+  const db = new CountingDB();
+  const ai = new FakeAI(VALID_AGENT_OUTPUT);
+  const env = { AGENT_LIMITS_NOW: "2026-08-13T10:00:00.000Z" };
+
+  for (let i = 1; i <= 50; i += 1) {
+    const res = await runAgentLimit(
+      db,
+      ai,
+      validBody({ email: `global-${i}@tinystudio.io` }),
+      { "CF-Connecting-IP": `198.51.100.${i}` },
+      env
+    );
+    assert.equal(res.status, 200, `run ${i} of 50 must succeed`);
+  }
+  const modelCallsBefore = ai.calls.length;
+
+  const blocked = await runAgentLimit(
+    db,
+    ai,
+    validBody({ email: "global-51@tinystudio.io" }),
+    { "CF-Connecting-IP": "198.51.100.51" },
+    env
+  );
+  assert.equal(blocked.status, 429);
+  assert.equal((await blocked.json()).error, "daily_global_limit");
+  assert.equal(ai.calls.length, modelCallsBefore, "the capped run must never reach the model");
+
+  const nextDay = await runAgentLimit(
+    db,
+    ai,
+    validBody({ email: "global-52@tinystudio.io" }),
+    { "CF-Connecting-IP": "198.51.100.52" },
+    { AGENT_LIMITS_NOW: "2026-08-14T10:00:00.000Z" }
+  );
+  assert.equal(nextDay.status, 200, "the global cap resets with the day");
+});
+
+test("AGENT_AUDIT_DISABLED turns the agent audit off before any storage or model call", async () => {
+  for (const flag of ["1", "true"]) {
+    const db = new FakeDB();
+    const ai = new FakeAI(VALID_AGENT_OUTPUT);
+    const res = await worker.fetch(agentRequest(validBody()), { DB: db, AI: ai, AGENT_AUDIT_DISABLED: flag });
+    assert.equal(res.status, 503);
+    assert.equal((await res.json()).error, "agent_audit_disabled");
+    assert.equal(ai.calls.length, 0, "a disabled audit must not run the model");
+    assert.equal(db.calls.length, 0, "a disabled audit must not touch storage");
+  }
+});
+
 function signupRequest({ accept = "application/json" } = {}) {
   return new Request("https://tinystudio.io/api/signups", {
     method: "POST",

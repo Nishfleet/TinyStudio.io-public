@@ -83,6 +83,7 @@ const MAX_FIELD_LENGTH = 1800;
 const MAX_REQUEST_BYTES = 24000;
 const SOFT_AGENT_RUNS_PER_EMAIL_PER_DAY = 5;
 const MAX_AGENT_RUNS_PER_IP_PER_DAY = 20;
+const MAX_AGENT_RUNS_PER_DAY = 50;
 const MAX_APPRAISALS_PER_MONTH = 6;
 const MAX_WAITLIST_PER_MONTH = 50;
 const APPRAISAL_SURFACE = "website-appraisal";
@@ -790,6 +791,12 @@ async function enforceAgentLimits(request, env, email, url) {
       return { ok: false, response: jsonResponse({ ok: false, error: "daily_email_limit" }, { status: 429 }) };
     }
 
+    const globalCount = await incrementUsageCounter(env, `agent-global:${bucket}`);
+    if (globalCount > MAX_AGENT_RUNS_PER_DAY) {
+      console.warn("tinystudio_agent_global_daily_limit", JSON.stringify({ globalCount }));
+      return { ok: false, response: jsonResponse({ ok: false, error: "daily_global_limit" }, { status: 429 }) };
+    }
+
     await env.DB.prepare(
       `INSERT INTO agent_runs (id, email, source, page_path, ip_hash, user_agent, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
@@ -1451,6 +1458,10 @@ function hasApprovalGate(clausePrefix, clauseSuffix) {
   return /\b(approval|approved|human-approved|approval-gated)\b/.test(clause);
 }
 
+function agentAuditDisabled(env) {
+  return ["1", "true", "yes"].includes(String(env.AGENT_AUDIT_DISABLED || "").trim().toLowerCase());
+}
+
 async function agentAuditResponse(request, env, url) {
   if (request.method === "OPTIONS") {
     return jsonResponse({ ok: true });
@@ -1458,6 +1469,10 @@ async function agentAuditResponse(request, env, url) {
 
   if (request.method !== "POST") {
     return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
+  }
+
+  if (agentAuditDisabled(env)) {
+    return jsonResponse({ ok: false, error: "agent_audit_disabled" }, { status: 503 });
   }
 
   if (!env.AI) {
