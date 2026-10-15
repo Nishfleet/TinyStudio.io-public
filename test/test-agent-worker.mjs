@@ -1944,3 +1944,128 @@ test("signup handler does not consume a monthly slot for an invalid email", asyn
   assert.equal(buckets.length, 1, "only the valid signup created a monthly bucket");
   assert.equal(db.counts.get(buckets[0]), 1, "the invalid attempt must not consume a slot");
 });
+
+function sqliteD1() {
+  const sqlite = new DatabaseSync(":memory:");
+  applyD1Migrations(sqlite);
+  return {
+    sqlite,
+    prepare(sql) {
+      let values = [];
+      const statement = {
+        bind(...bound) {
+          values = bound;
+          return statement;
+        },
+        async first() {
+          return sqlite.prepare(sql).get(...values) ?? null;
+        },
+        async run() {
+          const result = sqlite.prepare(sql).run(...values);
+          return { success: true, meta: { changes: Number(result.changes) } };
+        },
+        async all() {
+          return { results: sqlite.prepare(sql).all(...values) };
+        }
+      };
+      return statement;
+    }
+  };
+}
+
+function monthSlotsUsed(db) {
+  const row = db.sqlite
+    .prepare("SELECT count FROM agent_usage_limits WHERE bucket_key = ?")
+    .get(`signup:${new Date().toISOString().slice(0, 7)}`);
+  return Number(row?.count || 0);
+}
+
+test("signup handler counts one email once a month: repeat posts do not take another slot", async () => {
+  const db = sqliteD1();
+  const env = { DB: db };
+
+  for (let i = 0; i < 3; i++) {
+    const res = await worker.fetch(capSignupRequest("Repeat@Example.com", "example.com", "application/json"), env);
+    assert.equal(res.status, 201, `repeat post ${i + 1} from the same email must still succeed`);
+  }
+  assert.equal(monthSlotsUsed(db), 1, "three posts from one email take one slot");
+
+  for (let i = 2; i <= 6; i++) {
+    const res = await worker.fetch(capSignupRequest(`dedupe-${i}@example.com`, `example-${i}.com`, "application/json"), env);
+    assert.equal(res.status, 201, `distinct email ${i} of 6 must succeed`);
+  }
+  assert.equal(monthSlotsUsed(db), 6);
+
+  const seventh = await worker.fetch(capSignupRequest("dedupe-7@example.com", "example-7.com", "application/json"), env);
+  assert.equal(seventh.status, 409, "a seventh distinct email closes the intake");
+  const seventhAgain = await worker.fetch(capSignupRequest("dedupe-7@example.com", "example-7.com", "application/json"), env);
+  assert.equal(seventhAgain.status, 409, "a refused email stays refused when it posts again");
+
+  const acceptedAgain = await worker.fetch(capSignupRequest("repeat@example.com", "example.com", "application/json"), env);
+  assert.equal(acceptedAgain.status, 201, "an email already accepted this month is not turned away when it posts again");
+
+  assert.equal(monthSlotsUsed(db), 7, "repeat posts from known emails never move the monthly counter");
+  const stored = db.sqlite.prepare("SELECT email FROM email_signups ORDER BY email").all().map((row) => row.email);
+  assert.equal(stored.length, 6, "only the six accepted emails are stored");
+  assert.ok(!stored.includes("dedupe-7@example.com"));
+});
+
+test("signup handler retries a duplicate whose first post failed to store, within the cap", async () => {
+  const db = sqliteD1();
+  const env = { DB: db };
+  const realPrepare = db.prepare.bind(db);
+  let failNextSave = true;
+  db.prepare = (sql) => {
+    if (failNextSave && sql.includes("INSERT INTO email_signups")) {
+      failNextSave = false;
+      return { bind: () => ({ run: async () => { throw new Error("injected"); } }) };
+    }
+    return realPrepare(sql);
+  };
+
+  const first = await worker.fetch(capSignupRequest("retry@example.com", "example.com", "application/json"), env);
+  assert.equal(first.status, 503);
+  const retry = await worker.fetch(capSignupRequest("retry@example.com", "example.com", "application/json"), env);
+  assert.equal(retry.status, 201, "the retry is stored");
+  assert.equal(monthSlotsUsed(db), 1, "the retry does not take a second slot");
+});
+
+function originSignupRequest(headers) {
+  return new Request("https://tinystudio.io/api/signups", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json",
+      ...headers
+    },
+    body: new URLSearchParams({ website: "example.com", email: "origin-check@example.com" }).toString()
+  });
+}
+
+test("signup handler refuses a POST without a same-origin Origin or Referer, before touching storage", async () => {
+  const refused = [
+    {},
+    { Origin: "https://evil.example" },
+    { Origin: "null" },
+    { Referer: "https://evil.example/page" },
+    { Referer: "not a url" },
+    { Origin: "https://tinystudio.io", "Sec-Fetch-Site": "cross-site" }
+  ];
+  for (const headers of refused) {
+    const db = new FakeDB();
+    const res = await worker.fetch(originSignupRequest(headers), { DB: db });
+    assert.equal(res.status, 403, `headers ${JSON.stringify(headers)} must be refused`);
+    assert.equal((await res.json()).error, "cross_site_blocked");
+    assert.equal(db.calls.length, 0, "a refused POST must not count or store anything");
+  }
+});
+
+test("signup handler accepts a same-origin Origin, or a same-origin Referer when Origin is absent", async () => {
+  for (const headers of [
+    { Origin: "https://tinystudio.io" },
+    { Referer: "https://tinystudio.io/pricing" }
+  ]) {
+    const res = await worker.fetch(originSignupRequest(headers), { DB: new FakeDB() });
+    assert.equal(res.status, 201, `headers ${JSON.stringify(headers)} must be accepted`);
+  }
+});

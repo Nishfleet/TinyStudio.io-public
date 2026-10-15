@@ -361,6 +361,50 @@ async function saveEmailSignup(request, env, url, email, source, website = null)
     .run();
 }
 
+function isSameOriginPost(request, url) {
+  if (request.headers.get("Sec-Fetch-Site") === "cross-site") return false;
+  const allowed = (value) => value === url.origin || isAllowedOrigin(value, request, url);
+  const origin = request.headers.get("Origin");
+  if (origin) return allowed(origin);
+  const referer = request.headers.get("Referer");
+  if (!referer) return false;
+  try {
+    return allowed(new URL(referer).origin);
+  } catch {
+    return false;
+  }
+}
+
+async function sha256Hex(text) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function signupAlreadyAccepted(env, email, month) {
+  const row = await env.DB.prepare(
+    "SELECT 1 AS accepted FROM email_signups WHERE email = ?1 AND source = ?2 AND substr(updated_at, 1, 7) = ?3"
+  )
+    .bind(email, APPRAISAL_SURFACE, month)
+    .first();
+  return row?.accepted === 1;
+}
+
+async function currentUsageCount(env, bucketKey) {
+  const row = await env.DB.prepare("SELECT count FROM agent_usage_limits WHERE bucket_key = ?1")
+    .bind(bucketKey)
+    .first();
+  return Number(row?.count || 0);
+}
+
+async function signupMonthCount(env, email) {
+  const month = new Date().toISOString().slice(0, 7);
+  const monthBucket = `signup:${month}`;
+  const seen = await incrementUsageCounter(env, `signup-seen:${month}:${await sha256Hex(email)}`);
+  if (seen <= 1) return incrementUsageCounter(env, monthBucket);
+  if (await signupAlreadyAccepted(env, email, month)) return 0;
+  return currentUsageCount(env, monthBucket);
+}
+
 async function signupResponse(request, env, url) {
   if (request.method === "OPTIONS") {
     return jsonResponse({ ok: true });
@@ -368,6 +412,10 @@ async function signupResponse(request, env, url) {
 
   if (request.method !== "POST") {
     return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
+  }
+
+  if (!isSameOriginPost(request, url)) {
+    return jsonResponse({ ok: false, error: "cross_site_blocked" }, { status: 403 });
   }
 
   if (requestTooLarge(request)) {
@@ -395,8 +443,7 @@ async function signupResponse(request, env, url) {
 
   let monthCount;
   try {
-    const monthBucket = `signup:${new Date().toISOString().slice(0, 7)}`;
-    monthCount = await incrementUsageCounter(env, monthBucket);
+    monthCount = await signupMonthCount(env, email);
   } catch (error) {
     console.warn("tinystudio_signup_storage_failed", error.message || "storage failed");
     return jsonResponse({ ok: false, error: "storage_unavailable" }, { status: 503 });
