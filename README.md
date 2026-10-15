@@ -21,7 +21,7 @@ The plan also lists `/correction`, `/method` and `/records/{id}`; these are buil
 ## Endpoints
 
 - `/api/signups` stores an appraisal request in Cloudflare D1.
-- `/api/agent-audit` is the existing audit generation endpoint.
+- `/api/agent-audit` is the existing audit generation endpoint. It runs at most 50 times a day across all callers, and setting `AGENT_AUDIT_DISABLED=1` turns it off.
 - `/health` reports readiness.
 - `app.tinystudio.io` and `api.tinystudio.io` answer with a 410 retirement response.
 

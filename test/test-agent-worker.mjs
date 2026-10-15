@@ -1397,6 +1397,56 @@ test("daily IP limit resets after the day rolls over (controlled clock, no sleep
   assert.equal(allowed.status, 200, "the same IP must be allowed again once the day rolls over");
 });
 
+test("global daily agent audit cap: 50 runs a day across all callers, then 429 daily_global_limit without running the model", async () => {
+  const db = new CountingDB();
+  const ai = new FakeAI(VALID_AGENT_OUTPUT);
+  const env = { AGENT_LIMITS_NOW: "2026-08-13T10:00:00.000Z" };
+
+  for (let i = 1; i <= 50; i += 1) {
+    const res = await runAgentLimit(
+      db,
+      ai,
+      validBody({ email: `global-${i}@tinystudio.io` }),
+      { "CF-Connecting-IP": `198.51.100.${i}` },
+      env
+    );
+    assert.equal(res.status, 200, `run ${i} of 50 must succeed`);
+  }
+  const modelCallsBefore = ai.calls.length;
+
+  const blocked = await runAgentLimit(
+    db,
+    ai,
+    validBody({ email: "global-51@tinystudio.io" }),
+    { "CF-Connecting-IP": "198.51.100.51" },
+    env
+  );
+  assert.equal(blocked.status, 429);
+  assert.equal((await blocked.json()).error, "daily_global_limit");
+  assert.equal(ai.calls.length, modelCallsBefore, "the capped run must never reach the model");
+
+  const nextDay = await runAgentLimit(
+    db,
+    ai,
+    validBody({ email: "global-52@tinystudio.io" }),
+    { "CF-Connecting-IP": "198.51.100.52" },
+    { AGENT_LIMITS_NOW: "2026-08-14T10:00:00.000Z" }
+  );
+  assert.equal(nextDay.status, 200, "the global cap resets with the day");
+});
+
+test("AGENT_AUDIT_DISABLED turns the agent audit off before any storage or model call", async () => {
+  for (const flag of ["1", "true"]) {
+    const db = new FakeDB();
+    const ai = new FakeAI(VALID_AGENT_OUTPUT);
+    const res = await worker.fetch(agentRequest(validBody()), { DB: db, AI: ai, AGENT_AUDIT_DISABLED: flag });
+    assert.equal(res.status, 503);
+    assert.equal((await res.json()).error, "agent_audit_disabled");
+    assert.equal(ai.calls.length, 0, "a disabled audit must not run the model");
+    assert.equal(db.calls.length, 0, "a disabled audit must not touch storage");
+  }
+});
+
 function signupRequest({ accept = "application/json" } = {}) {
   return new Request("https://tinystudio.io/api/signups", {
     method: "POST",
@@ -1893,4 +1943,129 @@ test("signup handler does not consume a monthly slot for an invalid email", asyn
   const buckets = [...db.counts.keys()].filter((key) => key.startsWith("signup:"));
   assert.equal(buckets.length, 1, "only the valid signup created a monthly bucket");
   assert.equal(db.counts.get(buckets[0]), 1, "the invalid attempt must not consume a slot");
+});
+
+function sqliteD1() {
+  const sqlite = new DatabaseSync(":memory:");
+  applyD1Migrations(sqlite);
+  return {
+    sqlite,
+    prepare(sql) {
+      let values = [];
+      const statement = {
+        bind(...bound) {
+          values = bound;
+          return statement;
+        },
+        async first() {
+          return sqlite.prepare(sql).get(...values) ?? null;
+        },
+        async run() {
+          const result = sqlite.prepare(sql).run(...values);
+          return { success: true, meta: { changes: Number(result.changes) } };
+        },
+        async all() {
+          return { results: sqlite.prepare(sql).all(...values) };
+        }
+      };
+      return statement;
+    }
+  };
+}
+
+function monthSlotsUsed(db) {
+  const row = db.sqlite
+    .prepare("SELECT count FROM agent_usage_limits WHERE bucket_key = ?")
+    .get(`signup:${new Date().toISOString().slice(0, 7)}`);
+  return Number(row?.count || 0);
+}
+
+test("signup handler counts one email once a month: repeat posts do not take another slot", async () => {
+  const db = sqliteD1();
+  const env = { DB: db };
+
+  for (let i = 0; i < 3; i++) {
+    const res = await worker.fetch(capSignupRequest("Repeat@Example.com", "example.com", "application/json"), env);
+    assert.equal(res.status, 201, `repeat post ${i + 1} from the same email must still succeed`);
+  }
+  assert.equal(monthSlotsUsed(db), 1, "three posts from one email take one slot");
+
+  for (let i = 2; i <= 6; i++) {
+    const res = await worker.fetch(capSignupRequest(`dedupe-${i}@example.com`, `example-${i}.com`, "application/json"), env);
+    assert.equal(res.status, 201, `distinct email ${i} of 6 must succeed`);
+  }
+  assert.equal(monthSlotsUsed(db), 6);
+
+  const seventh = await worker.fetch(capSignupRequest("dedupe-7@example.com", "example-7.com", "application/json"), env);
+  assert.equal(seventh.status, 409, "a seventh distinct email closes the intake");
+  const seventhAgain = await worker.fetch(capSignupRequest("dedupe-7@example.com", "example-7.com", "application/json"), env);
+  assert.equal(seventhAgain.status, 409, "a refused email stays refused when it posts again");
+
+  const acceptedAgain = await worker.fetch(capSignupRequest("repeat@example.com", "example.com", "application/json"), env);
+  assert.equal(acceptedAgain.status, 201, "an email already accepted this month is not turned away when it posts again");
+
+  assert.equal(monthSlotsUsed(db), 7, "repeat posts from known emails never move the monthly counter");
+  const stored = db.sqlite.prepare("SELECT email FROM email_signups ORDER BY email").all().map((row) => row.email);
+  assert.equal(stored.length, 6, "only the six accepted emails are stored");
+  assert.ok(!stored.includes("dedupe-7@example.com"));
+});
+
+test("signup handler retries a duplicate whose first post failed to store, within the cap", async () => {
+  const db = sqliteD1();
+  const env = { DB: db };
+  const realPrepare = db.prepare.bind(db);
+  let failNextSave = true;
+  db.prepare = (sql) => {
+    if (failNextSave && sql.includes("INSERT INTO email_signups")) {
+      failNextSave = false;
+      return { bind: () => ({ run: async () => { throw new Error("injected"); } }) };
+    }
+    return realPrepare(sql);
+  };
+
+  const first = await worker.fetch(capSignupRequest("retry@example.com", "example.com", "application/json"), env);
+  assert.equal(first.status, 503);
+  const retry = await worker.fetch(capSignupRequest("retry@example.com", "example.com", "application/json"), env);
+  assert.equal(retry.status, 201, "the retry is stored");
+  assert.equal(monthSlotsUsed(db), 1, "the retry does not take a second slot");
+});
+
+function originSignupRequest(headers) {
+  return new Request("https://tinystudio.io/api/signups", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json",
+      ...headers
+    },
+    body: new URLSearchParams({ website: "example.com", email: "origin-check@example.com" }).toString()
+  });
+}
+
+test("signup handler refuses a POST without a same-origin Origin or Referer, before touching storage", async () => {
+  const refused = [
+    {},
+    { Origin: "https://evil.example" },
+    { Origin: "null" },
+    { Referer: "https://evil.example/page" },
+    { Referer: "not a url" },
+    { Origin: "https://tinystudio.io", "Sec-Fetch-Site": "cross-site" }
+  ];
+  for (const headers of refused) {
+    const db = new FakeDB();
+    const res = await worker.fetch(originSignupRequest(headers), { DB: db });
+    assert.equal(res.status, 403, `headers ${JSON.stringify(headers)} must be refused`);
+    assert.equal((await res.json()).error, "cross_site_blocked");
+    assert.equal(db.calls.length, 0, "a refused POST must not count or store anything");
+  }
+});
+
+test("signup handler accepts a same-origin Origin, or a same-origin Referer when Origin is absent", async () => {
+  for (const headers of [
+    { Origin: "https://tinystudio.io" },
+    { Referer: "https://tinystudio.io/pricing" }
+  ]) {
+    const res = await worker.fetch(originSignupRequest(headers), { DB: new FakeDB() });
+    assert.equal(res.status, 201, `headers ${JSON.stringify(headers)} must be accepted`);
+  }
 });
