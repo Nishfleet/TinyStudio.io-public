@@ -1,0 +1,9 @@
+version: 3
+
+files:
+  - pattern: .github/workflows/*.yml
+  - pattern: .github/workflows/*.yaml
+
+ignore_actions:
+  - name: Nishfleet/fleet-ops/.*
+    ref: main
