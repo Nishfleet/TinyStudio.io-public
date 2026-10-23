@@ -25,6 +25,12 @@ The plan also lists `/correction`, `/method` and `/records/{id}`; these are buil
 - `/health` reports readiness.
 - `app.tinystudio.io` and `api.tinystudio.io` answer with a 410 retirement response.
 
+## Agent dispatch
+
+`.github/workflows/agent-dispatch.yml` starts the agent worker on issue, comment, PR and CI events, plus a six-hourly sweep. It holds only the repo's own triggers: the logic lives once in the reusable workflow at `Nishfleet/fleet-ops/.github/workflows/agent-dispatch.yml@main`, which this stub calls.
+
+To switch it off, disable the workflow (`gh workflow disable agent-dispatch` or the Actions tab) or delete the file. With the workflow disabled, the automatic review-and-approve path does not run, so risky PRs stay on hold until you run `gh workflow enable agent-dispatch`.
+
 ## Run and deploy
 
 ```bash
