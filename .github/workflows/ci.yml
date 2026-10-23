@@ -43,7 +43,9 @@ jobs:
           persist-credentials: false
       - name: actionlint
         # Stock linter for workflow syntax, expressions and the shell inside
-        # run: blocks (shellcheck ships in the image). Pinned like gitleaks.
+        # run: blocks (the official image ships shellcheck and pyflakes as
+        # documented at https://github.com/rhysd/actionlint/blob/main/docs/usage.md#docker).
+        # Pinned like gitleaks.
         uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: -color
