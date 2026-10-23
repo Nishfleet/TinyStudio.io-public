@@ -31,6 +31,23 @@ jobs:
       - name: Wrangler config and bundle check
         run: npx wrangler@latest deploy --dry-run
 
+  workflow-lint:
+    name: Lint the workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: actionlint
+        # Stock linter for workflow syntax, expressions and the shell inside
+        # run: blocks (shellcheck ships in the image). Pinned like gitleaks.
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: -color
+
   gitleaks:
     name: Secret scan
     runs-on: ubuntu-latest
