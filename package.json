@@ -33,11 +33,11 @@
     "@eslint/js": "^10.0.1",
     "@fontsource-variable/fraunces": "5.3.0",
     "@fontsource-variable/karla": "5.3.0",
-    "eslint": "^10.12.0",
+    "eslint": "^10.13.0",
     "eslint-plugin-no-comments": "^1.2.1",
     "globals": "^17.13.0",
-    "playwright": "^1.62.1",
+    "playwright": "^1.64.1",
     "subset-font": "2.9.0",
-    "wrangler": "^4.120.1"
+    "wrangler": "^4.152.0"
   }
 }
