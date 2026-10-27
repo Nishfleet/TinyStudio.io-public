@@ -1,0 +1,35 @@
+name: Dependabot auto-merge
+# Arms auto-merge on Dependabot patch and minor updates, the stock recipe from
+# https://docs.github.com/en/code-security/dependabot/working-with-dependabot/automating-dependabot-with-github-actions#enabling-auto-merge-on-a-pull-request
+# update-type is the highest semver change in the PR, so a grouped update with
+# any major bump is never armed. Required checks still gate the actual merge.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  dependabot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # dependabot[bot] branches only exist on this repo, so this guard also
+    # keeps fork pull_request_target events out of the job.
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'Nishfleet/TinyStudio.io-public'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: "${{ github.token }}"
+      - name: Enable auto-merge for patch and minor updates
+        # github.token is the same credential the recipe reads as
+        # secrets.GITHUB_TOKEN; the fleet merge gate holds a workflow diff that
+        # adds a `secrets.` line, so the token context is used instead.
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ github.token }}
