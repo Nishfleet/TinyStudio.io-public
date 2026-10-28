@@ -809,6 +809,11 @@ async function hashIp(request, bucket) {
   return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+async function readUsageCounter(env, bucketKey) {
+  const row = await env.DB.prepare("SELECT count FROM agent_usage_limits WHERE bucket_key = ?1").bind(bucketKey).first();
+  return Number(row?.count || 0);
+}
+
 async function incrementUsageCounter(env, bucketKey) {
   const now = new Date().toISOString();
   const result = await env.DB.prepare(
@@ -872,16 +877,25 @@ async function enforceAgentLimits(request, env, email, url) {
   return { ok: true };
 }
 
-async function enforceCheckoutLimit(request, env) {
+async function checkoutBucket(request) {
   const bucket = new Date().toISOString().slice(0, 10);
-  const ipHash = await hashIp(request, `checkout:${bucket}`);
-  if (!ipHash) return { ok: true };
-  const count = await incrementUsageCounter(env, `checkout:${bucket}:${ipHash}`);
-  if (count > MAX_CHECKOUTS_PER_IP_PER_DAY) {
+  return `checkout:${bucket}:${await hashIp(request, bucket)}`;
+}
+
+async function enforceCheckoutLimit(request, env) {
+  const key = await checkoutBucket(request);
+  if (!key) return { ok: true };
+  const count = await readUsageCounter(env, key);
+  if (count >= MAX_CHECKOUTS_PER_IP_PER_DAY) {
     console.warn("tinystudio_checkout_daily_ip_limit", JSON.stringify({ count }));
     return { ok: false, response: withSecurityHeaders(jsonResponse({ ok: false, error: "checkout_daily_limit" }, { status: 429 })) };
   }
-  return { ok: true };
+  return { ok: true, key };
+}
+
+async function recordCheckout(request, env, key) {
+  if (!key) return;
+  await incrementUsageCounter(env, key);
 }
 
 function agentInput(body) {
@@ -1684,6 +1698,7 @@ async function checkoutResponse(request, env, url) {
   if (!limited.ok) return limited.response;
   try {
     const checkout = await startCheckoutForRequest(env, { recordId });
+    await recordCheckout(request, env, limited.key);
     return browserForm
       ? redirectResponse(checkout.checkoutUrl)
       : withSecurityHeaders(jsonResponse({ ok: true, checkoutUrl: checkout.checkoutUrl }));

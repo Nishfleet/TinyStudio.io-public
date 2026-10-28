@@ -449,6 +449,46 @@ test("checkout route: the sixth checkout from one address in a day is refused", 
   }
 });
 
+test("checkout route: a checkout Dodo refuses does not spend the daily allowance", async () => {
+  const { env } = freshEnv();
+  const recordId = await proposedEngagement(env);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 422,
+    json: async () => ({ message: "the product is not published in this mode" })
+  });
+  try {
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const res = await worker.fetch(
+        new Request("https://tinystudio.io/api/engagements/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", Origin: "https://tinystudio.io", "CF-Connecting-IP": "203.0.113.9" },
+          body: new URLSearchParams({ recordId }).toString()
+        }),
+        env
+      );
+      assert.equal(res.status, 400, `a refused checkout ${attempt + 1} is answered, not capped`);
+    }
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ checkout_url: "https://checkout.dodopayments.com/session/cs_after", session_id: "cs_after" })
+    });
+    const allowed = await worker.fetch(
+      new Request("https://tinystudio.io/api/engagements/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", Origin: "https://tinystudio.io", "CF-Connecting-IP": "203.0.113.9" },
+        body: new URLSearchParams({ recordId }).toString()
+      }),
+      env
+    );
+    assert.equal(allowed.status, 200, "a customer whose checkout failed six times can still pay");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test("webhook: the route refuses an unsigned POST and never opens an engagement", async () => {
   const { env, sqlite } = freshEnv();
   const recordId = await proposedEngagement(env);
