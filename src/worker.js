@@ -72,7 +72,7 @@ const ALLOWED_ORIGINS = new Set([
   "http://127.0.0.1:8788",
   "http://localhost:8788"
 ]);
-const AGENT_MODELS = [
+export const AGENT_MODELS = [
   "@cf/mistralai/mistral-small-3.1-24b-instruct",
   "@cf/qwen/qwen3-30b-a3b-fp8",
   "@cf/openai/gpt-oss-20b",
@@ -1572,14 +1572,24 @@ async function agentAuditResponse(request, env, url) {
   let model = "";
   let sections = splitAgentSections("");
   const modelErrors = [];
+  const modelAttempts = [];
 
-  for (const candidateModel of AGENT_MODELS) {
+  for (const [modelIndex, candidateModel] of AGENT_MODELS.entries()) {
+    const attempt = { model: candidateModel, completionTokens: null };
+    modelAttempts.push(attempt);
     try {
-      const aiResult = await env.AI.run(candidateModel, {
+      const runOptions = {
         messages,
         temperature: 0.35,
         max_tokens: 2400
-      });
+      };
+      if (candidateModel.startsWith("@cf/qwen/qwen3")) {
+        runOptions.chat_template_kwargs = { enable_thinking: false };
+      } else if (candidateModel.startsWith("@cf/openai/gpt-oss")) {
+        runOptions.reasoning_effort = "low";
+      }
+      const aiResult = await env.AI.run(candidateModel, runOptions, { gateway: { id: "default" } });
+      attempt.completionTokens = aiResult?.usage?.completion_tokens ?? null;
       const rawBrief = extractAiText(aiResult);
       const rawUnsafeReasons = unsafeOutputReasons(rawBrief);
       const scrubbedBrief = scrubUnsupportedPrecision(scrubUnsafeOutput(rawBrief), input);
@@ -1605,6 +1615,10 @@ async function agentAuditResponse(request, env, url) {
         brief = candidateBrief;
         sections = candidateSections;
         model = candidateModel;
+        console.log(
+          "tinystudio_agent_model_selected",
+          JSON.stringify({ model, modelIndex, attempts: modelAttempts.length, modelAttempts })
+        );
         break;
       }
 
@@ -1627,7 +1641,10 @@ async function agentAuditResponse(request, env, url) {
   }
 
   if (!brief) {
-    console.warn("tinystudio_agent_ai_failed", JSON.stringify({ modelErrors }));
+    console.warn(
+      "tinystudio_agent_ai_failed",
+      JSON.stringify({ attempts: modelAttempts.length, modelAttempts, modelErrors })
+    );
     return jsonResponse({ ok: false, error: "empty_agent_output" }, { status: 502 });
   }
 
