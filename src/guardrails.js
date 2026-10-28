@@ -21,6 +21,8 @@ const ENGAGEMENT_FLOW = {
   tracking: ["closed"]
 };
 
+export const ENGAGEMENT_SETTLED_STATUSES = ENGAGEMENT_STATUSES.slice(ENGAGEMENT_STATUSES.indexOf("paid"));
+
 export const CORRECTION_LINE_STATUSES = ["draft", "approved", "recorded", "rejected"];
 
 const CORRECTION_FLOW = {

@@ -229,16 +229,36 @@ test("desk: a rejected line is not published, and the last approval republishes 
     "status_changed",
     "status_changed",
     "status_changed",
+    "checkout_session_created",
     "correction_line_added",
     "status_changed",
     "correction_line_added",
     "correction_line_reject",
     "correction_line_approve",
-    "status_changed",
     "correction_line_recorded",
+    "status_changed",
     "kickoff_note_added",
     "status_changed"
   ]);
+});
+
+test("desk: the record is republished before the correction is proved, so a failed republish leaves it in correction", async () => {
+  const { env, sqlite } = freshEnv();
+  const { recordId, engagementId } = await paidEngagement(env, sqlite);
+  const line = await addDeskCorrectionLine(
+    env,
+    { engagementId, faultId: "f1", faultTitle: "Home page loads in 6.1 seconds", beforeText: "a", afterText: "b", legalCopy: 0 },
+    "Jev",
+    "2026-10-13T11:00:00.000Z"
+  );
+  sqlite.prepare("UPDATE appraisal_records SET faults_json = NULL WHERE id = ?").run(recordId);
+  await assert.rejects(
+    reviewDeskCorrectionLine(env, { lineId: line.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:00:00.000Z"),
+    /cannot be re-rendered/
+  );
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "in_correction", "a failed republish never proves the correction");
+  assert.equal(sqlite.prepare("SELECT status FROM correction_lines WHERE id = ?").get(line.line.id).status, "approved");
+  assert.equal(sqlite.prepare("SELECT version FROM appraisal_records WHERE id = ?").get(recordId).version, 1, "nothing was published");
 });
 
 test("desk: no line is added or reviewed once the correction is proved", async () => {
@@ -257,7 +277,7 @@ test("desk: no line is added or reviewed once the correction is proved", async (
   );
   await assert.rejects(
     reviewDeskCorrectionLine(env, { lineId: line.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T13:00:00.000Z"),
-    /illegal correction line transition: recorded -> approved/
+    /a correction line is reviewed only while the correction is in progress/
   );
 });
 
@@ -266,7 +286,10 @@ test("desk route: it answers only when Cloudflare Access is configured", async (
   const closed = await worker.fetch(new Request("https://tinystudio.io/desk"), env);
   assert.equal(closed.status, 503);
   assert.match(await closed.text(), /not configured/);
-  const closedAction = await worker.fetch(new Request("https://tinystudio.io/api/desk/correction-lines", { method: "POST" }), env);
+  const closedAction = await worker.fetch(
+    new Request("https://tinystudio.io/api/desk/correction-lines", { method: "POST", headers: { Origin: "https://tinystudio.io" } }),
+    env
+  );
   assert.equal(closedAction.status, 503);
 });
 

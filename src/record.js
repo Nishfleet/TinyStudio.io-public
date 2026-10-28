@@ -1,6 +1,7 @@
 import costing from "../config/costing.json" with { type: "json" };
 import offer from "../config/offer.json" with { type: "json" };
 import { advanceEngagement, correctionLines, markLinesRecorded, openEngagement } from "./engagement.js";
+import { assertPublishableLines } from "./guardrails.js";
 
 const ROWS = new Map(costing.rows.map((row) => [row.faultType, row]));
 
@@ -51,18 +52,21 @@ function longDate(iso) {
   return `${parsed.getUTCDate()} ${MONTHS[parsed.getUTCMonth()]} ${parsed.getUTCFullYear()}`;
 }
 
-function proposalBlock({ recordId, renderedAt }) {
+function proposalBlock({ recordId, engagementStatus, renderedAt }) {
   const startDate = proposalStartDate(renderedAt);
   const startHtml = startDate ? cited(longDate(startDate), "offer:startDate") : "the next open slot";
+  const awaitingPayment = !engagementStatus || engagementStatus === "proposed";
   return `<section class="proposal">
 <h2>The proposal</h2>
 <p>We will fix the faults listed above for ${offerPrice()}. Work starts on ${startHtml}. From the day you pay and give us access, the correction takes ${offerWorkingDays()} working days.</p>
 <p class="terms">TinyStudio opens ${offerSlots()} appraisals a month. The proposal needs two things from you: ${esc(offer.requires[0])}, and ${esc(offer.requires[1])}.</p>
 <p class="terms">${esc(offer.noGuarantee)}</p>
-<form method="post" action="/api/engagements/checkout">
+${awaitingPayment
+    ? `<form method="post" action="/api/engagements/checkout">
 <input type="hidden" name="recordId" value="${esc(recordId || "")}">
 <button type="submit">Start the correction</button>
-</form>
+</form>`
+    : `<p class="terms">We received your payment. The Correction Record below lists every change we made and every change we left alone.</p>`}
 </section>`;
 }
 
@@ -70,6 +74,7 @@ function correctionBlock({ engagementId, kickoffNote, lines }) {
   if (!lines.length) return "";
   const applied = lines.filter((line) => APPLIED_LINE_STATES.includes(line.status));
   const refused = lines.filter((line) => line.status === "rejected");
+  assertPublishableLines(applied);
   const items = applied
     .map((line) => `<li class="correction-line" data-line-id="${esc(line.id)}">
 <h3>${esc(line.fault_title)}</h3>
@@ -98,7 +103,7 @@ ${refusedItems}
 </section>`;
 }
 
-export function renderRecord({ request, faults, summary, version, renderedAt, recordId, engagementId, kickoffNote, correctionLines: lines = [] }) {
+export function renderRecord({ request, faults, summary, version, renderedAt, recordId, engagementId, engagementStatus, kickoffNote, correctionLines: lines = [] }) {
   const inputs = { dealValue: request.avg_deal_value, monthlyLeads: request.monthly_leads };
   const costed = faults.map((fault) => costFault(fault, inputs));
   const total = costed.reduce((sum, item) => sum + (item.monthlyCost || 0), 0);
@@ -152,7 +157,7 @@ ${faultHtml}
 <ul>
 ${sourceHtml}
 </ul>
-${proposalBlock({ recordId, renderedAt })}
+${proposalBlock({ recordId, engagementStatus, renderedAt })}
 ${correctionBlock({ engagementId, kickoffNote, lines })}
 </main>
 </body>
@@ -212,6 +217,7 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
     renderedAt: at,
     recordId: id,
     engagementId: engagement.id,
+    engagementStatus: engagement.status,
     kickoffNote: engagement.kickoff_note,
     correctionLines: (await correctionLines(env, engagement.id)).filter((line) => REVIEWED_LINE_STATES.includes(line.status))
   });

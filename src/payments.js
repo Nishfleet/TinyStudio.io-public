@@ -1,7 +1,7 @@
 import offer from "../config/offer.json" with { type: "json" };
 import { Webhook } from "standardwebhooks";
-import { assertAllowedAction } from "./guardrails.js";
-import { advanceEngagement, engagementById, engagementForRequest } from "./engagement.js";
+import { engagementAllows, ENGAGEMENT_SETTLED_STATUSES } from "./guardrails.js";
+import { advanceEngagement, attachCheckoutSession, engagementById, engagementForRequest, journalEngagementEvent } from "./engagement.js";
 
 const DODO_LIVE_URL = "https://live.dodopayments.com";
 const DODO_TEST_URL = "https://test.dodopayments.com";
@@ -109,14 +109,20 @@ export function extractDodoPayment(event) {
 
 export function paymentMatchesOffer(payment, env) {
   const expected = String(env.DODO_TINYSTUDIO_PRODUCT_ID || "").trim();
-  if (payment.currency && offer.currency && payment.currency !== offer.currency) return false;
-  if (payment.amountCents && payment.amountCents < offer.priceCents) return false;
-  if (expected && payment.productIds.length && !payment.productIds.includes(expected)) return false;
-  return Boolean(payment.paymentId);
+  if (!payment.paymentId) return false;
+  if (!expected) return false;
+  if (!payment.productIds.length || !payment.productIds.includes(expected)) return false;
+  if (payment.currency !== offer.currency) return false;
+  if (!Number.isFinite(payment.amountCents) || payment.amountCents < offer.priceCents) return false;
+  return true;
 }
 
-export async function webhookAlreadySeen(env, webhookId) {
-  const row = await env.DB.prepare("SELECT status FROM dodo_webhook_events WHERE webhook_id = ?1").bind(webhookId).first();
+export async function webhookProcessed(env, webhookId) {
+  const row = await env.DB.prepare(
+    "SELECT status FROM dodo_webhook_events WHERE webhook_id = ?1 AND status = 'processed'"
+  )
+    .bind(webhookId)
+    .first();
   return row ?? null;
 }
 
@@ -153,26 +159,23 @@ async function recordPaymentRow(env, { payment, engagement, webhookId, at }) {
 }
 
 export async function openEngagementFromPayment(env, { payment, at }) {
-  assertAllowedAction("record_customer_payment");
-  const engagementRow = payment.engagementId
-    ? await engagementById(env, payment.engagementId)
-    : null;
+  const engagementRow = payment.engagementId ? await engagementById(env, payment.engagementId) : null;
   if (!engagementRow) throw Object.assign(new Error("paid event for an engagement this worker cannot match"), { code: "engagement_unknown" });
-  if (["paid", "in_correction", "proved", "tracking", "closed"].includes(engagementRow.status)) return engagementRow;
-  if (engagementRow.status !== "proposed") {
+  const settled = ENGAGEMENT_SETTLED_STATUSES.includes(engagementRow.status);
+  if (!settled && engagementRow.status !== "proposed") {
     throw Object.assign(new Error(`payment for an engagement in state ${engagementRow.status}`), { code: "engagement_state" });
   }
-  const advanced = await advanceEngagement(env, engagementRow, "paid", {
-    type: "status_changed",
-    detail: `payment ${payment.paymentId}`,
-    at
-  });
-  if (payment.checkoutSessionId) {
-    await env.DB.prepare("UPDATE engagements SET checkout_session_id = ?1, changed_at = ?2 WHERE id = ?3")
-      .bind(payment.checkoutSessionId, at, advanced.id)
-      .run();
+
+  const engagement = settled
+    ? engagementRow
+    : await advanceEngagement(env, engagementRow, "paid", { type: "status_changed", detail: `payment ${payment.paymentId}`, at });
+  if (payment.checkoutSessionId && engagementRow.checkout_session_id !== payment.checkoutSessionId) {
+    await attachCheckoutSession(env, engagement, payment.checkoutSessionId, at);
   }
-  return advanced;
+  if (settled) {
+    await journalEngagementEvent(env, engagement, { type: "payment_recorded_duplicate", detail: `payment ${payment.paymentId}`, at });
+  }
+  return { engagement, duplicate: settled };
 }
 
 export async function handleDodoWebhook(env, { rawBody, headers }, at = new Date().toISOString()) {
@@ -183,13 +186,14 @@ export async function handleDodoWebhook(env, { rawBody, headers }, at = new Date
   if (!webhookId || !webhookTimestamp || !webhookSignature) {
     return { ok: false, status: 400, body: { error: "webhook_headers_missing" } };
   }
-  const seen = await webhookAlreadySeen(env, webhookId);
+
+  if (!verifyDodoWebhookSignature({ payload: rawBody, webhookId, webhookTimestamp, webhookSignature, secret: env.DODO_TINYSTUDIO_WEBHOOK_SECRET })) {
+    return { ok: false, status: 401, body: { error: "signature_invalid" } };
+  }
+
+  const seen = await webhookProcessed(env, webhookId);
   if (seen) {
     return { ok: true, status: 200, body: { received: true, duplicate: true, webhookStatus: seen.status } };
-  }
-  if (!verifyDodoWebhookSignature({ payload: rawBody, webhookId, webhookTimestamp, webhookSignature, secret: env.DODO_TINYSTUDIO_WEBHOOK_SECRET })) {
-    await logWebhook(env, { webhookId, eventType: "unknown", status: "rejected", reason: "bad_signature", payload: null, at });
-    return { ok: false, status: 401, body: { error: "signature_invalid" } };
   }
 
   let event;
@@ -218,10 +222,16 @@ export async function handleDodoWebhook(env, { rawBody, headers }, at = new Date
     return { ok: false, status: 400, body: { error: "offer_mismatch" } };
   }
   try {
-    const engagement = await openEngagementFromPayment(env, { payment, at });
+    const { engagement, duplicate } = await openEngagementFromPayment(env, { payment, at });
     await recordPaymentRow(env, { payment, engagement, webhookId, at });
     await logWebhook(env, { webhookId, eventType, status: "processed", reason: null, payload: event, at });
-    return { ok: true, status: 200, body: { received: true, engagementId: engagement.id, engagementStatus: engagement.status } };
+    return {
+      ok: true,
+      status: 200,
+      body: duplicate
+        ? { received: true, engagementId: engagement.id, engagementStatus: engagement.status, duplicatePayment: true }
+        : { received: true, engagementId: engagement.id, engagementStatus: engagement.status }
+    };
   } catch (error) {
     const code = String(error?.code || "engagement_open_failed");
     const known = ["engagement_unknown", "engagement_state"].includes(code);
@@ -231,7 +241,6 @@ export async function handleDodoWebhook(env, { rawBody, headers }, at = new Date
 }
 
 export async function createDodoCheckout(env, { recordId, requestId, engagementId, customerEmail }, fetchImpl = fetch) {
-  assertAllowedAction("open_checkout_for_customer");
   const status = dodoConfigStatus(env);
   if (!status.productId || !status.apiKey) {
     throw Object.assign(new Error("Dodo checkout is not configured"), { code: "checkout_not_configured" });
@@ -277,7 +286,7 @@ export async function startCheckoutForRequest(env, { recordId }, at = new Date()
   if (!record) throw Object.assign(new Error("record not found"), { code: "record_not_found" });
   const engagement = await engagementForRequest(env, record.request_id);
   if (!engagement) throw Object.assign(new Error("engagement not found"), { code: "engagement_not_found" });
-  if (engagement.status !== "proposed") {
+  if (!engagementAllows(engagement, "send_checkout")) {
     throw Object.assign(new Error("this engagement is not awaiting payment"), { code: "not_awaiting_payment" });
   }
   const request = await env.DB.prepare("SELECT email FROM appraisal_requests WHERE id = ?1").bind(record.request_id).first();
@@ -291,13 +300,6 @@ export async function startCheckoutForRequest(env, { recordId }, at = new Date()
     },
     fetchImpl
   );
-  await env.DB.prepare("UPDATE engagements SET checkout_session_id = ?1, changed_at = ?2 WHERE id = ?3")
-    .bind(checkout.sessionId, at, engagement.id)
-    .run();
-  await env.DB.prepare(
-    "INSERT INTO engagement_events (engagement_id, request_id, type, from_status, to_status, detail, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
-  )
-    .bind(engagement.id, engagement.request_id, "checkout_session_created", "proposed", "proposed", `checkout session ${checkout.sessionId}`, at)
-    .run();
+  await attachCheckoutSession(env, engagement, checkout.sessionId, at);
   return checkout;
 }

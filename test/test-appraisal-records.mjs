@@ -151,3 +151,21 @@ test("renderRecord is pure: same inputs, same bytes", () => {
   const args = { request, faults: faults.slice(0, 1), summary: "S", version: 1, renderedAt: "t" };
   assert.equal(renderRecord(args), renderRecord(args));
 });
+
+test("record: the checkout button is offered only while the engagement awaits payment", async () => {
+  const { sqlite } = freshEnv();
+  const request = sqlite.prepare("SELECT * FROM appraisal_requests WHERE id = 'req-1'").get();
+  const args = { request, faults, summary: "S", version: 1, renderedAt: "2026-10-13T08:00:00.000Z", recordId: "r1", engagementId: "e1" };
+
+  const awaiting = renderRecord({ ...args, engagementStatus: "proposed" });
+  assert.ok(awaiting.includes('action="/api/engagements/checkout"'), "the proposal asks for the payment while the engagement is proposed");
+  assert.ok(awaiting.includes("Start the correction"));
+
+  const settled = renderRecord({ ...args, engagementStatus: "paid" });
+  assert.ok(!settled.includes('action="/api/engagements/checkout"'), "a paid record offers no second checkout");
+  assert.ok(!settled.includes("Start the correction"));
+  assert.ok(settled.includes("We received your payment."), "the record says the payment arrived");
+
+  const undated = renderRecord({ ...args });
+  assert.ok(undated.includes('action="/api/engagements/checkout"'), "a record with no engagement status still asks for the payment");
+});

@@ -182,7 +182,8 @@ test("webhook: a signed payment.succeeded opens the engagement and logs the webh
     ["engagement_opened", null, "requested"],
     ["status_changed", "requested", "appraised"],
     ["status_changed", "appraised", "proposed"],
-    ["status_changed", "proposed", "paid"]
+    ["status_changed", "proposed", "paid"],
+    ["checkout_session_created", "paid", "paid"]
   ]);
 });
 
@@ -205,9 +206,15 @@ test("webhook: the signature is verified before the engagement opens", async () 
   assert.deepEqual(bad.body, { error: "signature_invalid" });
   assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagement.id).status, "proposed", "no engagement opened");
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM engagement_payments").get().n, 0);
-  const logged = sqlite.prepare("SELECT status, reason FROM dodo_webhook_events WHERE webhook_id = 'wh_123'").get();
-  assert.equal(logged.status, "rejected");
-  assert.equal(logged.reason, "bad_signature");
+  assert.equal(
+    sqlite.prepare("SELECT COUNT(*) AS n FROM dodo_webhook_events WHERE webhook_id = 'wh_123'").get().n,
+    0,
+    "a refused signature writes no row, so an unauthenticated POST cannot claim a real webhook id"
+  );
+
+  const replayOfPoisonedId = await handleDodoWebhook(env, { rawBody: body, headers: new Headers(headers) }, "2026-10-13T10:05:00.000Z");
+  assert.equal(replayOfPoisonedId.status, 200, "the same webhook id still works once it arrives with a good signature");
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagement.id).status, "paid");
 
   const noHeaders = await handleDodoWebhook(env, { rawBody: body, headers: new Headers() }, "2026-10-13T10:00:00.000Z");
   assert.equal(noHeaders.status, 400);
@@ -268,6 +275,63 @@ test("webhook: a replay, another product and a failed payment open nothing new",
   assert.equal(sqlite.prepare("SELECT status FROM dodo_webhook_events WHERE webhook_id = 'wh_failed'").get().status, "failed");
 });
 
+test("webhook: a failed payment does not claim its webhook id, so Dodo's retry still opens the engagement", async () => {
+  const { env, sqlite } = freshEnv();
+  const recordId = await proposedEngagement(env);
+  const engagement = sqlite.prepare("SELECT id FROM engagements WHERE request_id = 'req-1'").get();
+  const metadata = { engagement_id: engagement.id, record_id: recordId, request_id: "req-1" };
+
+  const failed = signedEvent({ webhookId: "wh_retry", event: { type: "payment.failed" }, data: { metadata } });
+  const failure = await handleDodoWebhook(env, { rawBody: failed.body, headers: new Headers(failed.headers) }, "2026-10-13T13:00:00.000Z");
+  assert.deepEqual(failure.body, { received: true, ignored: true });
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagement.id).status, "proposed");
+
+  const retry = signedEvent({ webhookId: "wh_retry", data: { metadata } });
+  const success = await handleDodoWebhook(env, { rawBody: retry.body, headers: new Headers(retry.headers) }, "2026-10-13T13:05:00.000Z");
+  assert.equal(success.status, 200);
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagement.id).status, "paid", "the retry is processed, not answered as a duplicate");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM engagement_payments").get().n, 1);
+});
+
+test("webhook: a second successful payment for a paid engagement is journaled, not reopened", async () => {
+  const { env, sqlite } = freshEnv();
+  const recordId = await proposedEngagement(env);
+  const engagement = sqlite.prepare("SELECT id FROM engagements WHERE request_id = 'req-1'").get();
+  const metadata = { engagement_id: engagement.id, record_id: recordId, request_id: "req-1" };
+  const first = signedEvent({ data: { metadata } });
+  await handleDodoWebhook(env, { rawBody: first.body, headers: new Headers(first.headers) }, "2026-10-13T10:00:00.000Z");
+
+  const second = signedEvent({ webhookId: "wh_second", data: { payment_id: "pay_456", session_id: "cs_456", metadata } });
+  const again = await handleDodoWebhook(env, { rawBody: second.body, headers: new Headers(second.headers) }, "2026-10-13T11:00:00.000Z");
+  assert.equal(again.status, 200);
+  assert.equal(again.body.duplicatePayment, true, "the duplicate charge is reported, not hidden");
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagement.id).status, "paid");
+  const journaled = sqlite.prepare("SELECT type, detail FROM engagement_events WHERE engagement_id = ? AND type = 'payment_recorded_duplicate'").all(engagement.id);
+  assert.equal(journaled.length, 1);
+  assert.match(journaled[0].detail, /pay_456/);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM engagement_payments WHERE payment_id = 'pay_456'").get().n, 1);
+});
+
+test("webhook: a signed event with no payment id, no amount or no product is an offer mismatch", async () => {
+  const { env, sqlite } = freshEnv();
+  const recordId = await proposedEngagement(env);
+  const engagement = sqlite.prepare("SELECT id FROM engagements WHERE request_id = 'req-1'").get();
+  const metadata = { engagement_id: engagement.id, record_id: recordId, request_id: "req-1" };
+  const broken = [
+    { webhookId: "wh_no_id", data: { payment_id: "", metadata } },
+    { webhookId: "wh_no_amount", data: { total_amount: 0, metadata } },
+    { webhookId: "wh_no_cart", data: { product_cart: [], metadata } }
+  ];
+  for (const [index, override] of broken.entries()) {
+    const event = signedEvent(override);
+    const refused = await handleDodoWebhook(env, { rawBody: event.body, headers: new Headers(event.headers) }, `2026-10-13T1${index}:00:00.000Z`);
+    assert.equal(refused.status, 400, `${override.webhookId} must be refused`);
+    assert.deepEqual(refused.body, { error: "offer_mismatch" });
+  }
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagement.id).status, "proposed");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM engagement_payments").get().n, 0);
+});
+
 test("webhook: a payment for an engagement that is not proposed is refused, not opened twice", async () => {
   const { env, sqlite } = freshEnv();
   const recordId = await proposedEngagement(env);
@@ -285,6 +349,104 @@ test("webhook: a payment for an engagement that is not proposed is refused, not 
   const missing = await handleDodoWebhook(env, { rawBody: unknown.body, headers: new Headers(unknown.headers) }, "2026-10-13T10:30:00.000Z");
   assert.equal(missing.status, 409);
   assert.deepEqual(missing.body, { error: "engagement_unknown" });
+});
+
+test("checkout route: a browser form post is redirected to Dodo, and a JSON caller gets the URL", async () => {
+  const { env } = freshEnv();
+  const recordId = await proposedEngagement(env);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ checkout_url: "https://checkout.dodopayments.com/session/cs_form", session_id: "cs_form" })
+  });
+  try {
+    const browser = await worker.fetch(
+      new Request("https://tinystudio.io/api/engagements/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "text/html,application/xhtml+xml",
+          Origin: "https://tinystudio.io",
+          "Sec-Fetch-Mode": "navigate"
+        },
+        body: new URLSearchParams({ recordId }).toString()
+      }),
+      env
+    );
+    assert.equal(browser.status, 303);
+    assert.equal(browser.headers.get("location"), "https://checkout.dodopayments.com/session/cs_form");
+
+    const api = await worker.fetch(
+      new Request("https://tinystudio.io/api/engagements/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", Origin: "https://tinystudio.io" },
+        body: new URLSearchParams({ recordId }).toString()
+      }),
+      env
+    );
+    assert.equal(api.status, 200);
+    assert.equal((await api.json()).checkoutUrl, "https://checkout.dodopayments.com/session/cs_form");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("checkout route: a paid engagement redirects the customer to the record instead of charging twice", async () => {
+  const { env, sqlite } = freshEnv();
+  const recordId = await proposedEngagement(env);
+  const engagement = sqlite.prepare("SELECT id FROM engagements WHERE request_id = 'req-1'").get();
+  const paid = signedEvent({ data: { metadata: { engagement_id: engagement.id, record_id: recordId, request_id: "req-1" } } });
+  await handleDodoWebhook(env, { rawBody: paid.body, headers: new Headers(paid.headers) }, "2026-10-13T10:00:00.000Z");
+
+  const res = await worker.fetch(
+    new Request("https://tinystudio.io/api/engagements/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "text/html", Origin: "https://tinystudio.io" },
+      body: new URLSearchParams({ recordId }).toString()
+    }),
+    env
+  );
+  assert.equal(res.status, 303);
+  assert.equal(res.headers.get("location"), `/records/${recordId}?checkout=failed`);
+  const sessions = sqlite.prepare("SELECT COUNT(*) AS n FROM engagement_events WHERE engagement_id = ? AND type = 'checkout_session_created'").get(engagement.id).n;
+  assert.equal(sessions, 1, "no second checkout session is attached");
+});
+
+test("checkout route: the sixth checkout from one address in a day is refused", async () => {
+  const { env } = freshEnv();
+  const recordId = await proposedEngagement(env);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ checkout_url: "https://checkout.dodopayments.com/session/cs_limit", session_id: "cs_limit" })
+  });
+  try {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const res = await worker.fetch(
+        new Request("https://tinystudio.io/api/engagements/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", Origin: "https://tinystudio.io", "CF-Connecting-IP": "203.0.113.7" },
+          body: new URLSearchParams({ recordId }).toString()
+        }),
+        env
+      );
+      assert.equal(res.status, 200, `checkout ${attempt + 1} is allowed`);
+    }
+    const blocked = await worker.fetch(
+      new Request("https://tinystudio.io/api/engagements/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", Origin: "https://tinystudio.io", "CF-Connecting-IP": "203.0.113.7" },
+        body: new URLSearchParams({ recordId }).toString()
+      }),
+      env
+    );
+    assert.equal(blocked.status, 429);
+    assert.equal((await blocked.json()).error, "checkout_daily_limit");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 test("webhook: the route refuses an unsigned POST and never opens an engagement", async () => {

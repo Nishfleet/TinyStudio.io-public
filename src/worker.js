@@ -91,6 +91,7 @@ const MAX_AGENT_RUNS_PER_IP_PER_DAY = 20;
 const MAX_AGENT_RUNS_PER_DAY = 50;
 const MAX_APPRAISALS_PER_MONTH = 6;
 const MAX_WAITLIST_PER_MONTH = 50;
+const MAX_CHECKOUTS_PER_IP_PER_DAY = 5;
 const APPRAISAL_SURFACE = "website-appraisal";
 const CURRENCY_AMOUNT_PATTERN = String.raw`(?:(?:₹|\$|€|£|inr|usd|us\$|aud|cad|sgd|gbp|eur|rs\.?|rupees?)\s*\d[\d,.]*(?:\s*(?:k|lakh|lakhs|l|cr))?|\d[\d,.]*\s*(?:inr|usd|aud|cad|sgd|gbp|eur|rupees?))`;
 const METRIC_VALUE_PATTERN = String.raw`(?:${CURRENCY_AMOUNT_PATTERN}|\b\d[\d,.]*\b)`;
@@ -868,6 +869,18 @@ async function enforceAgentLimits(request, env, email, url) {
     return { ok: false, response: jsonResponse({ ok: false, error: "storage_unavailable" }, { status: 503 }) };
   }
 
+  return { ok: true };
+}
+
+async function enforceCheckoutLimit(request, env) {
+  const bucket = new Date().toISOString().slice(0, 10);
+  const ipHash = await hashIp(request, `checkout:${bucket}`);
+  if (!ipHash) return { ok: true };
+  const count = await incrementUsageCounter(env, `checkout:${bucket}:${ipHash}`);
+  if (count > MAX_CHECKOUTS_PER_IP_PER_DAY) {
+    console.warn("tinystudio_checkout_daily_ip_limit", JSON.stringify({ count }));
+    return { ok: false, response: withSecurityHeaders(jsonResponse({ ok: false, error: "checkout_daily_limit" }, { status: 429 })) };
+  }
   return { ok: true };
 }
 
@@ -1649,26 +1662,61 @@ async function agentAuditResponse(request, env, url) {
 }
 
 async function checkoutResponse(request, env, url) {
-  const body = await readTextBodyWithLimit(request);
+  const browserForm = prefersHtmlDocument(request);
+  if (!isSameOriginPost(request, url)) {
+    return jsonResponse({ ok: false, error: "origin_not_allowed" }, { status: 403 });
+  }
+  if (requestTooLarge(request)) {
+    return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+  }
+  let body;
+  try {
+    body = await readTextBodyWithLimit(request);
+  } catch {
+    return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+  }
   const form = new URLSearchParams(body);
   const recordId = cleanField(form.get("recordId"), 64);
   if (!RECORD_ID.test(recordId)) {
     return notFoundResponse("bad_request", 400);
   }
-  if (!isSameOriginPost(request, url)) {
-    return jsonResponse({ ok: false, error: "origin_not_allowed" }, { status: 403 });
-  }
+  const limited = await enforceCheckoutLimit(request, env);
+  if (!limited.ok) return limited.response;
   try {
     const checkout = await startCheckoutForRequest(env, { recordId });
-    return withSecurityHeaders(jsonResponse({ ok: true, checkoutUrl: checkout.checkoutUrl }));
+    return browserForm
+      ? redirectResponse(checkout.checkoutUrl)
+      : withSecurityHeaders(jsonResponse({ ok: true, checkoutUrl: checkout.checkoutUrl }));
   } catch (error) {
     const status = error?.code === "record_not_found" || error?.code === "engagement_not_found" ? 404 : 400;
-    return withSecurityHeaders(jsonResponse({ ok: false, error: error?.code || "checkout_failed" }, { status }));
+    const payload = { ok: false, error: error?.code || "checkout_failed" };
+    return browserForm
+      ? redirectResponse(`/records/${recordId}?checkout=failed`)
+      : withSecurityHeaders(jsonResponse(payload, { status }));
   }
 }
 
+function prefersHtmlDocument(request) {
+  const mode = String(request.headers?.get?.("sec-fetch-mode") || "").toLowerCase();
+  if (mode === "navigate") return true;
+  const accept = String(request.headers?.get?.("accept") || "").toLowerCase();
+  return accept.includes("text/html");
+}
+
+function redirectResponse(location, status = 303) {
+  return new Response(null, { status, headers: { location: location, "cache-control": "no-store" } });
+}
+
 async function dodoWebhookResponse(request, env) {
-  const rawBody = await readTextBodyWithLimit(request);
+  if (requestTooLarge(request)) {
+    return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+  }
+  let rawBody;
+  try {
+    rawBody = await readTextBodyWithLimit(request);
+  } catch {
+    return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+  }
   const result = await handleDodoWebhook(env, { rawBody, headers: request.headers });
   return jsonResponse({ ok: result.ok, ...result.body }, { status: result.status });
 }
@@ -1693,6 +1741,9 @@ async function deskActionResponse(request, env, url, kind) {
   if (request.method !== "POST") {
     return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
   }
+  if (!isSameOriginPost(request, url)) {
+    return jsonResponse({ ok: false, error: "cross_site_blocked" }, { status: 403 });
+  }
   if (!deskAccessConfigured(env)) {
     return new Response("Desk review is not configured.", {
       status: 503,
@@ -1702,7 +1753,12 @@ async function deskActionResponse(request, env, url, kind) {
   const identity = await deskIdentity(env, request);
   if (!identity.authenticated) return deskUnauthorized(identity.reason);
   const at = new Date().toISOString();
-  const form = new URLSearchParams(await readTextBodyWithLimit(request));
+  let form;
+  try {
+    form = new URLSearchParams(await readTextBodyWithLimit(request));
+  } catch {
+    return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+  }
   const fail = (error) =>
     withSecurityHeaders(jsonResponse({ ok: false, error: error?.code || "desk_action_failed" }, { status: 400 }));
   try {

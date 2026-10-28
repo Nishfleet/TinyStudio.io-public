@@ -1,3 +1,4 @@
+import { engagementAllows } from "./guardrails.js";
 import {
   addCorrectionLine,
   advanceEngagement,
@@ -7,8 +8,6 @@ import {
   setKickoffNote
 } from "./engagement.js";
 import { republishRecord } from "./record.js";
-
-const DESK_LINE_STATES = ["paid", "in_correction"];
 
 export async function deskQueue(env) {
   const result = await env.DB.prepare(
@@ -46,7 +45,7 @@ async function deskLines(env, engagementId) {
 export async function addDeskCorrectionLine(env, input, reviewer, at) {
   const engagement = await engagementById(env, input.engagementId);
   if (!engagement) throw Object.assign(new Error("engagement not found"), { code: "NOT_FOUND" });
-  if (!DESK_LINE_STATES.includes(engagement.status)) {
+  if (!engagementAllows(engagement, "add_correction_line")) {
     throw Object.assign(new Error("an engagement accepts correction lines only after payment"), { code: "NOT_PAID" });
   }
   const line = await addCorrectionLine(env, engagement, input, at);
@@ -65,17 +64,21 @@ export async function reviewDeskCorrectionLine(env, input, reviewer, at) {
   const line = await correctionLineById(env, input.lineId);
   if (!line) throw Object.assign(new Error("correction line not found"), { code: "NOT_FOUND" });
   const engagement = await engagementById(env, line.engagement_id);
+  if (!engagement) throw Object.assign(new Error("engagement not found"), { code: "NOT_FOUND" });
+  if (!engagementAllows(engagement, "review_correction_line")) {
+    throw Object.assign(new Error("a correction line is reviewed only while the correction is in progress"), { code: "NOT_PAID" });
+  }
   const reviewed = await reviewCorrectionLine(env, line, input.action, { reviewer, note: input.note, at });
   let current = engagement;
   if (engagement.status === "in_correction") {
     const lines = await deskLines(env, engagement.id);
     if (lines.every((row) => row.status !== "draft")) {
+      await republishRecord(env, engagement.request_id, at);
       current = await advanceEngagement(env, engagement, "proved", {
         type: "status_changed",
         detail: `review complete by ${reviewer}`,
         at
       });
-      await republishRecord(env, engagement.request_id, at);
     }
   }
   return { engagement: current, line: reviewed };
@@ -84,14 +87,15 @@ export async function reviewDeskCorrectionLine(env, input, reviewer, at) {
 export async function addDeskKickoffNote(env, input, reviewer, at) {
   const engagement = await engagementById(env, input.engagementId);
   if (!engagement) throw Object.assign(new Error("engagement not found"), { code: "NOT_FOUND" });
+  if (!engagementAllows(engagement, "add_kickoff_note")) {
+    throw Object.assign(new Error("a kickoff note opens tracking once the correction is proved"), { code: "NOT_PAID" });
+  }
   const noted = await setKickoffNote(env, engagement, input.note, at);
-  const advanced = noted.status === "proved"
-    ? await advanceEngagement(env, noted, "tracking", {
-        type: "status_changed",
-        detail: `tracking opened by ${reviewer}`,
-        at
-      })
-    : noted;
+  const advanced = await advanceEngagement(env, noted, "tracking", {
+    type: "status_changed",
+    detail: `tracking opened by ${reviewer}`,
+    at
+  });
   await republishRecord(env, engagement.request_id, at);
   return advanced;
 }

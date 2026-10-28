@@ -12,7 +12,7 @@ export async function engagementById(env, engagementId) {
   return row ?? null;
 }
 
-async function recordEvent(env, engagement, { type, detail, at, from = engagement.status, to = engagement.status }) {
+export async function journalEngagementEvent(env, engagement, { type, detail, at, from = engagement.status, to = engagement.status }) {
   await env.DB.prepare(
     "INSERT INTO engagement_events (engagement_id, request_id, type, from_status, to_status, detail, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
   )
@@ -29,7 +29,7 @@ export async function openEngagement(env, requestId, at) {
   )
     .bind(id, requestId, at)
     .run();
-  await recordEvent(env, { id, request_id: requestId, status: "requested" }, { type: "engagement_opened", detail: "intake", at, from: null, to: "requested" });
+  await journalEngagementEvent(env, { id, request_id: requestId, status: "requested" }, { type: "engagement_opened", detail: "intake", at, from: null, to: "requested" });
   return engagementForRequest(env, requestId);
 }
 
@@ -49,7 +49,7 @@ export async function attachCheckoutSession(env, engagement, checkoutSessionId, 
   await env.DB.prepare("UPDATE engagements SET checkout_session_id = ?1, changed_at = ?2 WHERE id = ?3")
     .bind(checkoutSessionId, at, engagement.id)
     .run();
-  await recordEvent(env, engagement, { type: "checkout_session_created", detail: checkoutSessionId, at });
+  await journalEngagementEvent(env, engagement, { type: "checkout_session_created", detail: `checkout session ${checkoutSessionId}`, at });
   return { ...engagement, checkout_session_id: checkoutSessionId };
 }
 
@@ -59,7 +59,7 @@ export async function setKickoffNote(env, engagement, note, at) {
   await env.DB.prepare("UPDATE engagements SET kickoff_note = ?1, changed_at = ?2 WHERE id = ?3")
     .bind(text, at, engagement.id)
     .run();
-  await recordEvent(env, engagement, { type: "kickoff_note_added", detail: text, at });
+  await journalEngagementEvent(env, engagement, { type: "kickoff_note_added", detail: text, at });
   return { ...engagement, kickoff_note: text };
 }
 
@@ -80,7 +80,7 @@ export async function addCorrectionLine(env, engagement, line, at) {
   )
     .bind(id, engagement.id, engagement.request_id, faultId || null, faultTitle, beforeText, afterText, line.legalCopy ? 1 : 0, at)
     .run();
-  await recordEvent(env, engagement, { type: "correction_line_added", detail: `${id} ${faultTitle}`, at });
+  await journalEngagementEvent(env, engagement, { type: "correction_line_added", detail: `${id} ${faultTitle}`, at });
   return correctionLineById(env, id);
 }
 
