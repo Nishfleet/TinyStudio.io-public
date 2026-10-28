@@ -84,7 +84,11 @@ async function submitCheckoutForm(recordHtml, recordCsp) {
   try {
     await page.goto("https://tinystudio.io/records/rec-1", { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.click('button:has-text("Start the correction")', { noWaitAfter: true });
-    await page.waitForTimeout(1500);
+    await Promise.race([
+      page.waitForResponse((response) => response.url() === CHECKOUT_URL),
+      page.waitForEvent("requestfailed", (request) => request.url().includes("/api/engagements/checkout")),
+      page.waitForTimeout(10000)
+    ]);
   } finally {
     await browser.close();
   }

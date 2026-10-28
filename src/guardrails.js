@@ -25,6 +25,9 @@ export const ENGAGEMENT_SETTLED_STATUSES = ENGAGEMENT_STATUSES.slice(ENGAGEMENT_
 
 export const CORRECTION_LINE_STATUSES = ["draft", "approved", "recorded", "rejected"];
 
+export const APPLIED_LINE_STATES = ["approved", "recorded"];
+export const REVIEWED_LINE_STATES = [...APPLIED_LINE_STATES, "rejected"];
+
 const CORRECTION_FLOW = {
   draft: ["approved", "rejected"],
   approved: ["recorded"],
