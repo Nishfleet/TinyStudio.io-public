@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import worker from "../src/worker.js";
-import { publishRecord, renderRecord } from "../src/record.js";
+import { publishRecord, renderProofReceipt, renderRecord } from "../src/record.js";
 import costing from "../config/costing.json" with { type: "json" };
 
 function d1(sqlite) {
@@ -147,6 +147,8 @@ test("renderRecord is pure: same inputs, same bytes", () => {
 const driftedFault = { id: "f4", type: "no-mobile-viewport", title: "Layout breaks on phones", url: "https://clinic.example/", evidence: "The page has no viewport meta tag." };
 const receiptRow = (sqlite, requestId) =>
   sqlite.prepare("SELECT * FROM proof_receipts WHERE request_id = ?").all(requestId)[0];
+const runRow = (objects, recordId, version) =>
+  JSON.parse(objects.get(`records/${recordId}.v${version}.json`));
 
 test("proof receipt: a rerun renders before and after side by side with the delta per fault", async () => {
   const { env, objects, sqlite } = freshEnv();
@@ -170,6 +172,13 @@ test("proof receipt: a rerun renders before and after side by side with the delt
   const res = await worker.fetch(new Request("https://tinystudio.io/records/" + receipt.id), env);
   assert.equal(res.status, 200);
   assert.match(res.headers.get("x-robots-tag"), /noindex/);
+  const record = objects.get(`records/${first.id}.html`);
+  assert.ok(record.includes(`/records/${receipt.id}`), "the record links its proof receipt");
+  const rows = JSON.parse(JSON.stringify(sqlite.prepare("SELECT id, request_id, before_version, after_version FROM proof_receipts").all()));
+  assert.deepEqual(rows, [{ id: receipt.id, request_id: "req-1", before_version: 1, after_version: 2 }], "the receipt row reads back");
+
+  const again = renderProofReceipt({ request: { avg_deal_value: 8000, monthly_leads: 40, site_url: "https://clinic.example", name: "Dana Reyes" }, before: runRow(objects, first.id, 1), after: runRow(objects, first.id, 2), renderedAt: "2026-10-14T08:00:00.000Z" });
+  assert.equal(again, html, "the receipt renderer is pure");
 });
 
 test("quality gate: no uncited number in a proof receipt", async () => {
@@ -193,6 +202,7 @@ test("quality gate: no uncited number in a proof receipt", async () => {
     .replace(/<style>[\s\S]*?<\/style>/, "")
     .replace(/<head>[\s\S]*?<\/head>/, "")
     .replace(/<main[^>]*>/, "<main>")
+    .replace(/<h2>Summary<\/h2>\s*<p>[^<]*<\/p>/, " ")
     .replace(/<h3>[^<]*<\/h3>/g, "")
     .replace(/<p class="where">[^<]*<\/p>/g, "")
     .replace(/<li class="fault">[\s\S]*?<\/li>/g, (li) => li.replace(/<p>(?!<span class="fig")[^<]*<\/p>/g, ""))
@@ -209,6 +219,7 @@ test("drift email: one email above the cost floor with the record link, and sile
   assert.equal(sent.length, 2, "a rerun with a new fault above the floor sends exactly one email");
   assert.equal(sent[1].to, "dana@clinic.example");
   assert.ok(sent[1].text.includes(`https://tinystudio.io/records/${first.id}`), "the drift email carries the record link");
+  assert.ok(sent[1].text.includes(`https://tinystudio.io/records/${receiptRow(sqlite, "req-1").id}`), "the drift email carries the receipt link");
   assert.doesNotMatch(sent[1].text, /\$/i, "the drift email prices nothing");
   assert.doesNotMatch(sent[1].text, /correction|book|call|offer|price|upgrade/i, "the drift email carries no sales copy");
   assert.deepEqual(JSON.parse(JSON.stringify(sqlite.prepare("SELECT detail FROM appraisal_events WHERE type = 'drift_email_sent'").all())), [{ detail: `${first.id} +26880` }]);

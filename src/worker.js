@@ -619,6 +619,7 @@ async function queueAppraisalAudit(env, requestId, at) {
 }
 
 const DRIFT_RERUN_AFTER_DAYS = 90;
+const DRIFT_RERUN_BATCH = 50;
 
 function driftCutoff(now) {
   return new Date(now.getTime() - DRIFT_RERUN_AFTER_DAYS * 86400000).toISOString();
@@ -632,13 +633,13 @@ async function queueDriftReruns(env, now) {
      JOIN appraisal_records rec ON rec.request_id = r.id
      LEFT JOIN (
        SELECT request_id, MAX(created_at) AS last_queued
-       FROM appraisal_events
-       WHERE type = 'drift_check_queued'
+       FROM appraisal_rerun_jobs
        GROUP BY request_id
      ) d ON d.request_id = r.id
      GROUP BY r.id
-     HAVING MAX(rec.rendered_at) <= ?1 AND (d.last_queued IS NULL OR d.last_queued <= ?1)`
-  ).bind(cutoff).all();
+     HAVING MAX(rec.rendered_at) <= ?1 AND (MAX(d.last_queued) IS NULL OR MAX(d.last_queued) <= ?1)
+     LIMIT ?2`
+  ).bind(cutoff, DRIFT_RERUN_BATCH).all();
   let queued = 0;
   for (const { request_id: requestId } of due.results) {
     const inserted = await env.DB.prepare(
@@ -649,6 +650,7 @@ async function queueDriftReruns(env, now) {
       queued += 1;
     }
   }
+  console.log("tinystudio_drift_reruns_queued", queued);
   return queued;
 }
 

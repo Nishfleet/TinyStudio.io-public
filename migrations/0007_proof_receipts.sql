@@ -1,7 +1,9 @@
 -- M3: the Proof Receipt and the 90-day drift rerun (docs/PLAN.md 6.7 and 6.9).
 -- A receipt compares the last two runs of one request's record. The rerun
 -- outbox holds drift checks the SEO Fix Kit engine consumer reads the same way
--- it reads the first audit job.
+-- it reads the first audit job. Its own rows are the once-per-window marker: the
+-- nightly query requeues a request only when its newest job row is older than
+-- the window, so a check the engine has not picked up yet is not queued twice.
 CREATE TABLE IF NOT EXISTS proof_receipts (
   id TEXT PRIMARY KEY,
   request_id TEXT NOT NULL,

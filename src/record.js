@@ -30,7 +30,7 @@ function cited(text, cite) {
   return `<span class="fig" data-cite="${esc(cite)}">${esc(text)}</span>`;
 }
 
-export function renderRecord({ request, faults, summary, version, renderedAt }) {
+export function renderRecord({ request, faults, summary, version, renderedAt, receiptId }) {
   const inputs = { dealValue: request.avg_deal_value, monthlyLeads: request.monthly_leads };
   const costed = faults.map((fault) => costFault(fault, inputs));
   const total = costed.reduce((sum, item) => sum + (item.monthlyCost || 0), 0);
@@ -77,7 +77,8 @@ h1{font-size:1.7rem}h3{margin-bottom:0}.where{color:#555;margin:0;font-size:.9re
 ${faultHtml}
 </ol>
 <p class="total">Estimated monthly cost of these faults: ${cited(money(total), totalCite)}</p>
-<h2>Where each number comes from</h2>
+${receiptId ? `<p><a href="/records/${esc(receiptId)}">Read the Proof Receipt: this rerun set beside the first run, fault by fault.</a></p>
+` : ""}<h2>Where each number comes from</h2>
 <p>Each figure above is the share of your monthly leads a fault is estimated to lose, taken from the table below, multiplied by your lead volume and your average deal value. It values the affected leads at deal value; it is an estimate, not a promise of revenue.</p>
 <ul>
 ${sourceHtml}
@@ -112,18 +113,13 @@ async function storeRun(env, recordId, run) {
 async function loadRun(env, recordId, version) {
   const object = await env.RECORDS.get(runKey(recordId, version));
   if (!object) return null;
-  const text = typeof object.text === "function" ? await object.text() : String(object.body);
-  const run = JSON.parse(text);
-  return Array.isArray(run.faults) ? run : null;
+  const run = JSON.parse(await object.text());
+  return Array.isArray(run.faults) && typeof run.renderedAt === "string" ? run : null;
 }
 
 function rowCite(faults) {
-  return faults
-    .map((fault) => ROWS.get(fault.type))
-    .filter((row) => row && row.deltaPct > 0)
-    .map((row) => `row:${row.id}`)
-    .concat("input:dealValue", "input:monthlyLeads")
-    .join(" ");
+  const rows = new Set(faults.map((fault) => ROWS.get(fault.type)).filter((row) => row && row.deltaPct > 0).map((row) => row.id));
+  return [...rows].map((id) => `row:${id}`).concat("input:dealValue", "input:monthlyLeads").join(" ");
 }
 
 function faultLine(costed, verdict) {
@@ -193,26 +189,31 @@ ${sourceHtml}
 `;
 }
 
-export function driftEmail({ env, request, recordId, origin }) {
+export function driftEmail({ env, request, recordId, receiptId, origin }) {
   const link = `${origin}/records/${recordId}`;
+  const receipt = `${origin}/records/${receiptId}`;
   return {
     from: env.CONFIRMATION_FROM || "TinyStudio <appraisals@tinystudio.io>",
     to: request.email,
     subject: `The appraisal of ${request.site_url} was rerun`,
-    text: ["Hello,", "", `We reran the appraisal of ${request.site_url}. New faults have appeared. The updated record is here: ${link}`, "", "TinyStudio"].join("\n")
+    text: [
+      "Hello,",
+      "",
+      `We reran the appraisal of ${request.site_url}. New faults have appeared. The updated record is here: ${link}`,
+      `The Proof Receipt sets the two runs side by side, fault by fault: ${receipt}`,
+      "",
+      "TinyStudio"
+    ].join("\n")
   };
 }
 
-async function publishProofReceipt(env, request, recordId, before, after, at) {
-  const receiptId = crypto.randomUUID();
+async function publishProofReceipt(env, request, recordId, receiptId, before, after, at) {
   const html = renderProofReceipt({ request, before, after, renderedAt: at });
   await env.RECORDS.put(recordKey(receiptId), html, { httpMetadata: { contentType: "text/html; charset=utf-8" } });
   await env.DB.prepare(
     "INSERT INTO proof_receipts (id, request_id, record_id, before_version, after_version, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
   ).bind(receiptId, request.id, recordId, before.version, after.version, at).run();
-  await env.DB.prepare("INSERT INTO appraisal_events (request_id, type, detail, created_at) VALUES (?1, 'proof_receipt_rendered', ?2, ?3)")
-    .bind(request.id, `${receiptId} v${before.version}->v${after.version}`, at).run();
-  return receiptId;
+  await writeEvent(env, request.id, "proof_receipt_rendered", `${receiptId} v${before.version}->v${after.version}`, at);
 }
 
 async function writeEvent(env, requestId, type, detail, at) {
@@ -227,32 +228,33 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
   const existing = await env.DB.prepare("SELECT id, version FROM appraisal_records WHERE request_id = ?1").bind(requestId).first();
   const id = existing ? existing.id : crypto.randomUUID();
   const version = existing ? existing.version + 1 : 1;
-  const html = renderRecord({ request, faults: reviewed.faults, summary: reviewed.summary, version, renderedAt: at });
+  const run = { version, renderedAt: at, summary: reviewed.summary, faults: reviewed.faults };
+  const before = version === 1 ? null : await loadRun(env, id, version - 1);
+  const receiptId = before ? crypto.randomUUID() : null;
+  const html = renderRecord({ request, faults: reviewed.faults, summary: reviewed.summary, version, renderedAt: at, receiptId });
   await env.RECORDS.put(recordKey(id), html, { httpMetadata: { contentType: "text/html; charset=utf-8" } });
   await env.DB.prepare(
     "INSERT INTO appraisal_records (id, request_id, version, rendered_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(id) DO UPDATE SET version = excluded.version, rendered_at = excluded.rendered_at"
   ).bind(id, requestId, version, at).run();
-  await env.DB.prepare("INSERT INTO appraisal_events (request_id, type, detail, created_at) VALUES (?1, 'record_rendered', ?2, ?3)")
-    .bind(requestId, `${id} v${version}`, at).run();
-  const run = { version, renderedAt: at, summary: reviewed.summary, faults: reviewed.faults };
+  await writeEvent(env, requestId, "record_rendered", `${id} v${version}`, at);
   await storeRun(env, id, run);
   if (version === 1) {
     await env.EMAIL.send(recordEmail({ env, request, recordId: id, origin }));
     return { id, version };
   }
-  const before = await loadRun(env, id, version - 1);
   if (!before) {
     await writeEvent(env, requestId, "drift_baseline_missing", `${id} v${version}`, at);
     return { id, version };
   }
-  await publishProofReceipt(env, request, id, before, run, at);
+  await publishProofReceipt(env, request, id, receiptId, before, run, at);
   const beforeIds = new Set(before.faults.map((fault) => fault.id));
   const inputs = { dealValue: request.avg_deal_value, monthlyLeads: request.monthly_leads };
   const newCost = run.faults
     .filter((fault) => !beforeIds.has(fault.id))
     .reduce((sum, fault) => sum + (costFault(fault, inputs).monthlyCost || 0), 0);
-  if (newCost >= costing.drift.minNewMonthlyCost) {
-    await env.EMAIL.send(driftEmail({ env, request, recordId: id, origin }));
+  const floor = costing.drift?.minNewMonthlyCost;
+  if (typeof floor === "number" && newCost >= floor) {
+    await env.EMAIL.send(driftEmail({ env, request, recordId: id, receiptId, origin }));
     await writeEvent(env, requestId, "drift_email_sent", `${id} +${newCost}`, at);
   } else {
     await writeEvent(env, requestId, "drift_below_threshold", `${id} +${newCost}`, at);
