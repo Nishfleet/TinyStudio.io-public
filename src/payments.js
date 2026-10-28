@@ -225,7 +225,14 @@ export async function handleDodoWebhook(env, { rawBody, headers }, at = new Date
   if (!paymentMatchesOffer(payment, env)) {
     console.warn(
       "tinystudio_payment_offer_mismatch",
-      JSON.stringify({ webhookId, expectedProductId: String(env.DODO_TINYSTUDIO_PRODUCT_ID || ""), payment })
+      JSON.stringify({
+        webhookId,
+        expectedProductId: String(env.DODO_TINYSTUDIO_PRODUCT_ID || ""),
+        paymentId: payment.paymentId,
+        productIds: payment.productIds,
+        amountCents: payment.amountCents,
+        currency: payment.currency
+      })
     );
     await logWebhook(env, { webhookId, eventType, status: "rejected", reason: "offer_mismatch", payload: event, at });
     return { ok: false, status: 400, body: { error: "offer_mismatch" } };
