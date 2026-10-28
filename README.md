@@ -23,6 +23,7 @@ The plan also lists `/correction`, `/method` and `/records/{id}`; these are buil
 - `/api/signups` stores an appraisal request in Cloudflare D1.
 - `/api/agent-audit` is the existing audit generation endpoint. It runs at most 50 times a day across all callers, and setting `AGENT_AUDIT_DISABLED=1` turns it off.
 - `/health` reports readiness.
+- The scheduled drift check runs nightly at 06:17 UTC. It requeues the appraisal of any record untouched for 90 days. A rerun whose new faults cost at least the `drift.minNewMonthlyCost` floor in `config/costing.json` sends one email with the record link; a below-threshold rerun sends nothing. Every rerun writes a proof receipt at `/records/{receiptId}` that compares the two runs fault by fault.
 - `app.tinystudio.io` and `api.tinystudio.io` answer with a 410 retirement response.
 
 ## Agent dispatch

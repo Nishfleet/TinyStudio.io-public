@@ -25,5 +25,9 @@
       "basis": "No conversion delta is claimed: a missing title costs search visibility, which this table does not price.",
       "source": { "title": "Google Search Central, Influence your title links", "url": "https://developers.google.com/search/docs/appearance/title-link" }
     }
-  ]
+  ],
+  "drift": {
+    "minNewMonthlyCost": 1000,
+    "basis": "The 90-day rerun sends one email only when the faults it newly finds cost at least this much per month, by the same costing rows as a record. A below-threshold rerun sends nothing. The number is a floor, not a promise: the reviewer can raise it."
+  }
 }

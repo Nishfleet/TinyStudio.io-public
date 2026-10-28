@@ -618,6 +618,40 @@ async function queueAppraisalAudit(env, requestId, at) {
   if (queued.meta?.changes) await recordAppraisalEvent(env, requestId, "audit_queued", "seo-fix-kit", at);
 }
 
+const DRIFT_RERUN_AFTER_DAYS = 90;
+
+function driftCutoff(now) {
+  return new Date(now.getTime() - DRIFT_RERUN_AFTER_DAYS * 86400000).toISOString();
+}
+
+async function queueDriftReruns(env, now) {
+  const cutoff = driftCutoff(now);
+  const due = await env.DB.prepare(
+    `SELECT r.id AS request_id
+     FROM appraisal_requests r
+     JOIN appraisal_records rec ON rec.request_id = r.id
+     LEFT JOIN (
+       SELECT request_id, MAX(created_at) AS last_queued
+       FROM appraisal_events
+       WHERE type = 'drift_check_queued'
+       GROUP BY request_id
+     ) d ON d.request_id = r.id
+     GROUP BY r.id
+     HAVING MAX(rec.rendered_at) <= ?1 AND (d.last_queued IS NULL OR d.last_queued <= ?1)`
+  ).bind(cutoff).all();
+  let queued = 0;
+  for (const { request_id: requestId } of due.results) {
+    const inserted = await env.DB.prepare(
+      "INSERT INTO appraisal_rerun_jobs (id, request_id, kind, status, created_at) VALUES (?1, ?2, 'drift', 'queued', ?3)"
+    ).bind(crypto.randomUUID(), requestId, now.toISOString()).run();
+    if (inserted.meta?.changes) {
+      await recordAppraisalEvent(env, requestId, "drift_check_queued", "seo-fix-kit", now.toISOString());
+      queued += 1;
+    }
+  }
+  return queued;
+}
+
 async function placeAppraisalRequest(env, input, now) {
   const at = now.toISOString();
   const month = appraisalMonth(now);
@@ -1939,5 +1973,9 @@ export default {
 
     const indexResponse = await env.ASSETS.fetch(assetRequest(url, request, "/index.html"));
     return withSecurityHeaders(indexResponse);
+  },
+
+  async scheduled(controller, env) {
+    await queueDriftReruns(env, appraisalNow(env));
   }
 };

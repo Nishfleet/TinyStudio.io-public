@@ -36,7 +36,11 @@ function freshEnv() {
     EMAIL: { async send(message) { sent.push(message); } },
     RECORDS: {
       async put(key, body) { objects.set(key, body); },
-      async get(key) { return objects.has(key) ? { body: objects.get(key) } : null; }
+      async get(key) {
+        if (!objects.has(key)) return null;
+        const body = objects.get(key);
+        return { body, text: async () => body };
+      }
     }
   };
   return { sqlite, env, sent, objects };
@@ -138,4 +142,115 @@ test("renderRecord is pure: same inputs, same bytes", () => {
   const request = { site_url: "https://a.example", name: "A", avg_deal_value: 1000, monthly_leads: 10 };
   const args = { request, faults: faults.slice(0, 1), summary: "S", version: 1, renderedAt: "t" };
   assert.equal(renderRecord(args), renderRecord(args));
+});
+
+const driftedFault = { id: "f4", type: "no-mobile-viewport", title: "Layout breaks on phones", url: "https://clinic.example/", evidence: "The page has no viewport meta tag." };
+const receiptRow = (sqlite, requestId) =>
+  sqlite.prepare("SELECT * FROM proof_receipts WHERE request_id = ?").all(requestId)[0];
+
+test("proof receipt: a rerun renders before and after side by side with the delta per fault", async () => {
+  const { env, objects, sqlite } = freshEnv();
+  const first = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
+  const corrected = { keep: ["f2"], summary: "The home page now loads in under two seconds. The about page still has no title." };
+  await publishRecord(env, "req-1", { faults, review: corrected }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z");
+
+  const receipt = receiptRow(sqlite, "req-1");
+  assert.ok(receipt, "the rerun writes a receipt row");
+  assert.deepEqual({ record: receipt.record_id, before: receipt.before_version, after: receipt.after_version }, { record: first.id, before: 1, after: 2 });
+  const html = objects.get(`records/${receipt.id}.html`);
+  assert.match(html, /<h1>Proof Receipt: https:\/\/clinic\.example<\/h1>/);
+  assert.ok(html.includes("Home page loads in 6.1 seconds"), "the closed fault is listed");
+  assert.ok(html.includes("The &lt;title&gt; element is empty."), "the fault that persists is listed");
+  assert.match(html, /Monthly cost removed: <span class="fig" data-cite="row:slow-load input:dealValue input:monthlyLeads">\$14,144<\/span>\./, "the closed fault carries its removed cost");
+  assert.ok(html.includes("Not priced: the costing table claims no conversion delta for this fault."), "an unpriced fault says so");
+  assert.ok(html.includes("The rerun found no new fault."), "a rerun that found nothing new says so");
+  assert.match(html, /Monthly cost before: <span class="fig" data-cite="row:slow-load input:dealValue input:monthlyLeads">\$14,144<\/span>\. Monthly cost now: <span class="fig" data-cite="input:dealValue input:monthlyLeads">\$0<\/span>\./, "both totals are cited figures");
+  assert.match(html, /<time datetime="2026-10-13T08:00:00\.000Z">2026-10-13<\/time>/, "the comparison dates are marked");
+
+  const res = await worker.fetch(new Request("https://tinystudio.io/records/" + receipt.id), env);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("x-robots-tag"), /noindex/);
+});
+
+test("quality gate: no uncited number in a proof receipt", async () => {
+  const { env, objects, sqlite } = freshEnv();
+  await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
+  await publishRecord(env, "req-1", { faults: [...faults, driftedFault], review: { keep: ["f1", "f2", "f4"], summary: "The rerun found a new mobile layout fault." } }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z");
+  const html = objects.get(`records/${receiptRow(sqlite, "req-1").id}.html`);
+
+  const ids = new Set(costing.rows.map((r) => r.id));
+  const figs = [...html.matchAll(/<span class="fig" data-cite="([^"]+)">/g)];
+  assert.ok(figs.length >= 3, `expected cited figures, got ${figs.length}`);
+  for (const [, cite] of figs) {
+    for (const token of cite.split(" ")) {
+      if (token.startsWith("row:")) assert.ok(ids.has(token.slice(4)), `${cite} cites unknown row ${token}`);
+      else assert.ok(["input:dealValue", "input:monthlyLeads"].includes(token), `${cite} cites unknown input`);
+    }
+  }
+  const stripped = html
+    .replace(/<span class="fig"[^>]*>[^<]*<\/span>/g, "")
+    .replace(/<time[^>]*>[^<]*<\/time>/g, " ")
+    .replace(/<style>[\s\S]*?<\/style>/, "")
+    .replace(/<head>[\s\S]*?<\/head>/, "")
+    .replace(/<main[^>]*>/, "<main>")
+    .replace(/<h3>[^<]*<\/h3>/g, "")
+    .replace(/<p class="where">[^<]*<\/p>/g, "")
+    .replace(/<li class="fault">[\s\S]*?<\/li>/g, (li) => li.replace(/<p>(?!<span class="fig")[^<]*<\/p>/g, ""))
+    .replace(/<li id="row-[^"]*">[^<]*(?:<a[^>]*>[\s\S]*?<\/a>)?[^<]*<\/li>/g, "");
+  assert.doesNotMatch(stripped.replace(/<[^>]+>/g, " "), /\d/, "every digit outside a figure or a marked date");
+});
+
+test("drift email: one email above the cost floor with the record link, and silence below it", async () => {
+  const { env, sent, sqlite } = freshEnv();
+  const first = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
+  assert.equal(sent.length, 1);
+  const drifted = [...faults, driftedFault];
+  await publishRecord(env, "req-1", { faults: drifted, review: { keep: ["f1", "f2", "f4"], summary: "The rerun found a new mobile layout fault." } }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z");
+  assert.equal(sent.length, 2, "a rerun with a new fault above the floor sends exactly one email");
+  assert.equal(sent[1].to, "dana@clinic.example");
+  assert.ok(sent[1].text.includes(`https://tinystudio.io/records/${first.id}`), "the drift email carries the record link");
+  assert.doesNotMatch(sent[1].text, /\$/i, "the drift email prices nothing");
+  assert.doesNotMatch(sent[1].text, /correction|book|call|offer|price|upgrade/i, "the drift email carries no sales copy");
+  assert.deepEqual(JSON.parse(JSON.stringify(sqlite.prepare("SELECT detail FROM appraisal_events WHERE type = 'drift_email_sent'").all())), [{ detail: `${first.id} +26880` }]);
+
+  await publishRecord(env, "req-1", { faults: drifted, review: { keep: ["f1", "f2", "f4"], summary: "The rerun confirmed the same faults." } }, "https://tinystudio.io", "2026-10-15T08:00:00.000Z");
+  assert.equal(sent.length, 2, "a rerun with no new fault sends nothing");
+  assert.deepEqual(JSON.parse(JSON.stringify(sqlite.prepare("SELECT detail FROM appraisal_events WHERE type = 'drift_below_threshold'").all())), [{ detail: `${first.id} +0` }]);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM proof_receipts").all()[0].n, 2, "a below-threshold rerun still writes its receipt");
+});
+
+test("a rerun without a stored baseline writes no receipt and sends nothing", async () => {
+  const { env, objects, sent, sqlite } = freshEnv();
+  const first = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
+  objects.delete(`records/${first.id}.v1.json`);
+  await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z");
+  assert.equal(sent.length, 1, "no drift email without the run to compare against");
+  assert.equal(receiptRow(sqlite, "req-1"), undefined);
+  assert.equal(sqlite.prepare("SELECT type FROM appraisal_events WHERE type = 'drift_baseline_missing'").all().length, 1);
+});
+
+test("scheduled drift rerun: a record untouched for 90 days is requeued once per window", async () => {
+  const { env, sqlite } = freshEnv();
+  await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
+  const jobs = () => JSON.parse(JSON.stringify(sqlite.prepare("SELECT status FROM appraisal_rerun_jobs").all()));
+  const controller = { cron: "17 6 * * *", scheduledTime: Date.parse("2026-10-13T08:00:00.000Z") };
+
+  env.APPRAISAL_NOW = "2026-11-06T00:00:00.000Z";
+  await worker.scheduled(controller, env);
+  assert.deepEqual(jobs(), [], "a record rendered 24 days ago is not due");
+
+  env.APPRAISAL_NOW = "2027-01-09T08:00:00.000Z";
+  await worker.scheduled(controller, env);
+  assert.deepEqual(jobs(), [], "a record rendered 88 days ago is not due");
+
+  env.APPRAISAL_NOW = "2027-01-11T08:00:00.000Z";
+  await worker.scheduled(controller, env);
+  assert.deepEqual(jobs(), [{ status: "queued" }], "a record untouched for 90 days is requeued");
+
+  await worker.scheduled(controller, env);
+  assert.deepEqual(jobs(), [{ status: "queued" }], "the same window does not requeue it");
+
+  env.APPRAISAL_NOW = "2027-04-15T00:00:00.000Z";
+  await worker.scheduled(controller, env);
+  assert.equal(jobs().length, 2, "a new window requeues it");
 });
