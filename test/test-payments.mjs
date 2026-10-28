@@ -489,6 +489,34 @@ test("checkout route: a checkout Dodo refuses does not spend the daily allowance
   }
 });
 
+test("checkout route: parallel checkouts from one address still stop at the daily cap", async () => {
+  const { env } = freshEnv();
+  const recordId = await proposedEngagement(env);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ checkout_url: "https://checkout.dodopayments.com/session/cs_race", session_id: `cs_race_${crypto.randomUUID()}` })
+  });
+  try {
+    const attempts = Array.from({ length: 12 }, () =>
+      worker.fetch(
+        new Request("https://tinystudio.io/api/engagements/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", Origin: "https://tinystudio.io", "CF-Connecting-IP": "203.0.113.11" },
+          body: new URLSearchParams({ recordId }).toString()
+        }),
+        env
+      )
+    );
+    const results = await Promise.all(attempts);
+    const allowed = results.filter((res) => res.status === 200).length;
+    assert.equal(allowed, 5, "the claim is atomic, so five sessions open and no more");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test("webhook: the route refuses an unsigned POST and never opens an engagement", async () => {
   const { env, sqlite } = freshEnv();
   const recordId = await proposedEngagement(env);

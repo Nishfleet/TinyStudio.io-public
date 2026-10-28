@@ -69,22 +69,25 @@ export async function reviewDeskCorrectionLine(env, input, reviewer, at) {
   if (!engagementAllows(engagement, "review_correction_line")) {
     throw Object.assign(new Error("a correction line is reviewed only while the correction is in progress"), { code: "NOT_PAID" });
   }
-  const reviewed = await reviewCorrectionLine(env, line, input.action, { reviewer, note: input.note, at });
+  const alreadyRecorded = line.status === "recorded";
+  const reviewed = alreadyRecorded
+    ? line
+    : await reviewCorrectionLine(env, line, input.action, { reviewer, note: input.note, at });
   let current = engagement;
   if (engagement.status === "in_correction") {
     const lines = await deskLines(env, engagement.id);
     if (lines.every((row) => row.status !== "draft")) {
       try {
         await republishRecord(env, engagement.request_id, at);
-        current = await advanceEngagement(env, engagement, "proved", {
-          type: "status_changed",
-          detail: `review complete by ${reviewer}`,
-          at
-        });
       } catch (error) {
         await revertCorrectionLine(env, reviewed, at);
         throw error;
       }
+      current = await advanceEngagement(env, engagement, "proved", {
+        type: "status_changed",
+        detail: `review complete by ${reviewer}`,
+        at
+      });
     }
   }
   return { engagement: current, line: reviewed };

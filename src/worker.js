@@ -809,11 +809,6 @@ async function hashIp(request, bucket) {
   return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function readUsageCounter(env, bucketKey) {
-  const row = await env.DB.prepare("SELECT count FROM agent_usage_limits WHERE bucket_key = ?1").bind(bucketKey).first();
-  return Number(row?.count || 0);
-}
-
 async function incrementUsageCounter(env, bucketKey) {
   const now = new Date().toISOString();
   const result = await env.DB.prepare(
@@ -882,20 +877,35 @@ async function checkoutBucket(request) {
   return `checkout:${bucket}:${await hashIp(request, bucket)}`;
 }
 
-async function enforceCheckoutLimit(request, env) {
-  const key = await checkoutBucket(request);
-  if (!key) return { ok: true };
-  const count = await readUsageCounter(env, key);
-  if (count >= MAX_CHECKOUTS_PER_IP_PER_DAY) {
-    console.warn("tinystudio_checkout_daily_ip_limit", JSON.stringify({ count }));
+async function claimCheckoutSlot(env, bucketKey) {
+  if (!bucketKey) return { ok: true, key: bucketKey };
+  const now = new Date().toISOString();
+  const result = await env.DB.prepare(
+    `INSERT INTO agent_usage_limits (bucket_key, count, first_seen_at, updated_at)
+     VALUES (?1, 1, ?2, ?2)
+     ON CONFLICT(bucket_key) DO UPDATE SET
+       count = count + 1,
+       updated_at = excluded.updated_at
+     WHERE agent_usage_limits.count < ?3
+     RETURNING count`
+  )
+    .bind(bucketKey, now, MAX_CHECKOUTS_PER_IP_PER_DAY)
+    .first();
+  if (!result) {
+    console.warn("tinystudio_checkout_daily_ip_limit", JSON.stringify({ key: bucketKey }));
     return { ok: false, response: withSecurityHeaders(jsonResponse({ ok: false, error: "checkout_daily_limit" }, { status: 429 })) };
   }
-  return { ok: true, key };
+  return { ok: true, key: bucketKey };
 }
 
-async function recordCheckout(request, env, key) {
-  if (!key) return;
-  await incrementUsageCounter(env, key);
+async function releaseCheckoutSlot(env, bucketKey) {
+  if (!bucketKey) return;
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `UPDATE agent_usage_limits SET count = MAX(count - 1, 0), updated_at = ?1 WHERE bucket_key = ?2 AND count > 0`
+  )
+    .bind(now, bucketKey)
+    .run();
 }
 
 function agentInput(body) {
@@ -1694,15 +1704,15 @@ async function checkoutResponse(request, env, url) {
   if (!RECORD_ID.test(recordId)) {
     return notFoundResponse("bad_request", 400);
   }
-  const limited = await enforceCheckoutLimit(request, env);
+  const limited = await claimCheckoutSlot(env, await checkoutBucket(request));
   if (!limited.ok) return limited.response;
   try {
     const checkout = await startCheckoutForRequest(env, { recordId });
-    await recordCheckout(request, env, limited.key);
     return browserForm
       ? redirectResponse(checkout.checkoutUrl)
       : withSecurityHeaders(jsonResponse({ ok: true, checkoutUrl: checkout.checkoutUrl }));
   } catch (error) {
+    await releaseCheckoutSlot(env, limited.key);
     const status = error?.code === "record_not_found" || error?.code === "engagement_not_found" ? 404 : 400;
     const payload = { ok: false, error: error?.code || "checkout_failed" };
     return browserForm

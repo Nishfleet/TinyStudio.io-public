@@ -312,6 +312,38 @@ test("desk: a failed republish leaves the kickoff open, so the note can be sent 
   assert.equal(retried.status, "tracking");
 });
 
+test("desk: a failed advance leaves the record published and the correction completable", async () => {
+  const { env, sqlite } = freshEnv();
+  const { recordId, engagementId } = await paidEngagement(env, sqlite);
+  const line = await addDeskCorrectionLine(
+    env,
+    { engagementId, faultId: "f1", faultTitle: "Home page loads in 6.1 seconds", beforeText: "a", afterText: "b", legalCopy: 0 },
+    "Jev",
+    "2026-10-13T11:00:00.000Z"
+  );
+  const original = env.DB.prepare.bind(env.DB);
+  let armed = true;
+  env.DB.prepare = (sql) => {
+    if (armed && sql.startsWith("UPDATE engagements SET status")) {
+      armed = false;
+      throw new Error("d1 write refused");
+    }
+    return original(sql);
+  };
+  await assert.rejects(
+    reviewDeskCorrectionLine(env, { lineId: line.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:00:00.000Z"),
+    /d1 write refused/
+  );
+  env.DB.prepare = original;
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "in_correction");
+  assert.equal(sqlite.prepare("SELECT status FROM correction_lines WHERE id = ?").get(line.line.id).status, "recorded", "the publish reached the line");
+  assert.equal(sqlite.prepare("SELECT version FROM appraisal_records WHERE id = ?").get(recordId).version, 2);
+
+  const completed = await reviewDeskCorrectionLine(env, { lineId: line.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:30:00.000Z");
+  assert.equal(completed.engagement.status, "proved", "the desk finishes the correction without a second review");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM correction_reviews WHERE line_id = ?").get(line.line.id).n, 1, "the line is not reviewed twice");
+});
+
 test("desk route: it answers only when Cloudflare Access is configured", async () => {
   const { env } = freshEnv();
   const closed = await worker.fetch(new Request("https://tinystudio.io/desk"), env);
