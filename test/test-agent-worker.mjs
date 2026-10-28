@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import worker from "../src/worker.js";
+import worker, { AGENT_MODELS } from "../src/worker.js";
 
 const METRIC_MARKER = "WEEKLY_SECRET_METRIC_7000";
 
@@ -1110,8 +1110,8 @@ test("the agent chain logs the winning model with per-attempt completion tokens"
       this.calls = [];
     }
 
-    async run(model, options) {
-      this.calls.push({ model, options });
+    async run(model, options, gatewayOptions) {
+      this.calls.push({ model, options, gatewayOptions });
       const result = this.results[this.calls.length - 1] ?? this.results.at(-1);
       if (result instanceof Error) throw result;
       return result;
@@ -1132,6 +1132,8 @@ test("the agent chain logs the winning model with per-attempt completion tokens"
   } finally {
     console.log = originalLog;
   }
+  assert.equal(ai.calls[1].gatewayOptions.gateway.id, "default", "the winning call routes through the default gateway");
+  assert.equal(ai.calls[1].options.gateway, undefined, "the gateway option is a run option, not a model input");
   const selection = logs.find((line) => line.startsWith("tinystudio_agent_model_selected"));
   assert.ok(selection, "the winning model must be logged");
   const payload = JSON.parse(selection.replace(/^tinystudio_agent_model_selected /, ""));
@@ -1148,25 +1150,38 @@ test("the agent chain disables qwen3 thinking, sets gpt-oss low effort, and rout
       this.calls = [];
     }
 
-    async run(model, options) {
-      this.calls.push({ model, options });
+    async run(model, options, gatewayOptions) {
+      this.calls.push({ model, options, gatewayOptions });
       return { response: "# Pipeline Brief\n\n- readiness diagnosis without the other sections." };
     }
   }
 
   const ai = new AllInvalidAI();
   const db = new FakeDB();
-  const originalLog = console.log;
-  console.log = () => {};
+  const logs = [];
+  const originalWarn = console.warn;
+  console.warn = (...parts) => logs.push(parts.join(" "));
   let status;
   try {
     status = (await worker.fetch(agentRequest(validBody()), { DB: db, AI: ai })).status;
   } finally {
-    console.log = originalLog;
+    console.warn = originalWarn;
   }
   assert.equal(status, 502, "every candidate fails on the same invalid output");
-  assert.equal(ai.calls.length, 4, "all four models must be tried before giving up");
+  assert.equal(ai.calls.length, AGENT_MODELS.length, "every model in the chain must be tried before giving up");
+  assert.equal(new Set(ai.calls.map((call) => call.model)).size, AGENT_MODELS.length, "the chain tries each model once");
+  const failure = logs.find((line) => line.startsWith("tinystudio_agent_ai_failed"));
+  assert.ok(failure, "the all-models-failed path must be logged");
+  const failurePayload = JSON.parse(failure.replace(/^tinystudio_agent_ai_failed /, ""));
+  assert.equal(failurePayload.attempts, AGENT_MODELS.length, "the failure log counts every attempt");
+  assert.equal(failurePayload.modelAttempts.length, AGENT_MODELS.length);
+  assert.deepEqual(
+    failurePayload.modelAttempts.map((entry) => entry.model),
+    AGENT_MODELS,
+    "the failure log names every model it tried"
+  );
   const options = new Map(ai.calls.map((call) => [call.model, call.options]));
+  const gatewayOptions = new Map(ai.calls.map((call) => [call.model, call.gatewayOptions]));
   const qwen = options.get("@cf/qwen/qwen3-30b-a3b-fp8");
   const gptOss = options.get("@cf/openai/gpt-oss-20b");
   assert.equal(qwen.chat_template_kwargs.enable_thinking, false, "qwen3 must not spend tokens thinking");
@@ -1174,8 +1189,11 @@ test("the agent chain disables qwen3 thinking, sets gpt-oss low effort, and rout
   assert.equal(gptOss.reasoning_effort, "low", "gpt-oss must run at low effort");
   assert.equal(gptOss.chat_template_kwargs, undefined, "chat_template_kwargs is not a gpt-oss parameter");
   for (const [model, runOptions] of options) {
-    assert.equal(runOptions.gateway?.id, "default", `${model} must route through the default gateway`);
+    assert.equal(runOptions.gateway, undefined, `${model} must not carry the gateway as a model input`);
     assert.equal(runOptions.max_tokens, 2400);
+  }
+  for (const [model, runGatewayOptions] of gatewayOptions) {
+    assert.equal(runGatewayOptions.gateway?.id, "default", `${model} must route through the default gateway`);
   }
 });
 

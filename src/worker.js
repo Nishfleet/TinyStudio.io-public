@@ -72,7 +72,7 @@ const ALLOWED_ORIGINS = new Set([
   "http://127.0.0.1:8788",
   "http://localhost:8788"
 ]);
-const AGENT_MODELS = [
+export const AGENT_MODELS = [
   "@cf/mistralai/mistral-small-3.1-24b-instruct",
   "@cf/qwen/qwen3-30b-a3b-fp8",
   "@cf/openai/gpt-oss-20b",
@@ -1581,15 +1581,14 @@ async function agentAuditResponse(request, env, url) {
       const runOptions = {
         messages,
         temperature: 0.35,
-        max_tokens: 2400,
-        gateway: { id: "default" }
+        max_tokens: 2400
       };
-      if (candidateModel === "@cf/qwen/qwen3-30b-a3b-fp8") {
+      if (candidateModel.startsWith("@cf/qwen/qwen3")) {
         runOptions.chat_template_kwargs = { enable_thinking: false };
-      } else if (candidateModel === "@cf/openai/gpt-oss-20b") {
+      } else if (candidateModel.startsWith("@cf/openai/gpt-oss")) {
         runOptions.reasoning_effort = "low";
       }
-      const aiResult = await env.AI.run(candidateModel, runOptions);
+      const aiResult = await env.AI.run(candidateModel, runOptions, { gateway: { id: "default" } });
       attempt.completionTokens = aiResult?.usage?.completion_tokens ?? null;
       const rawBrief = extractAiText(aiResult);
       const rawUnsafeReasons = unsafeOutputReasons(rawBrief);
@@ -1642,7 +1641,10 @@ async function agentAuditResponse(request, env, url) {
   }
 
   if (!brief) {
-    console.warn("tinystudio_agent_ai_failed", JSON.stringify({ modelErrors }));
+    console.warn(
+      "tinystudio_agent_ai_failed",
+      JSON.stringify({ attempts: modelAttempts.length, modelAttempts, modelErrors })
+    );
     return jsonResponse({ ok: false, error: "empty_agent_output" }, { status: 502 });
   }
 
