@@ -8,13 +8,15 @@ import { publishRecord } from "../src/record.js";
 import {
   createDodoCheckout,
   dodoConfigStatus,
+  decodeWebhookSecret,
   extractDodoPayment,
   handleDodoWebhook,
   paymentMatchesOffer,
   parseWebhookHeaders,
   safeDodoCheckoutUrl,
   startCheckoutForRequest,
-  verifyDodoWebhookSignature
+  verifyDodoWebhookSignature,
+  webhookSecretUsable
 } from "../src/payments.js";
 import offer from "../config/offer.json" with { type: "json" };
 
@@ -374,11 +376,9 @@ test("checkout route: a browser form post hands off to the Dodo page, and a JSON
       }),
       env
     );
-    assert.equal(browser.status, 200);
-    assert.equal(browser.headers.get("content-type"), "text/html; charset=utf-8");
-    const html = await browser.text();
-    assert.ok(html.includes("https://checkout.dodopayments.com/session/cs_form"), "the handoff page carries the Dodo URL");
-    assert.ok(!html.includes("<form"), "the handoff page posts nothing cross-origin");
+    assert.equal(browser.status, 303);
+    assert.equal(browser.headers.get("location"), "https://checkout.dodopayments.com/session/cs_form");
+    assert.equal(await browser.text(), "", "the redirect carries no body");
 
     const api = await worker.fetch(
       new Request("https://tinystudio.io/api/engagements/checkout", {
@@ -545,6 +545,42 @@ test("webhook: the route refuses an unsigned POST and never opens an engagement"
   );
   assert.equal(good.status, 200);
   assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagement.id).status, "paid");
+});
+
+test("webhook secret: a malformed or empty secret fails closed with a clear error", () => {
+  assert.throws(() => decodeWebhookSecret(""), /webhook secret is empty/);
+  assert.throws(() => decodeWebhookSecret("   "), /webhook secret is empty/);
+  assert.throws(() => decodeWebhookSecret("whsec_"), /webhook secret is empty/);
+  assert.throws(() => decodeWebhookSecret("not-base64!!"), /not valid base64/);
+  assert.throws(() => decodeWebhookSecret("whsec_not-base64!!"), /not valid base64/);
+  assert.equal(webhookSecretUsable(""), false);
+  assert.equal(webhookSecretUsable("whsec_"), false);
+  assert.equal(webhookSecretUsable("not-base64!!"), false);
+  assert.equal(webhookSecretUsable(WEBHOOK_SECRET), true);
+
+  const decoded = decodeWebhookSecret(WEBHOOK_SECRET);
+  assert.equal(Buffer.from(decoded).toString("utf8"), "tinystudio-test-secret-key", "the secret decodes to the key Dodo signed with");
+  assert.equal(Buffer.from(decodeWebhookSecret(Buffer.from("tinystudio-test-secret-key").toString("base64"))).toString("utf8"), "tinystudio-test-secret-key");
+});
+
+test("webhook secret: a malformed secret is refused before the signature is read", async () => {
+  const { env, sqlite } = freshEnv();
+  const recordId = await proposedEngagement(env);
+  const engagement = sqlite.prepare("SELECT id FROM engagements WHERE request_id = 'req-1'").get();
+  const { body, headers } = signedEvent({
+    data: { metadata: { engagement_id: engagement.id, record_id: recordId, request_id: "req-1" } }
+  });
+
+  env.DODO_TINYSTUDIO_WEBHOOK_SECRET = "not-base64!!";
+  assert.equal(dodoConfigStatus(env).webhookSecret, true, "the secret is set");
+  assert.equal(dodoConfigStatus(env).webhookSecretValid, false, "but it is not usable");
+
+  const refused = await handleDodoWebhook(env, { rawBody: body, headers: new Headers(headers) }, "2026-10-13T10:00:00.000Z");
+  assert.equal(refused.status, 503);
+  assert.deepEqual(refused.body, { error: "webhook_secret_invalid" });
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagement.id).status, "proposed", "no engagement opened");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM engagement_payments").get().n, 0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM dodo_webhook_events").get().n, 0, "a refused secret writes no webhook row");
 });
 
 test("payments helpers: the parsed payment, the offer check and the headers", () => {

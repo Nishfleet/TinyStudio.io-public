@@ -28,7 +28,8 @@ export function dodoConfigStatus(env = {}) {
     mode: dodoEnvironment(env) || "live",
     productId: Boolean(String(env.DODO_TINYSTUDIO_PRODUCT_ID || "").trim()),
     apiKey: Boolean(String(env.DODO_TINYSTUDIO_API_KEY || "").trim()),
-    webhookSecret: Boolean(String(env.DODO_TINYSTUDIO_WEBHOOK_SECRET || "").trim())
+    webhookSecret: Boolean(String(env.DODO_TINYSTUDIO_WEBHOOK_SECRET || "").trim()),
+    webhookSecretValid: webhookSecretUsable(env.DODO_TINYSTUDIO_WEBHOOK_SECRET)
   };
 }
 
@@ -50,10 +51,40 @@ export function safeDodoCheckoutUrl(value) {
   return checkoutHostAllowed(text) ? text : "";
 }
 
+export function decodeWebhookSecret(secret) {
+  const raw = String(secret ?? "").trim();
+  if (!raw) throw new Error("the Dodo webhook secret is empty");
+  const body = raw.startsWith("whsec_") ? raw.slice(6) : raw;
+  if (!body) throw new Error("the Dodo webhook secret is empty");
+  let decoded;
+  try {
+    decoded = atob(body);
+  } catch {
+    throw new Error("the Dodo webhook secret is not valid base64");
+  }
+  if (!decoded) throw new Error("the Dodo webhook secret is empty");
+  return Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+}
+
+export function webhookSecretUsable(secret) {
+  try {
+    decodeWebhookSecret(secret);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function verifyDodoWebhookSignature({ payload, webhookId, webhookTimestamp, webhookSignature, secret }) {
   if (!payload || !webhookId || !webhookSignature) return false;
+  let key;
   try {
-    new Webhook(secret).verify(String(payload), {
+    key = decodeWebhookSecret(secret);
+  } catch {
+    return false;
+  }
+  try {
+    new Webhook(key, { format: "raw" }).verify(String(payload), {
       "webhook-id": webhookId,
       "webhook-timestamp": webhookTimestamp,
       "webhook-signature": webhookSignature
@@ -186,6 +217,9 @@ export async function openEngagementFromPayment(env, { payment, at }) {
 export async function handleDodoWebhook(env, { rawBody, headers }, at = new Date().toISOString()) {
   if (!dodoWebhookReady(env)) {
     return { ok: false, status: 503, body: { error: "webhook_secret_missing" } };
+  }
+  if (!webhookSecretUsable(env.DODO_TINYSTUDIO_WEBHOOK_SECRET)) {
+    return { ok: false, status: 503, body: { error: "webhook_secret_invalid" } };
   }
   const { webhookId, webhookTimestamp, webhookSignature } = parseWebhookHeaders(headers);
   if (!webhookId || !webhookTimestamp || !webhookSignature) {

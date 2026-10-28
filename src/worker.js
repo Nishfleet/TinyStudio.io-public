@@ -18,6 +18,9 @@ const SECURITY_HEADERS = {
 const GOOGLE_ADS_CSP =
   "default-src 'self'; img-src 'self' data: https://www.googleadservices.com; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' https://static.cloudflareinsights.com https://www.googletagmanager.com; connect-src 'self' https://cloudflareinsights.com https://www.googletagmanager.com https://googleads.g.doubleclick.net https://www.googleadservices.com https://www.google-analytics.com https://stats.g.doubleclick.net; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
 
+const RECORD_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://dodopayments.com https://*.dodopayments.com";
+
 const PUBLIC_ASSET_PATHS = new Set([
   "/",
   "/index.html",
@@ -1742,7 +1745,7 @@ async function checkoutResponse(request, env, url) {
   try {
     const checkout = await startCheckoutForRequest(env, { recordId });
     return browserForm
-      ? checkoutHandoffPage(checkout.checkoutUrl)
+      ? withSecurityHeaders(redirectResponse(checkout.checkoutUrl))
       : withSecurityHeaders(jsonResponse({ ok: true, checkoutUrl: checkout.checkoutUrl }));
   } catch (error) {
     await releaseCheckoutSlot(env, sessionSlot.key);
@@ -1763,42 +1766,6 @@ function prefersHtmlDocument(request) {
 
 function redirectResponse(location, status = 303) {
   return new Response(null, { status, headers: { location: location, "cache-control": "no-store" } });
-}
-
-const CHECKOUT_HANDOFF_CSP =
-  "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
-
-function checkoutHandoffPage(checkoutUrl) {
-  const target = escapeHtml(checkoutUrl);
-  const body = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="robots" content="noindex, nofollow" />
-<meta http-equiv="refresh" content="0; url=${target}" />
-<title>Opening the payment page | TinyStudio</title>
-<style>
-body{font:16px/1.6 Georgia,serif;max-width:34rem;margin:3rem auto;padding:0 1rem;color:#111;background:#fff}
-button{font:inherit;padding:.5rem 1rem}
-</style>
-</head>
-<body>
-<main>
-<h1>Opening the payment page</h1>
-<p>The payment page opens on Dodo Payments. If it does not open, use the button below.</p>
-<p><a href="${target}"><button type="button">Open the payment page</button></a></p>
-</main>
-</body>
-</html>
-`;
-  return withSecurityHeaders(
-    new Response(body, {
-      status: 200,
-      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
-    }),
-    CHECKOUT_HANDOFF_CSP
-  );
 }
 
 function deskActionPage(message, status = 200) {
@@ -2102,7 +2069,7 @@ async function recordResponse(request, env, url) {
         "X-Robots-Tag": "noindex, nofollow"
       }
     }),
-    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+    RECORD_CSP
   );
 }
 
