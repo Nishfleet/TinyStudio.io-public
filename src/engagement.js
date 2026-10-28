@@ -124,7 +124,7 @@ export async function revertCorrectionLine(env, line, at) {
   const current = await correctionLineById(env, line.id);
   if (!current || current.status !== "approved") return current ?? line;
   await env.DB.prepare(
-    "UPDATE correction_lines SET status = 'draft', reviewer = NULL, review_note = NULL, reviewed_at = NULL, changed_at = ?1 WHERE id = ?2"
+    "UPDATE correction_lines SET status = 'draft', reviewer = NULL, review_note = NULL, reviewed_at = NULL, changed_at = ?1 WHERE id = ?2 AND status = 'approved'"
   )
     .bind(at, line.id)
     .run();

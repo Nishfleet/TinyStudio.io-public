@@ -511,7 +511,9 @@ test("checkout route: parallel checkouts from one address still stop at the dail
     );
     const results = await Promise.all(attempts);
     const allowed = results.filter((res) => res.status === 200).length;
+    const refused = results.filter((res) => res.status === 429).length;
     assert.equal(allowed, 5, "the claim is atomic, so five sessions open and no more");
+    assert.equal(refused, 7, "every other post from that address is refused");
   } finally {
     globalThis.fetch = realFetch;
   }
