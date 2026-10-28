@@ -1572,14 +1572,25 @@ async function agentAuditResponse(request, env, url) {
   let model = "";
   let sections = splitAgentSections("");
   const modelErrors = [];
+  const modelAttempts = [];
 
-  for (const candidateModel of AGENT_MODELS) {
+  for (const [modelIndex, candidateModel] of AGENT_MODELS.entries()) {
+    const attempt = { model: candidateModel, completionTokens: null };
+    modelAttempts.push(attempt);
     try {
-      const aiResult = await env.AI.run(candidateModel, {
+      const runOptions = {
         messages,
         temperature: 0.35,
-        max_tokens: 2400
-      });
+        max_tokens: 2400,
+        gateway: { id: "default" }
+      };
+      if (candidateModel === "@cf/qwen/qwen3-30b-a3b-fp8") {
+        runOptions.chat_template_kwargs = { enable_thinking: false };
+      } else if (candidateModel === "@cf/openai/gpt-oss-20b") {
+        runOptions.reasoning_effort = "low";
+      }
+      const aiResult = await env.AI.run(candidateModel, runOptions);
+      attempt.completionTokens = aiResult?.usage?.completion_tokens ?? null;
       const rawBrief = extractAiText(aiResult);
       const rawUnsafeReasons = unsafeOutputReasons(rawBrief);
       const scrubbedBrief = scrubUnsupportedPrecision(scrubUnsafeOutput(rawBrief), input);
@@ -1605,6 +1616,10 @@ async function agentAuditResponse(request, env, url) {
         brief = candidateBrief;
         sections = candidateSections;
         model = candidateModel;
+        console.log(
+          "tinystudio_agent_model_selected",
+          JSON.stringify({ model, modelIndex, attempts: modelAttempts.length, modelAttempts })
+        );
         break;
       }
 
