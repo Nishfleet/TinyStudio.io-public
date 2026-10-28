@@ -1,7 +1,7 @@
 import costing from "../config/costing.json" with { type: "json" };
 import offer from "../config/offer.json" with { type: "json" };
 import { advanceEngagement, correctionLines, markLinesRecorded, openEngagement } from "./engagement.js";
-import { assertPublishableLines } from "./guardrails.js";
+import { assertPublishableLines, ENGAGEMENT_SETTLED_STATUSES } from "./guardrails.js";
 
 const ROWS = new Map(costing.rows.map((row) => [row.faultType, row]));
 
@@ -55,7 +55,8 @@ function longDate(iso) {
 function proposalBlock({ recordId, engagementStatus, renderedAt }) {
   const startDate = proposalStartDate(renderedAt);
   const startHtml = startDate ? cited(longDate(startDate), "offer:startDate") : "the next open slot";
-  const awaitingPayment = !engagementStatus || engagementStatus === "proposed";
+  const awaitingPayment = engagementStatus === "proposed";
+  const settled = ENGAGEMENT_SETTLED_STATUSES.includes(engagementStatus);
   return `<section class="proposal">
 <h2>The proposal</h2>
 <p>We will fix the faults listed above for ${offerPrice()}. Work starts on ${startHtml}. From the day you pay and give us access, the correction takes ${offerWorkingDays()} working days.</p>
@@ -66,7 +67,9 @@ ${awaitingPayment
 <input type="hidden" name="recordId" value="${esc(recordId || "")}">
 <button type="submit">Start the correction</button>
 </form>`
-    : `<p class="terms">We received your payment. The Correction Record below lists every change we made and every change we left alone.</p>`}
+    : settled
+      ? `<p class="terms">We received your payment. The Correction Record below lists every change we made and every change we left alone.</p>`
+      : `<p class="terms">This record is being prepared. We will send you the proposal when it is ready.</p>`}
 </section>`;
 }
 
@@ -202,8 +205,8 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
   const version = existing ? existing.version + 1 : 1;
 
   let engagement = await openEngagement(env, requestId, at);
-  if (version === 1 && engagement.status === "requested") {
-    engagement = await advanceEngagement(env, engagement, "appraised", { type: "status_changed", detail: `${id} v1`, at });
+  if (engagement.status === "requested") {
+    engagement = await advanceEngagement(env, engagement, "appraised", { type: "status_changed", detail: `${id} v${version}`, at });
   }
   if (engagement.status === "appraised") {
     engagement = await advanceEngagement(env, engagement, "proposed", { type: "status_changed", detail: `proposal v${version}`, at });

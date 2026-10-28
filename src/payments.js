@@ -50,22 +50,10 @@ export function safeDodoCheckoutUrl(value) {
   return checkoutHostAllowed(text) ? text : "";
 }
 
-export function decodeWebhookSecret(secret) {
-  const raw = String(secret || "").trim();
-  if (!raw) return null;
-  const body = raw.startsWith("whsec_") ? raw.slice(6) : raw;
-  try {
-    return Uint8Array.from(atob(body), (char) => char.charCodeAt(0));
-  } catch {
-    return new TextEncoder().encode(raw);
-  }
-}
-
 export function verifyDodoWebhookSignature({ payload, webhookId, webhookTimestamp, webhookSignature, secret }) {
-  const key = decodeWebhookSecret(secret);
-  if (!key || !payload || !webhookId || !webhookSignature) return false;
+  if (!payload || !webhookId || !webhookSignature) return false;
   try {
-    new Webhook(key, { format: "raw" }).verify(String(payload), {
+    new Webhook(secret).verify(String(payload), {
       "webhook-id": webhookId,
       "webhook-timestamp": webhookTimestamp,
       "webhook-signature": webhookSignature
@@ -126,6 +114,19 @@ export async function webhookProcessed(env, webhookId) {
   return row ?? null;
 }
 
+function webhookAuditPayload(event) {
+  if (!event) return null;
+  const payment = extractDodoPayment(event);
+  return {
+    type: dodoEventType(event),
+    paymentId: payment.paymentId,
+    engagementId: payment.engagementId,
+    recordId: payment.recordId,
+    amountCents: payment.amountCents,
+    currency: payment.currency
+  };
+}
+
 async function logWebhook(env, { webhookId, eventType, status, reason, payload, at }) {
   await env.DB.prepare(
     `INSERT INTO dodo_webhook_events (webhook_id, event_type, status, reason, payload, created_at)
@@ -133,7 +134,7 @@ async function logWebhook(env, { webhookId, eventType, status, reason, payload, 
      ON CONFLICT(webhook_id) DO UPDATE SET event_type = excluded.event_type, status = excluded.status,
        reason = excluded.reason, payload = excluded.payload, created_at = excluded.created_at`
   )
-    .bind(webhookId, eventType, status, reason || null, JSON.stringify(payload ?? null), at)
+    .bind(webhookId, eventType, status, reason || null, JSON.stringify(webhookAuditPayload(payload)), at)
     .run();
 }
 
@@ -173,6 +174,10 @@ export async function openEngagementFromPayment(env, { payment, at }) {
     await attachCheckoutSession(env, engagement, payment.checkoutSessionId, at);
   }
   if (settled) {
+    console.warn(
+      "tinystudio_payment_duplicate",
+      JSON.stringify({ engagementId: engagementRow.id, paymentId: payment.paymentId, status: engagementRow.status })
+    );
     await journalEngagementEvent(env, engagement, { type: "payment_recorded_duplicate", detail: `payment ${payment.paymentId}`, at });
   }
   return { engagement, duplicate: settled };
@@ -218,6 +223,10 @@ export async function handleDodoWebhook(env, { rawBody, headers }, at = new Date
 
   const payment = extractDodoPayment(event);
   if (!paymentMatchesOffer(payment, env)) {
+    console.warn(
+      "tinystudio_payment_offer_mismatch",
+      JSON.stringify({ webhookId, expectedProductId: String(env.DODO_TINYSTUDIO_PRODUCT_ID || ""), payment })
+    );
     await logWebhook(env, { webhookId, eventType, status: "rejected", reason: "offer_mismatch", payload: event, at });
     return { ok: false, status: 400, body: { error: "offer_mismatch" } };
   }
@@ -269,7 +278,7 @@ export async function createDodoCheckout(env, { recordId, requestId, engagementI
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw Object.assign(new Error(payload?.message || "Dodo checkout could not be created"), {
-      code: payload?.code || "dodo_checkout_rejected",
+      code: payload?.code || `dodo_checkout_rejected_${response.status}`,
       status: response.status
     });
   }

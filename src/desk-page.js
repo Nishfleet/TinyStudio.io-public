@@ -54,7 +54,7 @@ export function deskQueuePage(rows, lines) {
   const body = rows.length
     ? `<h1>Desk review</h1>
 <table>
-<thead><tr><th>Site</th><th>State</th><th>Opened</th><th>Correction lines to review</th><th>Checkout</th></tr></thead>
+<thead><tr><th>Site</th><th>State</th><th>Opened</th><th>Correction lines to review</th><th>Payments</th><th>Checkout</th></tr></thead>
 <tbody>
 ${rows
   .map(
@@ -63,6 +63,11 @@ ${rows
 <td>${esc(row.status)}</td>
 <td>${esc(row.created_at)}</td>
 <td>${byEngagement.get(row.id)?.map(lineCell).join("<hr>") || '<span class="muted">nothing awaiting review</span>'}</td>
+<td>${row.payment_rows > 1
+      ? `<strong>${esc(String(row.payment_rows))} payments received</strong><br><span class="muted">Refund the extra payment and tell the customer.</span>`
+      : row.payment_rows === 1
+        ? '<span class="muted">one payment</span>'
+        : '<span class="muted">no payment yet</span>'}</td>
 <td>${row.checkout_session_id ? `<span class="muted">${esc(row.checkout_session_id)}</span>` : '<span class="muted">no checkout session yet</span>'}</td>
 </tr>`
   )

@@ -66,13 +66,17 @@ export function assertEngagementStatus(from, to) {
   }
 }
 
+const ENGAGEMENT_ACTIONS = new Map([
+  ["proposed", ["send_checkout"]],
+  ["paid", ["add_correction_line"]],
+  ["in_correction", ["add_correction_line", "review_correction_line"]],
+  ["proved", ["add_kickoff_note"]]
+]);
+
 export function engagementAllows(engagement, action) {
-  const from = engagement?.status;
-  if (from === "proposed") return action === "send_checkout";
-  if (from === "paid") return action === "add_correction_line";
-  if (from === "in_correction") return action === "add_correction_line" || action === "review_correction_line";
-  if (from === "proved") return action === "add_kickoff_note";
-  return false;
+  const denied = DENIED_ACTIONS.get(action);
+  if (denied) throw new Error(`guardrail blocks ${action}: ${denied}`);
+  return ENGAGEMENT_ACTIONS.get(engagement?.status)?.includes(action) ?? false;
 }
 
 export function assertCorrectionLineStatus(from, to) {

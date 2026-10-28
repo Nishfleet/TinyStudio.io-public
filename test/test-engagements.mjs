@@ -10,7 +10,6 @@ import {
   correctionLines,
   engagementById,
   engagementForRequest,
-  linesAwaitingReview,
   openEngagement,
   reviewCorrectionLine,
   setKickoffNote
@@ -112,12 +111,27 @@ test("engagement: an illegal step changes nothing and writes no event row", asyn
   assert.equal(sqlite.prepare("SELECT changed_at FROM engagements WHERE id = ?").get(engagement.id).changed_at, "2026-10-12T09:00:00.000Z");
 });
 
+test("engagement: a stale state object cannot move the engagement or write an event", async () => {
+  const { env, sqlite } = freshEnv();
+  const engagement = await openEngagement(env, "req-1", "2026-10-12T09:00:00.000Z");
+  await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-12T10:00:00.000Z");
+  const proposed = await engagementById(env, engagement.id);
+  assert.equal(proposed.status, "proposed");
+  await advanceEngagement(env, proposed, "paid", { type: "payment_recorded", detail: "pay_1", at: "2026-10-12T11:00:00.000Z" });
+  const events = sqlite.prepare("SELECT COUNT(*) AS n FROM engagement_events").get().n;
+
+  const stale = await advanceEngagement(env, proposed, "paid", { type: "payment_recorded", detail: "pay_2", at: "2026-10-12T12:00:00.000Z" });
+  assert.equal(stale.status, "proposed", "a stale object is not moved");
+  assert.equal((await engagementById(env, engagement.id)).status, "paid", "the stored state does not move back");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM engagement_events").get().n, events, "the lost update writes no event row");
+});
+
 test("engagement: the correction line is the unit the desk reviews, and the record cites what closed it", async () => {
   const { env, sqlite, objects } = freshEnv();
   const engagement = await openEngagement(env, "req-1", "2026-10-12T09:00:00.000Z");
   const record = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-12T10:00:00.000Z");
-  let current = await advanceEngagement(env, engagement, "appraised", { type: "status_changed", detail: "appraised", at: "2026-10-12T10:00:00.000Z" });
-  current = await advanceEngagement(env, current, "proposed", { type: "status_changed", detail: "proposed", at: "2026-10-12T10:01:00.000Z" });
+  let current = await engagementById(env, engagement.id);
+  assert.equal(current.status, "proposed", "publishing the record walks the engagement to proposed");
   current = await advanceEngagement(env, current, "paid", { type: "payment_recorded", detail: "pay_1", at: "2026-10-12T11:00:00.000Z" });
   current = await advanceEngagement(env, current, "in_correction", { type: "status_changed", detail: "start", at: "2026-10-12T12:00:00.000Z" });
 
@@ -129,7 +143,7 @@ test("engagement: the correction line is the unit the desk reviews, and the reco
   );
   assert.equal(line.status, "draft");
   assert.equal(line.fault_id, "f1");
-  assert.equal((await linesAwaitingReview(env, current.id)).length, 1);
+  assert.equal((await correctionLines(env, current.id)).length, 1);
   await assert.rejects(reviewCorrectionLine(env, line, "hold", { reviewer: "Jev", note: "", at: "2026-10-12T13:00:00.000Z" }), /unknown correction review action/);
   const approved = await reviewCorrectionLine(env, line, "approve", { reviewer: "Jev", note: "", at: "2026-10-12T13:00:00.000Z" });
   assert.equal(approved.status, "approved");

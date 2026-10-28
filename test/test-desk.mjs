@@ -5,7 +5,7 @@ import test from "node:test";
 import worker from "../src/worker.js";
 import { publishRecord } from "../src/record.js";
 import { addDeskCorrectionLine, addDeskKickoffNote, deskDraftLines, deskQueue, reviewDeskCorrectionLine } from "../src/desk.js";
-import { deskQueuePage } from "../src/checkout.js";
+import { deskQueuePage } from "../src/desk-page.js";
 import { handleDodoWebhook } from "../src/payments.js";
 import { Webhook } from "standardwebhooks";
 
@@ -159,6 +159,51 @@ test("desk: legal copy needs the customer's written consent on file", async () =
   );
   assert.equal(consent.line.status, "draft");
   assert.equal(consent.line.legal_copy, 1);
+});
+
+test("desk: an engagement whose every line is rejected stays in correction", async () => {
+  const { env, sqlite, objects } = freshEnv();
+  const { recordId, engagementId } = await paidEngagement(env, sqlite);
+  const line = await addDeskCorrectionLine(
+    env,
+    {
+      engagementId,
+      faultId: "f1",
+      faultTitle: "Home page loads in 6.1 seconds",
+      beforeText: "The hero image is 2.4 MB and loads last.",
+      afterText: "The hero image is 190 KB and loads first.",
+      legalCopy: 0
+    },
+    "Jev",
+    "2026-10-13T11:00:00.000Z"
+  );
+  const reviewed = await reviewDeskCorrectionLine(
+    env,
+    { lineId: line.line.id, action: "reject", note: "the after text names a tool we do not use" },
+    "Jev",
+    "2026-10-13T12:00:00.000Z"
+  );
+  assert.equal(reviewed.line.status, "rejected");
+  assert.equal(reviewed.engagement.status, "in_correction", "nothing was proved, so the correction stays open");
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "in_correction");
+  assert.equal(sqlite.prepare("SELECT version FROM appraisal_records WHERE id = ?").get(recordId).version, 1, "a rejected line republishes nothing");
+  assert.equal(objects.has(`records/${recordId}.html`), true);
+
+  const again = await addDeskCorrectionLine(
+    env,
+    {
+      engagementId,
+      faultId: "f2",
+      faultTitle: "Missing page title",
+      beforeText: "The <title> element is empty.",
+      afterText: "The <title> element names the clinic and the service.",
+      legalCopy: 0
+    },
+    "Jev",
+    "2026-10-13T12:30:00.000Z"
+  );
+  const proved = await reviewDeskCorrectionLine(env, { lineId: again.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T13:00:00.000Z");
+  assert.equal(proved.engagement.status, "proved", "an approved line proves the correction");
 });
 
 test("desk: a rejected line is not published, and the last approval republishes the record", async () => {

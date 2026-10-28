@@ -3,6 +3,7 @@ import {
   addCorrectionLine,
   advanceEngagement,
   correctionLineById,
+  correctionLines,
   engagementById,
   reviewCorrectionLine,
   revertCorrectionLine,
@@ -13,7 +14,8 @@ import { republishRecord } from "./record.js";
 export async function deskQueue(env) {
   const result = await env.DB.prepare(
     `SELECT e.*, r.site_url, r.email,
-            (SELECT COUNT(*) FROM correction_lines cl WHERE cl.engagement_id = e.id AND cl.status = 'draft') AS open_lines
+            (SELECT COUNT(*) FROM correction_lines cl WHERE cl.engagement_id = e.id AND cl.status = 'draft') AS open_lines,
+            (SELECT COUNT(*) FROM engagement_payments p WHERE p.engagement_id = e.id) AS payment_rows
        FROM engagements e
        JOIN appraisal_requests r ON r.id = e.request_id
       ORDER BY e.changed_at DESC
@@ -34,14 +36,7 @@ export async function deskDraftLines(env) {
   return result.results ?? [];
 }
 
-async function deskLines(env, engagementId) {
-  const result = await env.DB.prepare(
-    "SELECT * FROM correction_lines WHERE engagement_id = ?1 ORDER BY created_at ASC"
-  )
-    .bind(engagementId)
-    .all();
-  return result.results ?? [];
-}
+const APPLIED_LINE_STATES = ["approved", "recorded"];
 
 export async function addDeskCorrectionLine(env, input, reviewer, at) {
   const engagement = await engagementById(env, input.engagementId);
@@ -75,8 +70,10 @@ export async function reviewDeskCorrectionLine(env, input, reviewer, at) {
     : await reviewCorrectionLine(env, line, input.action, { reviewer, note: input.note, at });
   let current = engagement;
   if (engagement.status === "in_correction") {
-    const lines = await deskLines(env, engagement.id);
-    if (lines.every((row) => row.status !== "draft")) {
+    const lines = await correctionLines(env, engagement.id);
+    const closed = lines.every((row) => row.status !== "draft");
+    const proved = lines.some((row) => APPLIED_LINE_STATES.includes(row.status));
+    if (closed && proved) {
       try {
         await republishRecord(env, engagement.request_id, at);
       } catch (error) {

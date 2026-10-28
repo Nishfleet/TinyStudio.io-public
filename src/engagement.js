@@ -20,6 +20,10 @@ export async function journalEngagementEvent(env, engagement, { type, detail, at
     .run();
 }
 
+function lineJournalRow(line) {
+  return { id: line.engagement_id, request_id: line.request_id, status: line.status };
+}
+
 export async function openEngagement(env, requestId, at) {
   const existing = await engagementForRequest(env, requestId);
   if (existing) return existing;
@@ -35,12 +39,9 @@ export async function openEngagement(env, requestId, at) {
 
 export async function advanceEngagement(env, engagement, to, { type, detail, at }) {
   assertEngagementStatus(engagement.status, to);
-  await env.DB.prepare("UPDATE engagements SET status = ?1, changed_at = ?2 WHERE id = ?3").bind(to, at, engagement.id).run();
-  await env.DB.prepare(
-    "INSERT INTO engagement_events (engagement_id, request_id, type, from_status, to_status, detail, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
-  )
-    .bind(engagement.id, engagement.request_id, type, engagement.status, to, detail ?? null, at)
-    .run();
+  const claim = await env.DB.prepare("UPDATE engagements SET status = ?1, changed_at = ?2 WHERE id = ?3 AND status = ?4").bind(to, at, engagement.id, engagement.status).run();
+  if (Number(claim.meta?.changes) === 0) return engagement;
+  await journalEngagementEvent(env, engagement, { type, detail, at, from: engagement.status, to });
   return { ...engagement, status: to };
 }
 
@@ -112,11 +113,7 @@ export async function reviewCorrectionLine(env, line, action, { reviewer, note, 
   )
     .bind(line.id, line.engagement_id, reviewerName, action, String(note ?? "").trim() || null, at)
     .run();
-  await env.DB.prepare(
-    "INSERT INTO engagement_events (engagement_id, request_id, type, from_status, to_status, detail, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
-  )
-    .bind(line.engagement_id, line.request_id, `correction_line_${action}`, line.status, decision, `${line.id} by ${reviewerName}`, at)
-    .run();
+  await journalEngagementEvent(env, lineJournalRow(line), { type: `correction_line_${action}`, detail: `${line.id} by ${reviewerName}`, at, from: line.status, to: decision });
   return correctionLineById(env, line.id);
 }
 
@@ -128,11 +125,7 @@ export async function revertCorrectionLine(env, line, at) {
   )
     .bind(at, line.id)
     .run();
-  await env.DB.prepare(
-    "INSERT INTO engagement_events (engagement_id, request_id, type, from_status, to_status, detail, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
-  )
-    .bind(line.engagement_id, line.request_id, "correction_line_reverted", "approved", "draft", `${line.id} after a failed republish`, at)
-    .run();
+  await journalEngagementEvent(env, lineJournalRow(line), { type: "correction_line_reverted", detail: `${line.id} after a failed republish`, at, from: "approved", to: "draft" });
   return correctionLineById(env, line.id);
 }
 
@@ -144,19 +137,6 @@ export async function markLinesRecorded(env, engagement, version, at) {
     await env.DB.prepare("UPDATE correction_lines SET status = 'recorded', recorded_version = ?1, changed_at = ?2 WHERE id = ?3")
       .bind(version, at, line.id)
       .run();
-    await env.DB.prepare(
-      "INSERT INTO engagement_events (engagement_id, request_id, type, from_status, to_status, detail, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
-    )
-      .bind(engagement.id, engagement.request_id, "correction_line_recorded", "approved", "recorded", `${line.id} v${version}`, at)
-      .run();
+    await journalEngagementEvent(env, engagement, { type: "correction_line_recorded", detail: `${line.id} v${version}`, at, from: "approved", to: "recorded" });
   }
-}
-
-export async function linesAwaitingReview(env, engagementId) {
-  const result = await env.DB.prepare(
-    "SELECT * FROM correction_lines WHERE engagement_id = ?1 AND status IN ('draft', 'approved') ORDER BY created_at ASC"
-  )
-    .bind(engagementId)
-    .all();
-  return result.results ?? [];
 }

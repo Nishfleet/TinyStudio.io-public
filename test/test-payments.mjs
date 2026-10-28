@@ -351,7 +351,7 @@ test("webhook: a payment for an engagement that is not proposed is refused, not 
   assert.deepEqual(missing.body, { error: "engagement_unknown" });
 });
 
-test("checkout route: a browser form post is redirected to Dodo, and a JSON caller gets the URL", async () => {
+test("checkout route: a browser form post hands off to the Dodo page, and a JSON caller gets the URL", async () => {
   const { env } = freshEnv();
   const recordId = await proposedEngagement(env);
   const realFetch = globalThis.fetch;
@@ -374,8 +374,11 @@ test("checkout route: a browser form post is redirected to Dodo, and a JSON call
       }),
       env
     );
-    assert.equal(browser.status, 303);
-    assert.equal(browser.headers.get("location"), "https://checkout.dodopayments.com/session/cs_form");
+    assert.equal(browser.status, 200);
+    assert.equal(browser.headers.get("content-type"), "text/html; charset=utf-8");
+    const html = await browser.text();
+    assert.ok(html.includes("https://checkout.dodopayments.com/session/cs_form"), "the handoff page carries the Dodo URL");
+    assert.ok(!html.includes("<form"), "the handoff page posts nothing cross-origin");
 
     const api = await worker.fetch(
       new Request("https://tinystudio.io/api/engagements/checkout", {

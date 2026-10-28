@@ -166,6 +166,11 @@ test("record: the checkout button is offered only while the engagement awaits pa
   assert.ok(!settled.includes("Start the correction"));
   assert.ok(settled.includes("We received your payment."), "the record says the payment arrived");
 
+  const unsettled = renderRecord({ ...args, engagementStatus: "appraised" });
+  assert.ok(!unsettled.includes('action="/api/engagements/checkout"'), "a record whose engagement has no proposal yet offers no checkout");
+  assert.ok(unsettled.includes("This record is being prepared."));
+
   const undated = renderRecord({ ...args });
-  assert.ok(undated.includes('action="/api/engagements/checkout"'), "a record with no engagement status still asks for the payment");
+  assert.ok(!undated.includes('action="/api/engagements/checkout"'), "a record with no engagement status offers no checkout");
+  assert.ok(undated.includes("This record is being prepared."));
 });

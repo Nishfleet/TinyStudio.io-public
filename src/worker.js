@@ -2,7 +2,7 @@ import { RECORD_ID, recordKey } from "./record.js";
 import { deskAccessConfigured, deskIdentity, deskUnauthorized } from "./desk-access.js";
 import { addDeskCorrectionLine, addDeskKickoffNote, deskDraftLines, deskQueue, reviewDeskCorrectionLine } from "./desk.js";
 import { handleDodoWebhook, startCheckoutForRequest } from "./payments.js";
-import { deskQueuePage } from "./checkout.js";
+import { deskQueuePage } from "./desk-page.js";
 import { ENGAGEMENT_ID } from "./engagement.js";
 
 const SECURITY_HEADERS = {
@@ -96,6 +96,7 @@ const MAX_AGENT_RUNS_PER_DAY = 50;
 const MAX_APPRAISALS_PER_MONTH = 6;
 const MAX_WAITLIST_PER_MONTH = 50;
 const MAX_CHECKOUTS_PER_IP_PER_DAY = 5;
+const MAX_CHECKOUT_ATTEMPTS_PER_IP_PER_DAY = 20;
 const APPRAISAL_SURFACE = "website-appraisal";
 const CURRENCY_AMOUNT_PATTERN = String.raw`(?:(?:₹|\$|€|£|inr|usd|us\$|aud|cad|sgd|gbp|eur|rs\.?|rupees?)\s*\d[\d,.]*(?:\s*(?:k|lakh|lakhs|l|cr))?|\d[\d,.]*\s*(?:inr|usd|aud|cad|sgd|gbp|eur|rupees?))`;
 const METRIC_VALUE_PATTERN = String.raw`(?:${CURRENCY_AMOUNT_PATTERN}|\b\d[\d,.]*\b)`;
@@ -108,6 +109,10 @@ const WEEKLY_METRIC_LABELS = [
   "Closed deals",
   "Cash collected"
 ];
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
 
 function withSecurityHeaders(response, contentSecurityPolicy) {
   const headers = new Headers(response.headers);
@@ -876,12 +881,17 @@ async function enforceAgentLimits(request, env, email, url) {
   return { ok: true };
 }
 
-async function checkoutBucket(request) {
+async function checkoutSessionBucket(request, recordId) {
   const bucket = new Date().toISOString().slice(0, 10);
-  return `checkout:${bucket}:${await hashIp(request, bucket)}`;
+  return `checkout:${bucket}:${await hashIp(request, bucket) || `record:${recordId}`}`;
 }
 
-async function claimCheckoutSlot(env, bucketKey) {
+async function checkoutAttemptBucket(request, recordId) {
+  const bucket = new Date().toISOString().slice(0, 10);
+  return `checkout-attempt:${bucket}:${await hashIp(request, bucket) || `record:${recordId}`}`;
+}
+
+async function claimCheckoutSlot(env, bucketKey, cap) {
   if (!bucketKey) return { ok: true, key: bucketKey };
   const now = new Date().toISOString();
   const result = await env.DB.prepare(
@@ -893,10 +903,10 @@ async function claimCheckoutSlot(env, bucketKey) {
      WHERE agent_usage_limits.count < ?3
      RETURNING count`
   )
-    .bind(bucketKey, now, MAX_CHECKOUTS_PER_IP_PER_DAY)
+    .bind(bucketKey, now, cap)
     .first();
   if (!result) {
-    console.warn("tinystudio_checkout_daily_ip_limit", JSON.stringify({ key: bucketKey }));
+    console.warn("tinystudio_checkout_daily_limit", JSON.stringify({ key: bucketKey, cap }));
     return { ok: false, response: withSecurityHeaders(jsonResponse({ ok: false, error: "checkout_daily_limit" }, { status: 429 })) };
   }
   return { ok: true, key: bucketKey };
@@ -1725,15 +1735,17 @@ async function checkoutResponse(request, env, url) {
   if (!RECORD_ID.test(recordId)) {
     return notFoundResponse("bad_request", 400);
   }
-  const limited = await claimCheckoutSlot(env, await checkoutBucket(request));
-  if (!limited.ok) return limited.response;
+  const attemptSlot = await claimCheckoutSlot(env, await checkoutAttemptBucket(request, recordId), MAX_CHECKOUT_ATTEMPTS_PER_IP_PER_DAY);
+  if (!attemptSlot.ok) return attemptSlot.response;
+  const sessionSlot = await claimCheckoutSlot(env, await checkoutSessionBucket(request, recordId), MAX_CHECKOUTS_PER_IP_PER_DAY);
+  if (!sessionSlot.ok) return sessionSlot.response;
   try {
     const checkout = await startCheckoutForRequest(env, { recordId });
     return browserForm
-      ? redirectResponse(checkout.checkoutUrl)
+      ? checkoutHandoffPage(checkout.checkoutUrl)
       : withSecurityHeaders(jsonResponse({ ok: true, checkoutUrl: checkout.checkoutUrl }));
   } catch (error) {
-    await releaseCheckoutSlot(env, limited.key);
+    await releaseCheckoutSlot(env, sessionSlot.key);
     const status = error?.code === "record_not_found" || error?.code === "engagement_not_found" ? 404 : 400;
     const payload = { ok: false, error: error?.code || "checkout_failed" };
     return browserForm
@@ -1751,6 +1763,73 @@ function prefersHtmlDocument(request) {
 
 function redirectResponse(location, status = 303) {
   return new Response(null, { status, headers: { location: location, "cache-control": "no-store" } });
+}
+
+const CHECKOUT_HANDOFF_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+
+function checkoutHandoffPage(checkoutUrl) {
+  const target = escapeHtml(checkoutUrl);
+  const body = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<meta http-equiv="refresh" content="0; url=${target}" />
+<title>Opening the payment page | TinyStudio</title>
+<style>
+body{font:16px/1.6 Georgia,serif;max-width:34rem;margin:3rem auto;padding:0 1rem;color:#111;background:#fff}
+button{font:inherit;padding:.5rem 1rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Opening the payment page</h1>
+<p>The payment page opens on Dodo Payments. If it does not open, use the button below.</p>
+<p><a href="${target}"><button type="button">Open the payment page</button></a></p>
+</main>
+</body>
+</html>
+`;
+  return withSecurityHeaders(
+    new Response(body, {
+      status: 200,
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
+    }),
+    CHECKOUT_HANDOFF_CSP
+  );
+}
+
+function deskActionPage(message, status = 200) {
+  const body = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<meta http-equiv="refresh" content="0; url=/desk" />
+<title>Desk review | TinyStudio</title>
+<style>
+body{font:16px/1.5 Georgia,serif;max-width:34rem;margin:3rem auto;padding:0 1rem;color:#111;background:#fff}
+</style>
+</head>
+<body>
+<main>
+<h1>Desk review</h1>
+<p>${escapeHtml(message)}</p>
+<p><a href="/desk">Back to the desk queue</a></p>
+</main>
+</body>
+</html>
+`;
+  return withSecurityHeaders(
+    new Response(body, {
+      status,
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
+    }),
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+  );
 }
 
 async function dodoWebhookResponse(request, env) {
@@ -1799,6 +1878,7 @@ async function deskActionResponse(request, env, url, kind) {
   const identity = await deskIdentity(env, request);
   if (!identity.authenticated) return deskUnauthorized(identity.reason);
   const at = new Date().toISOString();
+  const browserForm = prefersHtmlDocument(request);
   let form;
   try {
     form = new URLSearchParams(await readTextBodyWithLimit(request));
@@ -1806,7 +1886,9 @@ async function deskActionResponse(request, env, url, kind) {
     return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
   }
   const fail = (error) =>
-    withSecurityHeaders(jsonResponse({ ok: false, error: error?.code || "desk_action_failed" }, { status: 400 }));
+    browserForm
+      ? deskActionPage(`Not saved: ${error?.code || "desk_action_failed"}`)
+      : withSecurityHeaders(jsonResponse({ ok: false, error: error?.code || "desk_action_failed" }, { status: 400 }));
   try {
     if (kind === "line") {
       const engagementId = cleanField(form.get("engagementId"), 64);
@@ -1825,7 +1907,9 @@ async function deskActionResponse(request, env, url, kind) {
         identity.email,
         at
       );
-      return withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: result.engagement.status, lineId: result.line.id }));
+      return browserForm
+        ? deskActionPage(`Correction line saved. Engagement ${result.engagement.status}.`)
+        : withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: result.engagement.status, lineId: result.line.id }));
     }
     if (kind === "review") {
       const lineId = cleanField(url.pathname.split("/")[4], 64);
@@ -1836,16 +1920,22 @@ async function deskActionResponse(request, env, url, kind) {
         identity.email,
         at
       );
-      return withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: result.engagement.status, lineStatus: result.line.status }));
+      return browserForm
+        ? deskActionPage(`Line ${result.line.status}. Engagement ${result.engagement.status}.`)
+        : withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: result.engagement.status, lineStatus: result.line.status }));
     }
     const engagementId = cleanField(form.get("engagementId"), 64);
     if (!ENGAGEMENT_ID.test(engagementId)) return fail({ code: "bad_engagement" });
     const engagement = await addDeskKickoffNote(env, { engagementId, note: cleanField(form.get("note"), 4000) }, identity.email, at);
-    return withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: engagement.status }));
+    return browserForm
+      ? deskActionPage(`Kickoff note saved. Engagement ${engagement.status}.`)
+      : withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: engagement.status }));
   } catch (error) {
     const known = ["NOT_FOUND", "NOT_PAID"].includes(error?.code);
+    const status = known ? 404 : 400;
+    if (browserForm) return deskActionPage(`Not saved: ${error?.code || "desk_action_failed"}`, status);
     return withSecurityHeaders(
-      jsonResponse({ ok: false, error: error?.code || "desk_action_failed" }, { status: known ? 404 : 400 })
+      jsonResponse({ ok: false, error: error?.code || "desk_action_failed" }, { status })
     );
   }
 }
@@ -2012,7 +2102,7 @@ async function recordResponse(request, env, url) {
         "X-Robots-Tag": "noindex, nofollow"
       }
     }),
-    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
   );
 }
 

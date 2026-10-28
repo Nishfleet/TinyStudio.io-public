@@ -94,7 +94,11 @@ test("guardrails: each state allows only the action that state has", () => {
   assert.equal(engagementAllows(null, "send_checkout"), false);
   for (const action of DENIED_ACTIONS.keys()) {
     for (const status of ALL_STATUSES) {
-      assert.equal(engagementAllows({ status }, action), false, `${action} is denied in every state`);
+      assert.throws(
+        () => engagementAllows({ status }, action),
+        new RegExp(`guardrail blocks ${action}`),
+        `${action} is refused in every state`
+      );
     }
   }
 });
