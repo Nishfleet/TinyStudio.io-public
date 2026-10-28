@@ -1046,7 +1046,7 @@ test("worker /health names the current Website Appraisal surface, not the retire
   class HealthStatement extends FakeStatement {
     async all() {
       this.db.calls.push({ method: "all", sql: this.sql, values: this.values });
-      return { results: [{ name: "email_signups" }, { name: "agent_runs" }, { name: "agent_usage_limits" }] };
+      return { results: [{ name: "email_signups" }, { name: "engagements" }, { name: "agent_runs" }, { name: "agent_usage_limits" }] };
     }
   }
 
@@ -1070,7 +1070,7 @@ test("worker /health verdict keys off the current intake path, not the retired A
   class HealthStatement extends FakeStatement {
     async all() {
       this.db.calls.push({ method: "all", sql: this.sql, values: this.values });
-      return { results: [{ name: "email_signups" }] };
+      return { results: [{ name: "email_signups" }, { name: "engagements" }] };
     }
   }
 
@@ -1085,6 +1085,7 @@ test("worker /health verdict keys off the current intake path, not the retired A
   const body = await res.json();
   assert.equal(body.ok, true, "the current product is ready even without the retired Agent Desk machinery");
   assert.equal(body.checks.signupsTable, true, "the intake table is present");
+  assert.equal(body.checks.engagementsTable, true, "the engagement table is present");
   assert.equal(body.checks.ai, false, "the retired AI binding is absent");
   assert.equal(body.checks.agentRunsTable, false, "the retired agent_runs table is absent");
   assert.equal(body.checks.usageLimitsTable, false, "the retired usage-limits table is absent");
@@ -2179,5 +2180,81 @@ test("signup handler accepts a same-origin Origin, or a same-origin Referer when
   ]) {
     const res = await worker.fetch(originSignupRequest(headers), { DB: new FakeDB() });
     assert.equal(res.status, 201, `headers ${JSON.stringify(headers)} must be accepted`);
+  }
+});
+
+const ROUTE_RECORD_ID = "11111111-2222-4333-8444-555555555555";
+
+function checkoutRequest(headers = {}, body = `recordId=${ROUTE_RECORD_ID}`) {
+  return new Request("https://tinystudio.io/api/engagements/checkout", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", ...headers },
+    body
+  });
+}
+
+function deskLineRequest(headers = {}) {
+  return new Request("https://tinystudio.io/api/desk/correction-lines", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", ...headers },
+    body: new URLSearchParams({ engagementId: ROUTE_RECORD_ID }).toString()
+  });
+}
+
+test("checkout route refuses a cross-site POST and an oversized body before Dodo is called", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("the checkout route must not reach Dodo");
+  };
+  try {
+    for (const headers of [
+      {},
+      { Origin: "https://evil.example" },
+      { Referer: "https://evil.example/page" },
+      { Origin: "https://tinystudio.io", "Sec-Fetch-Site": "cross-site" }
+    ]) {
+      const res = await worker.fetch(checkoutRequest(headers), {});
+      assert.equal(res.status, 403, `headers ${JSON.stringify(headers)} must be refused`);
+      assert.equal((await res.json()).error, "origin_not_allowed");
+    }
+
+    const declared = await worker.fetch(checkoutRequest({ Origin: "https://tinystudio.io", "content-length": String(30000) }, `recordId=${"x".repeat(30000)}`), {});
+    assert.equal(declared.status, 413);
+    assert.equal((await declared.json()).error, "request_too_large");
+
+    const streamed = await worker.fetch(
+      new Request("https://tinystudio.io/api/engagements/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", Origin: "https://tinystudio.io" },
+        body: (async function* () { yield new TextEncoder().encode(`recordId=${"x".repeat(30000)}`); })(),
+        duplex: "half"
+      }),
+      {}
+    );
+    assert.equal(streamed.status, 413, "a body over the cap is refused even without a content-length");
+    assert.equal((await streamed.json()).error, "request_too_large");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("dodo webhook route refuses an oversized body instead of answering 500", async () => {
+  const res = await worker.fetch(
+    new Request("https://tinystudio.io/api/webhooks/dodo", {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": String(30000) },
+      body: JSON.stringify({ type: "payment.succeeded", data: {} }).padEnd(30000)
+    }),
+    {}
+  );
+  assert.equal(res.status, 413);
+  assert.equal((await res.json()).error, "request_too_large");
+});
+
+test("desk action route refuses a cross-site POST before it reads the form", async () => {
+  for (const headers of [{}, { Origin: "https://evil.example" }, { Referer: "https://evil.example/page" }]) {
+    const res = await worker.fetch(deskLineRequest(headers), {});
+    assert.equal(res.status, 403, `headers ${JSON.stringify(headers)} must be refused`);
+    assert.equal((await res.json()).error, "cross_site_blocked");
   }
 });

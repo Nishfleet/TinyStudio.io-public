@@ -1,4 +1,9 @@
 import { RECORD_ID, recordKey } from "./record.js";
+import { deskAccessConfigured, deskIdentity, deskUnauthorized } from "./desk-access.js";
+import { addDeskCorrectionLine, addDeskKickoffNote, deskDraftLines, deskQueue, reviewDeskCorrectionLine } from "./desk.js";
+import { handleDodoWebhook, startCheckoutForRequest } from "./payments.js";
+import { deskQueuePage } from "./desk-page.js";
+import { ENGAGEMENT_ID } from "./engagement.js";
 
 const SECURITY_HEADERS = {
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
@@ -90,6 +95,8 @@ const MAX_AGENT_RUNS_PER_IP_PER_DAY = 20;
 const MAX_AGENT_RUNS_PER_DAY = 50;
 const MAX_APPRAISALS_PER_MONTH = 6;
 const MAX_WAITLIST_PER_MONTH = 50;
+const MAX_CHECKOUTS_PER_IP_PER_DAY = 5;
+const MAX_CHECKOUT_ATTEMPTS_PER_IP_PER_DAY = 20;
 const APPRAISAL_SURFACE = "website-appraisal";
 const CURRENCY_AMOUNT_PATTERN = String.raw`(?:(?:₹|\$|€|£|inr|usd|us\$|aud|cad|sgd|gbp|eur|rs\.?|rupees?)\s*\d[\d,.]*(?:\s*(?:k|lakh|lakhs|l|cr))?|\d[\d,.]*\s*(?:inr|usd|aud|cad|sgd|gbp|eur|rupees?))`;
 const METRIC_VALUE_PATTERN = String.raw`(?:${CURRENCY_AMOUNT_PATTERN}|\b\d[\d,.]*\b)`;
@@ -102,6 +109,10 @@ const WEEKLY_METRIC_LABELS = [
   "Closed deals",
   "Cash collected"
 ];
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
 
 function withSecurityHeaders(response, contentSecurityPolicy) {
   const headers = new Headers(response.headers);
@@ -868,6 +879,47 @@ async function enforceAgentLimits(request, env, email, url) {
   }
 
   return { ok: true };
+}
+
+async function checkoutSessionBucket(request, recordId) {
+  const bucket = new Date().toISOString().slice(0, 10);
+  return `checkout:${bucket}:${await hashIp(request, bucket) || `record:${recordId}`}`;
+}
+
+async function checkoutAttemptBucket(request, recordId) {
+  const bucket = new Date().toISOString().slice(0, 10);
+  return `checkout-attempt:${bucket}:${await hashIp(request, bucket) || `record:${recordId}`}`;
+}
+
+async function claimCheckoutSlot(env, bucketKey, cap) {
+  if (!bucketKey) return { ok: true, key: bucketKey };
+  const now = new Date().toISOString();
+  const result = await env.DB.prepare(
+    `INSERT INTO agent_usage_limits (bucket_key, count, first_seen_at, updated_at)
+     VALUES (?1, 1, ?2, ?2)
+     ON CONFLICT(bucket_key) DO UPDATE SET
+       count = count + 1,
+       updated_at = excluded.updated_at
+     WHERE agent_usage_limits.count < ?3
+     RETURNING count`
+  )
+    .bind(bucketKey, now, cap)
+    .first();
+  if (!result) {
+    console.warn("tinystudio_checkout_daily_limit", JSON.stringify({ key: bucketKey, cap }));
+    return { ok: false, response: withSecurityHeaders(jsonResponse({ ok: false, error: "checkout_daily_limit" }, { status: 429 })) };
+  }
+  return { ok: true, key: bucketKey };
+}
+
+async function releaseCheckoutSlot(env, bucketKey) {
+  if (!bucketKey) return;
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `UPDATE agent_usage_limits SET count = MAX(count - 1, 0), updated_at = ?1 WHERE bucket_key = ?2 AND count > 0`
+  )
+    .bind(now, bucketKey)
+    .run();
 }
 
 function agentInput(body) {
@@ -1664,30 +1716,258 @@ async function agentAuditResponse(request, env, url) {
   });
 }
 
+async function checkoutResponse(request, env, url) {
+  const browserForm = prefersHtmlDocument(request);
+  if (!isSameOriginPost(request, url)) {
+    return jsonResponse({ ok: false, error: "origin_not_allowed" }, { status: 403 });
+  }
+  if (requestTooLarge(request)) {
+    return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+  }
+  let body;
+  try {
+    body = await readTextBodyWithLimit(request);
+  } catch {
+    return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+  }
+  const form = new URLSearchParams(body);
+  const recordId = cleanField(form.get("recordId"), 64);
+  if (!RECORD_ID.test(recordId)) {
+    return notFoundResponse("bad_request", 400);
+  }
+  const attemptSlot = await claimCheckoutSlot(env, await checkoutAttemptBucket(request, recordId), MAX_CHECKOUT_ATTEMPTS_PER_IP_PER_DAY);
+  if (!attemptSlot.ok) return attemptSlot.response;
+  const sessionSlot = await claimCheckoutSlot(env, await checkoutSessionBucket(request, recordId), MAX_CHECKOUTS_PER_IP_PER_DAY);
+  if (!sessionSlot.ok) return sessionSlot.response;
+  try {
+    const checkout = await startCheckoutForRequest(env, { recordId });
+    return browserForm
+      ? checkoutHandoffPage(checkout.checkoutUrl)
+      : withSecurityHeaders(jsonResponse({ ok: true, checkoutUrl: checkout.checkoutUrl }));
+  } catch (error) {
+    await releaseCheckoutSlot(env, sessionSlot.key);
+    const status = error?.code === "record_not_found" || error?.code === "engagement_not_found" ? 404 : 400;
+    const payload = { ok: false, error: error?.code || "checkout_failed" };
+    return browserForm
+      ? redirectResponse(`/records/${recordId}?checkout=failed`)
+      : withSecurityHeaders(jsonResponse(payload, { status }));
+  }
+}
+
+function prefersHtmlDocument(request) {
+  const mode = String(request.headers?.get?.("sec-fetch-mode") || "").toLowerCase();
+  if (mode === "navigate") return true;
+  const accept = String(request.headers?.get?.("accept") || "").toLowerCase();
+  return accept.includes("text/html");
+}
+
+function redirectResponse(location, status = 303) {
+  return new Response(null, { status, headers: { location: location, "cache-control": "no-store" } });
+}
+
+const CHECKOUT_HANDOFF_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+
+function checkoutHandoffPage(checkoutUrl) {
+  const target = escapeHtml(checkoutUrl);
+  const body = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<meta http-equiv="refresh" content="0; url=${target}" />
+<title>Opening the payment page | TinyStudio</title>
+<style>
+body{font:16px/1.6 Georgia,serif;max-width:34rem;margin:3rem auto;padding:0 1rem;color:#111;background:#fff}
+button{font:inherit;padding:.5rem 1rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Opening the payment page</h1>
+<p>The payment page opens on Dodo Payments. If it does not open, use the button below.</p>
+<p><a href="${target}"><button type="button">Open the payment page</button></a></p>
+</main>
+</body>
+</html>
+`;
+  return withSecurityHeaders(
+    new Response(body, {
+      status: 200,
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
+    }),
+    CHECKOUT_HANDOFF_CSP
+  );
+}
+
+function deskActionPage(message, status = 200) {
+  const body = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<meta http-equiv="refresh" content="0; url=/desk" />
+<title>Desk review | TinyStudio</title>
+<style>
+body{font:16px/1.5 Georgia,serif;max-width:34rem;margin:3rem auto;padding:0 1rem;color:#111;background:#fff}
+</style>
+</head>
+<body>
+<main>
+<h1>Desk review</h1>
+<p>${escapeHtml(message)}</p>
+<p><a href="/desk">Back to the desk queue</a></p>
+</main>
+</body>
+</html>
+`;
+  return withSecurityHeaders(
+    new Response(body, {
+      status,
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
+    }),
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+  );
+}
+
+async function dodoWebhookResponse(request, env) {
+  if (requestTooLarge(request)) {
+    return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+  }
+  let rawBody;
+  try {
+    rawBody = await readTextBodyWithLimit(request);
+  } catch {
+    return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+  }
+  const result = await handleDodoWebhook(env, { rawBody, headers: request.headers });
+  return jsonResponse({ ok: result.ok, ...result.body }, { status: result.status });
+}
+
+async function deskResponse(request, env) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
+  }
+  if (!deskAccessConfigured(env)) {
+    return new Response("Desk review is not configured.", {
+      status: 503,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }
+    });
+  }
+  const identity = await deskIdentity(env, request);
+  if (!identity.authenticated) return deskUnauthorized(identity.reason);
+  const queue = await deskQueue(env);
+  return deskQueuePage(queue, await deskDraftLines(env));
+}
+
+async function deskActionResponse(request, env, url, kind) {
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
+  }
+  if (!isSameOriginPost(request, url)) {
+    return jsonResponse({ ok: false, error: "cross_site_blocked" }, { status: 403 });
+  }
+  if (!deskAccessConfigured(env)) {
+    return new Response("Desk review is not configured.", {
+      status: 503,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }
+    });
+  }
+  const identity = await deskIdentity(env, request);
+  if (!identity.authenticated) return deskUnauthorized(identity.reason);
+  const at = new Date().toISOString();
+  const browserForm = prefersHtmlDocument(request);
+  let form;
+  try {
+    form = new URLSearchParams(await readTextBodyWithLimit(request));
+  } catch {
+    return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+  }
+  const fail = (error) =>
+    browserForm
+      ? deskActionPage(`Not saved: ${error?.code || "desk_action_failed"}`)
+      : withSecurityHeaders(jsonResponse({ ok: false, error: error?.code || "desk_action_failed" }, { status: 400 }));
+  try {
+    if (kind === "line") {
+      const engagementId = cleanField(form.get("engagementId"), 64);
+      if (!ENGAGEMENT_ID.test(engagementId)) return fail({ code: "bad_engagement" });
+      const result = await addDeskCorrectionLine(
+        env,
+        {
+          engagementId,
+          faultId: cleanField(form.get("faultId"), 64),
+          faultTitle: cleanField(form.get("faultTitle"), 240),
+          beforeText: cleanField(form.get("beforeText"), 4000),
+          afterText: cleanField(form.get("afterText"), 4000),
+          legalCopy: form.get("legalCopy") === "1",
+          consentReceived: form.get("consentReceived") === "1"
+        },
+        identity.email,
+        at
+      );
+      return browserForm
+        ? deskActionPage(`Correction line saved. Engagement ${result.engagement.status}.`)
+        : withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: result.engagement.status, lineId: result.line.id }));
+    }
+    if (kind === "review") {
+      const lineId = cleanField(url.pathname.split("/")[4], 64);
+      const action = cleanField(form.get("action"), 16);
+      const result = await reviewDeskCorrectionLine(
+        env,
+        { lineId, action, note: cleanField(form.get("note"), 2000) },
+        identity.email,
+        at
+      );
+      return browserForm
+        ? deskActionPage(`Line ${result.line.status}. Engagement ${result.engagement.status}.`)
+        : withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: result.engagement.status, lineStatus: result.line.status }));
+    }
+    const engagementId = cleanField(form.get("engagementId"), 64);
+    if (!ENGAGEMENT_ID.test(engagementId)) return fail({ code: "bad_engagement" });
+    const engagement = await addDeskKickoffNote(env, { engagementId, note: cleanField(form.get("note"), 4000) }, identity.email, at);
+    return browserForm
+      ? deskActionPage(`Kickoff note saved. Engagement ${engagement.status}.`)
+      : withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: engagement.status }));
+  } catch (error) {
+    const known = ["NOT_FOUND", "NOT_PAID"].includes(error?.code);
+    const status = known ? 404 : 400;
+    if (browserForm) return deskActionPage(`Not saved: ${error?.code || "desk_action_failed"}`, status);
+    return withSecurityHeaders(
+      jsonResponse({ ok: false, error: error?.code || "desk_action_failed" }, { status })
+    );
+  }
+}
+
 async function healthResponse(env) {
   const checks = {
     db: Boolean(env.DB),
     signupsTable: false,
     ai: Boolean(env.AI),
     agentRunsTable: false,
-    usageLimitsTable: false
+    usageLimitsTable: false,
+    engagementsTable: false,
+    correctionLinesTable: false
   };
 
   if (env.DB) {
     try {
       const tableResult = await env.DB.prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('email_signups', 'agent_runs', 'agent_usage_limits')"
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('email_signups', 'agent_runs', 'agent_usage_limits', 'engagements', 'correction_lines')"
       ).all();
       const tables = new Set((tableResult.results || []).map((row) => row.name));
       checks.signupsTable = tables.has("email_signups");
       checks.agentRunsTable = tables.has("agent_runs");
       checks.usageLimitsTable = tables.has("agent_usage_limits");
+      checks.engagementsTable = tables.has("engagements");
+      checks.correctionLinesTable = tables.has("correction_lines");
     } catch (error) {
       console.warn("tinystudio_health_check_failed", error.message || "health check failed");
     }
   }
 
-  const ok = checks.db && checks.signupsTable;
+  const ok = checks.db && checks.signupsTable && checks.engagementsTable;
 
   return jsonResponse(
     {
@@ -1822,7 +2102,7 @@ async function recordResponse(request, env, url) {
         "X-Robots-Tag": "noindex, nofollow"
       }
     }),
-    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
   );
 }
 
@@ -1871,6 +2151,30 @@ export default {
 
     if (url.pathname === "/api/appraisal-slots") {
       return appraisalSlotsResponse(request, env);
+    }
+
+    if (url.pathname === "/api/engagements/checkout") {
+      return checkoutResponse(request, env, url);
+    }
+
+    if (url.pathname === "/api/webhooks/dodo") {
+      return dodoWebhookResponse(request, env);
+    }
+
+    if (url.pathname === "/desk") {
+      return deskResponse(request, env);
+    }
+
+    if (url.pathname.startsWith("/api/desk/correction-lines/") && url.pathname.endsWith("/review")) {
+      return deskActionResponse(request, env, url, "review");
+    }
+
+    if (url.pathname === "/api/desk/correction-lines") {
+      return deskActionResponse(request, env, url, "line");
+    }
+
+    if (url.pathname === "/api/desk/kickoff") {
+      return deskActionResponse(request, env, url, "kickoff");
     }
 
     if (url.pathname.startsWith("/records/")) {
