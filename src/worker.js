@@ -1,4 +1,9 @@
 import { RECORD_ID, recordKey } from "./record.js";
+import { deskAccessConfigured, deskIdentity, deskUnauthorized } from "./desk-access.js";
+import { addDeskCorrectionLine, addDeskKickoffNote, deskDraftLines, deskQueue, reviewDeskCorrectionLine } from "./desk.js";
+import { handleDodoWebhook, startCheckoutForRequest } from "./payments.js";
+import { deskQueuePage } from "./checkout.js";
+import { ENGAGEMENT_ID } from "./engagement.js";
 
 const SECURITY_HEADERS = {
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
@@ -1643,30 +1648,134 @@ async function agentAuditResponse(request, env, url) {
   });
 }
 
+async function checkoutResponse(request, env, url) {
+  const body = await readTextBodyWithLimit(request);
+  const form = new URLSearchParams(body);
+  const recordId = cleanField(form.get("recordId"), 64);
+  if (!RECORD_ID.test(recordId)) {
+    return notFoundResponse("bad_request", 400);
+  }
+  if (!isSameOriginPost(request, url)) {
+    return jsonResponse({ ok: false, error: "origin_not_allowed" }, { status: 403 });
+  }
+  try {
+    const checkout = await startCheckoutForRequest(env, { recordId });
+    return withSecurityHeaders(jsonResponse({ ok: true, checkoutUrl: checkout.checkoutUrl }));
+  } catch (error) {
+    const status = error?.code === "record_not_found" || error?.code === "engagement_not_found" ? 404 : 400;
+    return withSecurityHeaders(jsonResponse({ ok: false, error: error?.code || "checkout_failed" }, { status }));
+  }
+}
+
+async function dodoWebhookResponse(request, env) {
+  const rawBody = await readTextBodyWithLimit(request);
+  const result = await handleDodoWebhook(env, { rawBody, headers: request.headers });
+  return jsonResponse({ ok: result.ok, ...result.body }, { status: result.status });
+}
+
+async function deskResponse(request, env) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
+  }
+  if (!deskAccessConfigured(env)) {
+    return new Response("Desk review is not configured.", {
+      status: 503,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }
+    });
+  }
+  const identity = await deskIdentity(env, request);
+  if (!identity.authenticated) return deskUnauthorized(identity.reason);
+  const queue = await deskQueue(env);
+  return deskQueuePage(queue, await deskDraftLines(env));
+}
+
+async function deskActionResponse(request, env, url, kind) {
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
+  }
+  if (!deskAccessConfigured(env)) {
+    return new Response("Desk review is not configured.", {
+      status: 503,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }
+    });
+  }
+  const identity = await deskIdentity(env, request);
+  if (!identity.authenticated) return deskUnauthorized(identity.reason);
+  const at = new Date().toISOString();
+  const form = new URLSearchParams(await readTextBodyWithLimit(request));
+  const fail = (error) =>
+    withSecurityHeaders(jsonResponse({ ok: false, error: error?.code || "desk_action_failed" }, { status: 400 }));
+  try {
+    if (kind === "line") {
+      const engagementId = cleanField(form.get("engagementId"), 64);
+      if (!ENGAGEMENT_ID.test(engagementId)) return fail({ code: "bad_engagement" });
+      const result = await addDeskCorrectionLine(
+        env,
+        {
+          engagementId,
+          faultId: cleanField(form.get("faultId"), 64),
+          faultTitle: cleanField(form.get("faultTitle"), 240),
+          beforeText: cleanField(form.get("beforeText"), 4000),
+          afterText: cleanField(form.get("afterText"), 4000),
+          legalCopy: form.get("legalCopy") === "1",
+          consentReceived: form.get("consentReceived") === "1"
+        },
+        identity.email,
+        at
+      );
+      return withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: result.engagement.status, lineId: result.line.id }));
+    }
+    if (kind === "review") {
+      const lineId = cleanField(url.pathname.split("/")[4], 64);
+      const action = cleanField(form.get("action"), 16);
+      const result = await reviewDeskCorrectionLine(
+        env,
+        { lineId, action, note: cleanField(form.get("note"), 2000) },
+        identity.email,
+        at
+      );
+      return withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: result.engagement.status, lineStatus: result.line.status }));
+    }
+    const engagementId = cleanField(form.get("engagementId"), 64);
+    if (!ENGAGEMENT_ID.test(engagementId)) return fail({ code: "bad_engagement" });
+    const engagement = await addDeskKickoffNote(env, { engagementId, note: cleanField(form.get("note"), 4000) }, identity.email, at);
+    return withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: engagement.status }));
+  } catch (error) {
+    const known = ["NOT_FOUND", "NOT_PAID"].includes(error?.code);
+    return withSecurityHeaders(
+      jsonResponse({ ok: false, error: error?.code || "desk_action_failed" }, { status: known ? 404 : 400 })
+    );
+  }
+}
+
 async function healthResponse(env) {
   const checks = {
     db: Boolean(env.DB),
     signupsTable: false,
     ai: Boolean(env.AI),
     agentRunsTable: false,
-    usageLimitsTable: false
+    usageLimitsTable: false,
+    engagementsTable: false,
+    correctionLinesTable: false
   };
 
   if (env.DB) {
     try {
       const tableResult = await env.DB.prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('email_signups', 'agent_runs', 'agent_usage_limits')"
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('email_signups', 'agent_runs', 'agent_usage_limits', 'engagements', 'correction_lines')"
       ).all();
       const tables = new Set((tableResult.results || []).map((row) => row.name));
       checks.signupsTable = tables.has("email_signups");
       checks.agentRunsTable = tables.has("agent_runs");
       checks.usageLimitsTable = tables.has("agent_usage_limits");
+      checks.engagementsTable = tables.has("engagements");
+      checks.correctionLinesTable = tables.has("correction_lines");
     } catch (error) {
       console.warn("tinystudio_health_check_failed", error.message || "health check failed");
     }
   }
 
-  const ok = checks.db && checks.signupsTable;
+  const ok = checks.db && checks.signupsTable && checks.engagementsTable;
 
   return jsonResponse(
     {
@@ -1850,6 +1959,30 @@ export default {
 
     if (url.pathname === "/api/appraisal-slots") {
       return appraisalSlotsResponse(request, env);
+    }
+
+    if (url.pathname === "/api/engagements/checkout") {
+      return checkoutResponse(request, env, url);
+    }
+
+    if (url.pathname === "/api/webhooks/dodo") {
+      return dodoWebhookResponse(request, env);
+    }
+
+    if (url.pathname === "/desk") {
+      return deskResponse(request, env);
+    }
+
+    if (url.pathname.startsWith("/api/desk/correction-lines/") && url.pathname.endsWith("/review")) {
+      return deskActionResponse(request, env, url, "review");
+    }
+
+    if (url.pathname === "/api/desk/correction-lines") {
+      return deskActionResponse(request, env, url, "line");
+    }
+
+    if (url.pathname === "/api/desk/kickoff") {
+      return deskActionResponse(request, env, url, "kickoff");
     }
 
     if (url.pathname.startsWith("/records/")) {

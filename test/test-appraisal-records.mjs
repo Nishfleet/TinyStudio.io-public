@@ -5,6 +5,7 @@ import test from "node:test";
 import worker from "../src/worker.js";
 import { publishRecord, renderRecord } from "../src/record.js";
 import costing from "../config/costing.json" with { type: "json" };
+import offer from "../config/offer.json" with { type: "json" };
 
 function d1(sqlite) {
   return {
@@ -69,15 +70,26 @@ test("quality gate: no uncited number in a rendered record", async () => {
   const { id } = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
   const html = objects.get(`records/${id}.html`);
   const ids = new Set(costing.rows.map((r) => r.id));
+  const offerRefs = new Set(["priceCents", "workingDays", "slotsPerMonth", "startDate"]);
   const figs = [...html.matchAll(/<span class="fig" data-cite="([^"]+)">/g)];
   assert.ok(figs.length > 0);
   for (const [, cite] of figs) {
     for (const ref of cite.split(" ")) {
       const [kind, name] = ref.split(":");
-      assert.ok((kind === "row" && ids.has(name)) || (kind === "input" && ["dealValue", "monthlyLeads"].includes(name)), `bad citation ${ref}`);
+      assert.ok(
+        (kind === "row" && ids.has(name)) ||
+          (kind === "input" && ["dealValue", "monthlyLeads"].includes(name)) ||
+          (kind === "offer" && offerRefs.has(name)),
+        `bad citation ${ref}`
+      );
     }
   }
 
+  const price = `$${(offer.priceCents / 100).toLocaleString("en-US")}`;
+  assert.ok(html.includes(`data-cite="offer:priceCents">${price}<`), "the proposal price is cited from the offer");
+  assert.ok(html.includes(`data-cite="offer:workingDays">${offer.workingDays}<`));
+  assert.ok(html.includes(`data-cite="offer:slotsPerMonth">${offer.slotsPerMonth}<`));
+  assert.ok(html.includes('data-cite="offer:startDate">1 November 2026<'));
   const body = html
     .replace(/<span class="fig"[^>]*>[^<]*<\/span>/g, "")
     .replace(/<style>[\s\S]*?<\/style>/, "")

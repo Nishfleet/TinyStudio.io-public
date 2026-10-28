@@ -22,6 +22,9 @@ The plan also lists `/correction`, `/method` and `/records/{id}`; these are buil
 
 - `/api/signups` stores an appraisal request in Cloudflare D1.
 - `/api/agent-audit` is the existing audit generation endpoint. It runs at most 50 times a day across all callers, and setting `AGENT_AUDIT_DISABLED=1` turns it off.
+- `/api/engagements/checkout` starts the Dodo checkout for the record's engagement, and returns the checkout URL the record page sends the customer to.
+- `/api/webhooks/dodo` receives the signed Dodo payment event. The signature is verified before an engagement opens, and a replayed event opens nothing new.
+- `/desk` is the reviewer's queue, and `/api/desk/correction-lines`, `/api/desk/correction-lines/{id}/review` and `/api/desk/kickoff` write the correction lines, the review decisions and the kickoff note. All four answer 503 until `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set, and every write is journalled with the reviewer and the time.
 - `/health` reports readiness.
 - `app.tinystudio.io` and `api.tinystudio.io` answer with a 410 retirement response.
 
