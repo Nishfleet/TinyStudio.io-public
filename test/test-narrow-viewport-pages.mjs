@@ -11,10 +11,11 @@ const PAGES = [
   { path: "/", file: "index.html" },
   { path: "/appraisal", file: "appraisal.html" },
   { path: "/pricing", file: "pricing.html" },
-  { path: "/specimen", file: "specimen.html" }
+  { path: "/specimen", file: "specimen.html" },
+  { path: "/waitlist", file: "waitlist.html" }
 ];
 
-const OWNED_PATHS = new Set(["/appraisal", "/pricing", "/specimen"]);
+const OWNED_PATHS = new Set(["/appraisal", "/pricing", "/specimen", "/waitlist"]);
 
 const CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -37,6 +38,7 @@ function startServer() {
       else if (rel === "/appraisal") rel = "/appraisal.html";
       else if (rel === "/pricing") rel = "/pricing.html";
       else if (rel === "/specimen") rel = "/specimen.html";
+      else if (rel === "/waitlist") rel = "/waitlist.html";
       const file = normalize(join(PUBLIC_DIR, rel));
       if (!file.startsWith(PUBLIC_DIR)) {
         res.writeHead(403).end("forbidden");
@@ -108,7 +110,7 @@ try {
   server.close();
 }
 
-console.log("Narrow-viewport overflow check across all five pages (real Chromium):");
+console.log("Narrow-viewport overflow check across all six pages (real Chromium):");
 console.table(rows);
 
 if (outOfScope.length) {
@@ -121,4 +123,4 @@ if (failures.length) {
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log("All three owned routes keep document scrollWidth === clientWidth at 240-390px.");
+console.log("All four owned routes keep document scrollWidth === clientWidth at 240-390px.");

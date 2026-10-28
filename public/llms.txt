@@ -14,6 +14,7 @@ Contact: hello@tinystudio.io
 - https://tinystudio.io/appraisal — the audit method and controlled AI-search evidence
 - https://tinystudio.io/pricing — price and terms for the human-reviewed desk
 - https://tinystudio.io/specimen — a specimen appraisal showing the report format
+- https://tinystudio.io/waitlist — the six-a-month waitlist, and the form that holds a place in it
 - https://tinystudio.io/offer.md — machine-readable offer mirror
 - https://tinystudio.io/llms.txt — this file
 

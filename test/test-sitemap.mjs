@@ -10,6 +10,7 @@ const EXPECTED_LOCS = [
   "https://tinystudio.io/appraisal",
   "https://tinystudio.io/pricing",
   "https://tinystudio.io/specimen",
+  "https://tinystudio.io/waitlist",
   "https://tinystudio.io/privacy",
   "https://tinystudio.io/terms",
   "https://tinystudio.io/contact",
