@@ -120,6 +120,21 @@ export async function reviewCorrectionLine(env, line, action, { reviewer, note, 
   return correctionLineById(env, line.id);
 }
 
+export async function revertCorrectionLine(env, line, at) {
+  if (line.status !== "approved") return line;
+  await env.DB.prepare(
+    "UPDATE correction_lines SET status = 'draft', reviewer = NULL, review_note = NULL, reviewed_at = NULL, changed_at = ?1 WHERE id = ?2"
+  )
+    .bind(at, line.id)
+    .run();
+  await env.DB.prepare(
+    "INSERT INTO engagement_events (engagement_id, request_id, type, from_status, to_status, detail, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
+  )
+    .bind(line.engagement_id, line.request_id, "correction_line_reverted", "approved", "draft", `${line.id} after a failed republish`, at)
+    .run();
+  return correctionLineById(env, line.id);
+}
+
 export async function markLinesRecorded(env, engagement, version, at) {
   const recorded = await correctionLines(env, engagement.id);
   for (const line of recorded) {

@@ -5,6 +5,7 @@ import {
   correctionLineById,
   engagementById,
   reviewCorrectionLine,
+  revertCorrectionLine,
   setKickoffNote
 } from "./engagement.js";
 import { republishRecord } from "./record.js";
@@ -73,12 +74,17 @@ export async function reviewDeskCorrectionLine(env, input, reviewer, at) {
   if (engagement.status === "in_correction") {
     const lines = await deskLines(env, engagement.id);
     if (lines.every((row) => row.status !== "draft")) {
-      await republishRecord(env, engagement.request_id, at);
-      current = await advanceEngagement(env, engagement, "proved", {
-        type: "status_changed",
-        detail: `review complete by ${reviewer}`,
-        at
-      });
+      try {
+        await republishRecord(env, engagement.request_id, at);
+        current = await advanceEngagement(env, engagement, "proved", {
+          type: "status_changed",
+          detail: `review complete by ${reviewer}`,
+          at
+        });
+      } catch (error) {
+        await revertCorrectionLine(env, reviewed, at);
+        throw error;
+      }
     }
   }
   return { engagement: current, line: reviewed };
@@ -91,11 +97,10 @@ export async function addDeskKickoffNote(env, input, reviewer, at) {
     throw Object.assign(new Error("a kickoff note opens tracking once the correction is proved"), { code: "NOT_PAID" });
   }
   const noted = await setKickoffNote(env, engagement, input.note, at);
-  const advanced = await advanceEngagement(env, noted, "tracking", {
+  await republishRecord(env, engagement.request_id, at);
+  return advanceEngagement(env, noted, "tracking", {
     type: "status_changed",
     detail: `tracking opened by ${reviewer}`,
     at
   });
-  await republishRecord(env, engagement.request_id, at);
-  return advanced;
 }

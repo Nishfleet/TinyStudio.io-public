@@ -242,7 +242,7 @@ test("desk: a rejected line is not published, and the last approval republishes 
   ]);
 });
 
-test("desk: the record is republished before the correction is proved, so a failed republish leaves it in correction", async () => {
+test("desk: a failed republish returns the line to the desk, so the approval can be sent again", async () => {
   const { env, sqlite } = freshEnv();
   const { recordId, engagementId } = await paidEngagement(env, sqlite);
   const line = await addDeskCorrectionLine(
@@ -257,8 +257,17 @@ test("desk: the record is republished before the correction is proved, so a fail
     /cannot be re-rendered/
   );
   assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "in_correction", "a failed republish never proves the correction");
-  assert.equal(sqlite.prepare("SELECT status FROM correction_lines WHERE id = ?").get(line.line.id).status, "approved");
+  const reverted = sqlite.prepare("SELECT status, reviewer, review_note FROM correction_lines WHERE id = ?").get(line.line.id);
+  assert.equal(reverted.status, "draft", "the approval is taken back so the desk can send it again");
+  assert.equal(reverted.reviewer, null);
+  assert.equal(reverted.review_note, null);
   assert.equal(sqlite.prepare("SELECT version FROM appraisal_records WHERE id = ?").get(recordId).version, 1, "nothing was published");
+
+  sqlite.prepare("UPDATE appraisal_records SET faults_json = ? WHERE id = ?").run(JSON.stringify(faults), recordId);
+  const retried = await reviewDeskCorrectionLine(env, { lineId: line.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:30:00.000Z");
+  assert.equal(retried.line.status, "approved");
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "proved", "the second approval proves the correction");
+  assert.equal(sqlite.prepare("SELECT version FROM appraisal_records WHERE id = ?").get(recordId).version, 2);
 });
 
 test("desk: no line is added or reviewed once the correction is proved", async () => {
@@ -279,6 +288,28 @@ test("desk: no line is added or reviewed once the correction is proved", async (
     reviewDeskCorrectionLine(env, { lineId: line.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T13:00:00.000Z"),
     /a correction line is reviewed only while the correction is in progress/
   );
+});
+
+test("desk: a failed republish leaves the kickoff open, so the note can be sent again", async () => {
+  const { env, sqlite } = freshEnv();
+  const { recordId, engagementId } = await paidEngagement(env, sqlite);
+  const line = await addDeskCorrectionLine(
+    env,
+    { engagementId, faultId: "f1", faultTitle: "Home page loads in 6.1 seconds", beforeText: "a", afterText: "b", legalCopy: 0 },
+    "Jev",
+    "2026-10-13T11:00:00.000Z"
+  );
+  await reviewDeskCorrectionLine(env, { lineId: line.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:00:00.000Z");
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "proved");
+  sqlite.prepare("UPDATE appraisal_records SET review_json = NULL WHERE id = ?").run(recordId);
+  await assert.rejects(
+    addDeskKickoffNote(env, { engagementId, note: "Tracking starts 1 November 2026." }, "Jev", "2026-10-13T13:00:00.000Z"),
+    /cannot be re-rendered/
+  );
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "proved", "a failed republish never opens tracking");
+  sqlite.prepare("UPDATE appraisal_records SET review_json = ? WHERE id = ?").run(JSON.stringify(review), recordId);
+  const retried = await addDeskKickoffNote(env, { engagementId, note: "Tracking starts 1 November 2026." }, "Jev", "2026-10-13T13:30:00.000Z");
+  assert.equal(retried.status, "tracking");
 });
 
 test("desk route: it answers only when Cloudflare Access is configured", async () => {
