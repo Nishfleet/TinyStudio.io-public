@@ -1221,6 +1221,24 @@ test("/appraisal is served as an asset and the retired Agent Desk, desk and MSP 
   }
 });
 
+test("/waitlist is served as its own public asset with its page, stylesheet and script", async () => {
+  const served = [];
+  const env = {
+    ASSETS: {
+      fetch: async (request) => {
+        const path = new URL(request.url).pathname;
+        served.push(path);
+        return new Response("<html>asset</html>", { status: 200 });
+      }
+    }
+  };
+  for (const path of ["/waitlist", "/waitlist.html", "/waitlist.css", "/waitlist.js"]) {
+    const res = await worker.fetch(new Request(`https://tinystudio.io${path}`), env);
+    assert.equal(res.status, 200, `${path} must be served`);
+  }
+  assert.deepEqual(served, ["/waitlist", "/waitlist.html", "/waitlist.css", "/waitlist.js"], "each waitlist path must be fetched as its own asset");
+});
+
 test("canonical host redirect leaves the apex and the retired hosts alone", async () => {
   const env = {
     ASSETS: { fetch: async () => new Response("<html>apex site</html>", { status: 200 }) }

@@ -20,6 +20,36 @@
   .notrun h3{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:300;font-size:21px;letter-spacing:-.018em;color:var(--sig)}
   .notrun p{margin-top:11px;font-size:15px;line-height:1.72;color:var(--soft)}
 
+  .csum{margin-top:26px;font-size:16.5px;line-height:1.78;color:var(--soft);max-width:62ch}
+  .costs{margin-top:34px;padding-top:34px;border-top:1px solid var(--ink)}
+  .costs h2{font-family:'Fraunces','Fraunces Fallback',serif;font-weight:300;font-size:26px;
+    letter-spacing:-.018em;line-height:1.24;color:var(--ink)}
+  .cl{margin-top:16px;font-size:16px;line-height:1.74;color:var(--soft);max-width:64ch}
+  .cl b{color:var(--ink);font-weight:600}
+  .costlist{margin-top:24px;list-style:none}
+  .costlist li{padding:15px 0;border-top:1px solid var(--hair)}
+  .costlist li:first-child{border-top:0;padding-top:0}
+  .ctop{display:flex;justify-content:space-between;align-items:baseline;gap:16px}
+  .ctop b{font-size:15.5px;font-weight:600;color:var(--ink)}
+  .cd{font-family:'Fraunces','Fraunces Fallback',serif;font-size:19px;font-weight:300;color:var(--brass);
+    white-space:nowrap;flex-shrink:0}
+  .cb{margin-top:7px;font-size:14px;line-height:1.7;color:var(--muted)}
+  .cb a{color:var(--brass);text-decoration:underline;text-underline-offset:2px}
+  .cex{margin-top:26px;background:rgba(255,253,248,.75);border:1px solid var(--hair);
+    border-left:2px solid var(--brass);border-radius:0 6px 6px 0;padding:20px 24px}
+  .cex .cl{margin-top:13px}
+  .cexl{margin-top:13px;list-style:none}
+  .cexl li{margin-top:9px;font-size:15px;line-height:1.7;color:var(--soft)}
+  .cexl li b{color:var(--ink);font-weight:600}
+  .ctot{margin-top:22px;padding-top:20px;border-top:1px solid var(--ink);
+    font-family:'Fraunces','Fraunces Fallback',serif;font-weight:300;font-size:20px;
+    line-height:1.42;color:var(--sig)}
+  .ctot b{font-weight:600}
+  @media (max-width:760px){
+    .cex{padding:16px 18px}
+    .costs h2{font-size:23px}
+  }
+
 /* extracted from inline style attributes — CSP style-src 'self' blocks those */
 .xs1{padding-top:44px}
 .xs2{font-size:56px}

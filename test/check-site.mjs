@@ -337,6 +337,7 @@ const currentClaimPages = [
   siteAudit,
   read("public/pricing.html"),
   read("public/specimen.html"),
+  read("public/waitlist.html")
 ];
 
 for (const claim of forbiddenClaims) {
@@ -398,7 +399,8 @@ const responsiveCss = [
   ["shared.css", ["@media (max-width:760px)", ".wrap{padding:0 20px}", ".navlinks{flex-wrap:wrap"]],
   ["index.css", ["@media (max-width:760px)", ".wrap{padding:0 20px}", ".navlinks{flex-wrap:wrap"]],
   ["pricing.css", ["@media (max-width:760px)", ".plan{grid-template-columns:1fr"]],
-  ["appraisal.css", ["@media (max-width:760px)", ".bandgrid{grid-template-columns:1fr"]]
+  ["appraisal.css", ["@media (max-width:760px)", ".bandgrid{grid-template-columns:1fr"]],
+  ["waitlist.css", ["@media (max-width:760px)", ".wrap{padding:0 20px}", ".navlinks{flex:1 1 100%;flex-wrap:wrap"]]
 ];
 for (const [file, needles] of responsiveCss) {
   const css = read(`public/${file}`);
@@ -416,6 +418,9 @@ const tapTargetCss = [
     [".logo{padding:11px 0}", ".navlinks a{padding:15px 0}", ".navcta{padding:15px 20px}", "footer a{padding:16px 0}"],
     ["border-radius:999px;padding:16px 20px"]],
   ["appraisal.css",
+    [".navcta{flex:1 1 100%;text-align:center;padding:15px 20px}"],
+    []],
+  ["waitlist.css",
     [".navcta{flex:1 1 100%;text-align:center;padding:15px 20px}"],
     []],
   ["brief-requested.css",
@@ -474,6 +479,7 @@ const fontPages = [
   ["audit page", siteAudit],
   ["pricing page", read("public/pricing.html")],
   ["specimen page", read("public/specimen.html")],
+  ["waitlist page", read("public/waitlist.html")],
   ["brief-requested page", read("public/brief-requested.html")]
 ];
 for (const [pageName, pageHtml] of fontPages) {
@@ -818,7 +824,8 @@ const servedPageUrls = new Set(
 for (const [clean, html] of [
   ["/appraisal", "/appraisal.html"],
   ["/pricing", "/pricing.html"],
-  ["/specimen", "/specimen.html"]
+  ["/specimen", "/specimen.html"],
+  ["/waitlist", "/waitlist.html"]
 ]) {
   if (servedPageUrls.has(`https://tinystudio.io${clean}`)) servedPageUrls.add(`https://tinystudio.io${html}`);
 }
@@ -872,6 +879,7 @@ const ownedPages = [
   ["audit page", siteAudit],
   ["specimen page", read("public/specimen.html")],
   ["pricing page", read("public/pricing.html")],
+  ["waitlist page", read("public/waitlist.html")],
   ["brief-requested page", read("public/brief-requested.html")]
 ];
 
@@ -988,6 +996,7 @@ const metaDescriptionPages = [
   ["audit page", siteAudit],
   ["pricing page", read("public/pricing.html")],
   ["specimen page", read("public/specimen.html")],
+  ["waitlist page", read("public/waitlist.html")]
 ];
 
 const seenDescriptions = new Map();
@@ -1024,6 +1033,7 @@ const ICON_PAGE_NAMES = new Map([
   ["appraisal.html", "appraisal page"],
   ["pricing.html", "pricing page"],
   ["specimen.html", "specimen page"],
+  ["waitlist.html", "waitlist page"],
   ["brief-requested.html", "brief-requested page"]
 ]);
 const publicHtmlFiles = readdirSync(new URL("../public", import.meta.url))
@@ -1074,6 +1084,7 @@ const faviconPages = [
   ["audit page", siteAudit],
   ["pricing page", read("public/pricing.html")],
   ["specimen page", read("public/specimen.html")],
+  ["waitlist page", read("public/waitlist.html")],
   ["brief-requested page", read("public/brief-requested.html")],
 ];
 
@@ -1118,6 +1129,7 @@ const beaconPages = [
   ["audit page", siteAudit],
   ["pricing page", read("public/pricing.html")],
   ["specimen page", read("public/specimen.html")],
+  ["waitlist page", read("public/waitlist.html")],
   ["brief-requested page", read("public/brief-requested.html")],
 ];
 
@@ -1144,6 +1156,7 @@ const socialSharePages = [
   ["audit page", siteAudit, "https://tinystudio.io/appraisal"],
   ["pricing page", read("public/pricing.html"), "https://tinystudio.io/pricing"],
   ["specimen page", read("public/specimen.html"), "https://tinystudio.io/specimen"],
+  ["waitlist page", read("public/waitlist.html"), "https://tinystudio.io/waitlist"],
   ["privacy page", read("public/privacy.html"), "https://tinystudio.io/privacy"],
   ["terms page", read("public/terms.html"), "https://tinystudio.io/terms"],
   ["contact page", read("public/contact.html"), "https://tinystudio.io/contact"]
@@ -1205,6 +1218,7 @@ const structuredDataPages = [
   ["audit page", siteAudit, "https://tinystudio.io/appraisal"],
   ["pricing page", read("public/pricing.html"), "https://tinystudio.io/pricing"],
   ["specimen page", read("public/specimen.html"), "https://tinystudio.io/specimen"],
+  ["waitlist page", read("public/waitlist.html"), "https://tinystudio.io/waitlist"],
 ];
 
 const ORGANIZATION_ID = "https://tinystudio.io/#organization";
@@ -1345,6 +1359,7 @@ const internalLinkPages = [
   ["audit page", siteAudit],
   ["pricing page", read("public/pricing.html")],
   ["specimen page", read("public/specimen.html")],
+  ["waitlist page", read("public/waitlist.html")],
   ["brief-requested page", read("public/brief-requested.html")]
 ];
 
@@ -1353,6 +1368,7 @@ const htmlPageTargets = {
   "appraisal.html": "/appraisal",
   "pricing.html": "/pricing",
   "specimen.html": "/specimen",
+  "waitlist.html": "/waitlist",
   "privacy.html": "/privacy",
   "terms.html": "/terms",
   "contact.html": "/contact",
@@ -1402,6 +1418,7 @@ const indexablePages = [
   { path: "/appraisal", html: siteAudit },
   { path: "/pricing", html: read("public/pricing.html") },
   { path: "/specimen", html: read("public/specimen.html") },
+  { path: "/waitlist", html: read("public/waitlist.html") },
   { path: "/privacy", html: read("public/privacy.html") },
   { path: "/terms", html: read("public/terms.html") },
   { path: "/contact", html: read("public/contact.html") }
@@ -1452,6 +1469,7 @@ const canonicalPages = [
   ["audit page", siteAudit, "https://tinystudio.io/appraisal"],
   ["pricing page", read("public/pricing.html"), "https://tinystudio.io/pricing"],
   ["specimen page", read("public/specimen.html"), "https://tinystudio.io/specimen"],
+  ["waitlist page", read("public/waitlist.html"), "https://tinystudio.io/waitlist"],
   ["privacy page", read("public/privacy.html"), "https://tinystudio.io/privacy"],
   ["terms page", read("public/terms.html"), "https://tinystudio.io/terms"],
   ["contact page", read("public/contact.html"), "https://tinystudio.io/contact"]
@@ -1496,6 +1514,7 @@ const titlePages = [
   ["audit page", siteAudit],
   ["pricing page", read("public/pricing.html")],
   ["specimen page", read("public/specimen.html")],
+  ["waitlist page", read("public/waitlist.html")],
   ["brief-requested page", read("public/brief-requested.html")]
 ];
 
@@ -1554,6 +1573,15 @@ if (!specimenCtaCss.includes(".band .cta")) {
 }
 if (!/\.band \.cta\{[^}]*padding:16px 24px/.test(specimenCtaCss)) {
   failures.push("Specimen band CTA must keep a >=44px tap target (padding:16px 24px).");
+}
+
+const waitlistFormHtml = read("public/waitlist.html");
+const waitlistFormAction = waitlistFormHtml.match(/<form\b[^>]*\baction="([^"]*)"/i)?.[1] ?? "";
+if (waitlistFormAction !== "/api/appraisal-requests") {
+  failures.push("The waitlist page must post to /api/appraisal-requests, the endpoint that fills the waitlist table and moves the six-a-month counter.");
+}
+if (!/<label\b[^>]*\bfor="intake-email"/i.test(waitlistFormHtml)) {
+  failures.push("The waitlist page must keep the labelled email input, so the waitlist row can be confirmed.");
 }
 
 for (const migration of ["migrations/0002_agent_runs.sql", "migrations/0003_agent_usage_limits.sql"]) {  if (!existsSync(new URL(`../${migration}`, import.meta.url))) {

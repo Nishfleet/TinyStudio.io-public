@@ -13,6 +13,7 @@ const PAGES = [
   ["appraisal page", "appraisal.html"],
   ["pricing page", "pricing.html"],
   ["specimen page", "specimen.html"],
+  ["waitlist page", "waitlist.html"],
   ["brief-requested page", "brief-requested.html"]
 ];
 
@@ -124,4 +125,4 @@ if (failures.length) {
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log("All five pages load self-hosted fonts, no preload, with only same-origin stylesheets blocking.");
+console.log("All six pages load self-hosted fonts, no preload, with only same-origin stylesheets blocking.");

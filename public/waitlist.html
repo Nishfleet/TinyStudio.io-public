@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Six appraisals a month. When the sixth is taken the intake closes until the first of the next month. This page shows what is left and holds your place in line.">
+<title>TinyStudio — The appraisal waitlist</title>
+<link rel="canonical" href="https://tinystudio.io/waitlist">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<meta property="og:title" content="TinyStudio — The appraisal waitlist">
+<meta property="og:description" content="Six appraisals a month. When the sixth is taken the intake closes until the first of the next month. This page shows what is left and holds your place in line.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://tinystudio.io/waitlist">
+<meta property="og:image" content="https://tinystudio.io/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="TinyStudio — The appraisal waitlist">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="TinyStudio — The appraisal waitlist">
+<meta name="twitter:description" content="Six appraisals a month. When the sixth is taken the intake closes until the first of the next month. This page shows what is left and holds your place in line.">
+<meta name="twitter:image" content="https://tinystudio.io/og-image.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://tinystudio.io/#organization",
+      "name": "TinyStudio",
+      "url": "https://tinystudio.io/",
+      "logo": "https://tinystudio.io/apple-touch-icon.png",
+      "description": "TinyStudio: the free leak audit of high-ticket service homepages. Each fault named in order of what it costs you, with the fix beside it. Six a month."
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://tinystudio.io/#website",
+      "url": "https://tinystudio.io/",
+      "name": "TinyStudio",
+      "inLanguage": "en",
+      "publisher": { "@id": "https://tinystudio.io/#organization" }
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://tinystudio.io/waitlist#webpage",
+      "url": "https://tinystudio.io/waitlist",
+      "name": "TinyStudio — The appraisal waitlist",
+      "description": "Six appraisals a month. When the sixth is taken the intake closes until the first of the next month. This page shows what is left and holds your place in line.",
+      "inLanguage": "en",
+      "isPartOf": { "@id": "https://tinystudio.io/#website" },
+      "about": { "@id": "https://tinystudio.io/#organization" }
+    }
+  ]
+}
+</script>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="shared.css">
+
+<link rel="stylesheet" href="waitlist.css">
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="logo" href="/">Tiny<span>Studio</span></a>
+    <div class="navlinks">
+      <a href="/appraisal">The appraisal</a>
+      <a href="/specimen">Specimen</a>
+      <a href="/pricing">Pricing</a>
+      <a class="navcta" href="/#start">Request the appraisal</a>
+    </div>
+  </nav>
+
+  <div class="phead">
+    <span class="orn sc">The waitlist</span>
+    <h1>Six a month. When they are gone, <em>you are next.</em></h1>
+    <p class="sub">Six homepages are read each month, and the sixth closes the month until the first of the next. This page shows how many are left right now. When there are none, the same form holds your place for the next one — the same read, the same record, and one email telling you when it opens.</p>
+    <form class="lead two" id="start" action="/api/appraisal-requests" method="post">
+      <label for="intake-website"><span>Your website domain</span><input type="text" name="website" id="intake-website" required inputmode="url" autocomplete="url" placeholder="yourwebsite.com" pattern="(https?://)?([a-zA-Z0-9\-]+\.)+[a-zA-Z]{2,}(:[0-9]+)?(/[^\s]*)?" title="Enter your domain, like example.com"></label>
+      <label for="intake-business"><span>Type of business</span><input type="text" name="businessType" id="intake-business" required maxlength="120" placeholder="Private dental clinic"></label>
+      <label for="intake-deal"><span>Approximate average deal value (USD)</span><input type="text" name="dealValue" id="intake-deal" required inputmode="numeric" pattern="[0-9,\s$]+" title="Whole dollars, like 8000" placeholder="8000"></label>
+      <label for="intake-leads"><span>Leads a month, approximately</span><input type="text" name="monthlyLeads" id="intake-leads" required inputmode="numeric" pattern="[0-9,\s]+" title="A whole number, like 40" placeholder="40"></label>
+      <label for="intake-name"><span>Your name</span><input type="text" name="name" id="intake-name" required maxlength="120" autocomplete="name"></label>
+      <label for="intake-email"><span>Your work email</span><input type="email" name="email" id="intake-email" required autocomplete="email" placeholder="you@company.com"></label>
+      <label for="intake-referral"><span>Referral code, if you have one</span><input type="text" name="referral" id="intake-referral" maxlength="64" autocomplete="off"></label>
+      <button>Request the appraisal</button>
+    </form>
+    <p class="micro" data-slots-status role="status"></p>
+    <p class="micro">The four numbers are the ones the record is costed from. We ask for them here so the read can start the moment a slot opens.</p>
+    <div class="urg"><i></i><span><b>Six a month.</b> <span data-slots-counter></span></span></div>
+  </div>
+
+  <section>
+    <h2>How the six run</h2>
+    <p class="lede">Six sites a month, and no more, because each one is read by hand and signed by a person before it reaches you. The counter above is the truth about how many are left.</p>
+    <div class="rows">
+      <div class="row"><span class="t">Read each month</span><span class="v">Six, by hand</span></div>
+      <div class="row"><span class="t">From request to findings</span><span class="v">Five working days</span></div>
+      <div class="row"><span class="t">What it costs you</span><span class="v">Nothing</span></div>
+      <div class="row"><span class="t">Whether a call happens</span><span class="v">No</span></div>
+      <div class="row"><span class="t">Who keeps the findings</span><span class="v">You do</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What the waitlist does</h2>
+    <p class="lede">When the sixth request of the month lands, the intake closes and this form stops booking this month and starts holding places for the next one. Nothing is charged and nothing is taken from you.</p>
+    <div class="rows">
+      <div class="row"><span class="t">What the list holds</span><span class="v">Your site, your numbers, your email</span></div>
+      <div class="row"><span class="t">What you get back</span><span class="v">One email, when a slot opens</span></div>
+      <div class="row"><span class="t">What it costs</span><span class="v">Nothing</span></div>
+      <div class="row"><span class="t">What it never becomes</span><span class="v">A newsletter, or a sequence</span></div>
+      <div class="row"><span class="t">If you ask twice</span><span class="v">Safe to send again</span></div>
+    </div>
+    <p class="micro">Your details run one read and send one record. They are not sold, not shared, and not used to sell you anything else. <a class="xa1" href="/privacy">Read the privacy note &rarr;</a></p>
+  </section>
+
+  <section id="before">
+    <h2>Read a finished record first</h2>
+    <p class="lede">The specimen is one appraisal, published in full: every fault named in order of what it costs, the evidence behind each one, and every number traced to the table and the source it came from. It is the shape of what lands in your inbox.</p>
+    <p class="lede">If you already know what the appraisal checks, the form is at the top of this page. Thirty seconds to ask.</p>
+  </section>
+
+  <div class="band">
+    <h2>The read is free. The queue is six long.</h2>
+    <p>Four passes, by hand, on the one page your revenue depends on — each fault named in order of what it costs you, with the fix beside it. Thirty seconds to ask. Findings inside five working days, yours to keep either way.</p>
+    <a class="cta" href="#start">Request the appraisal</a>
+    <div class="note">No revenue, ranking, ROAS, conversion, booked-call or sales-volume guarantees. Only the work.</div>
+  </div>
+
+  <footer>
+    <span class="sc">TinyStudio · tinystudio.io</span>
+    <span class="sc"><a href="/pricing">Pricing</a></span>
+    <span class="sc">No revenue, ranking or booking guarantees. Only the work.</span>
+    <span class="sc"><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/contact">Contact</a></span>
+  </footer>
+</div>
+
+<script src="waitlist.js" defer></script>
+</body>
+</html>
