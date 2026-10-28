@@ -19,7 +19,6 @@
 
 /* extracted from inline style attributes — CSP style-src 'self' blocks those */
 .xa1{color:var(--brass)}
-.urg a{color:var(--brass-lt);text-decoration:underline;text-underline-offset:3px}
 
 /* mobile: deliberate two-tier nav + stacked content flow, so nothing runs
    off-canvas at 390x844. Desktop (above 760px) is untouched. */

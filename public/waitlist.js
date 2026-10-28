@@ -25,10 +25,15 @@
 
   function say(text) { if (status) status.textContent = text; }
 
+  function counterUnavailable() {
+    say('The slot counter did not load. Send the form anyway: a request made this month books a slot if one is left, and joins the waitlist if none is.');
+  }
+
   function monthName(month) { return MONTHS[Number(String(month).slice(5, 7)) - 1] || ''; }
 
   function showSlots(slots) {
-    if (!counter || !slots || !slots.ok) return;
+    if (!counter) return;
+    if (!slots || !slots.ok) { counterUnavailable(); return; }
     counter.textContent = slots.full
       ? 'All six for ' + monthName(slots.month) + ' are taken. Requests join the waitlist; the next open slot is ' + slots.nextSlotDate + '.'
       : slots.taken + ' of ' + slots.limit + ' taken for ' + monthName(slots.month) + '.';
@@ -40,7 +45,7 @@
     return fetch('/api/appraisal-slots', { headers: { Accept: 'application/json' } })
       .then(function (res) { return res.json(); })
       .then(showSlots)
-      .catch(function (err) { console.error(err); });
+      .catch(function (err) { console.error(err); counterUnavailable(); });
   }
 
   if (form && window.fetch) {

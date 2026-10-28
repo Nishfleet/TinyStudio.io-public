@@ -1583,6 +1583,16 @@ if (waitlistFormAction !== "/api/appraisal-requests") {
 if (!/<label\b[^>]*\bfor="intake-email"/i.test(waitlistFormHtml)) {
   failures.push("The waitlist page must keep the labelled email input, so the waitlist row can be confirmed.");
 }
+const waitlistCss = read("public/waitlist.css");
+if (!waitlistCss.includes(".band .cta")) {
+  failures.push("waitlist.css must style the band conversion CTA (.band .cta).");
+}
+if (!/\.band \.cta\{[^}]*padding:16px 24px/.test(waitlistCss)) {
+  failures.push("Waitlist band CTA must keep a >=44px tap target (padding:16px 24px).");
+}
+if (/\.urg a\{[^}]*color:var\(--brass-lt\)/.test(read("public/appraisal.css"))) {
+  failures.push("appraisal.css must not restyle the urgency strip link away from the site's shared inline-link colour.");
+}
 
 for (const migration of ["migrations/0002_agent_runs.sql", "migrations/0003_agent_usage_limits.sql"]) {  if (!existsSync(new URL(`../${migration}`, import.meta.url))) {
     failures.push(`Missing migration: ${migration}`);
