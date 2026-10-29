@@ -1,4 +1,4 @@
-import { engagementAllows } from "./guardrails.js";
+import { engagementAllows, APPLIED_LINE_STATES } from "./guardrails.js";
 import {
   addCorrectionLine,
   advanceEngagement,
@@ -36,8 +36,6 @@ export async function deskDraftLines(env) {
   return result.results ?? [];
 }
 
-const APPLIED_LINE_STATES = ["approved", "recorded"];
-
 export async function addDeskCorrectionLine(env, input, reviewer, at) {
   const engagement = await engagementById(env, input.engagementId);
   if (!engagement) throw Object.assign(new Error("engagement not found"), { code: "NOT_FOUND" });
@@ -72,8 +70,8 @@ export async function reviewDeskCorrectionLine(env, input, reviewer, at) {
   if (engagement.status === "in_correction") {
     const lines = await correctionLines(env, engagement.id);
     const closed = lines.every((row) => row.status !== "draft");
-    const proved = lines.some((row) => APPLIED_LINE_STATES.includes(row.status));
-    if (closed && proved) {
+    const applied = lines.some((row) => APPLIED_LINE_STATES.includes(row.status));
+    if (closed && applied) {
       try {
         await republishRecord(env, engagement.request_id, at);
       } catch (error) {

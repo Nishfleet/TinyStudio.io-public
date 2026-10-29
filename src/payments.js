@@ -28,7 +28,8 @@ export function dodoConfigStatus(env = {}) {
     mode: dodoEnvironment(env) || "live",
     productId: Boolean(String(env.DODO_TINYSTUDIO_PRODUCT_ID || "").trim()),
     apiKey: Boolean(String(env.DODO_TINYSTUDIO_API_KEY || "").trim()),
-    webhookSecret: Boolean(String(env.DODO_TINYSTUDIO_WEBHOOK_SECRET || "").trim())
+    webhookSecret: Boolean(String(env.DODO_TINYSTUDIO_WEBHOOK_SECRET || "").trim()),
+    webhookSecretValid: webhookSecretUsable(env.DODO_TINYSTUDIO_WEBHOOK_SECRET)
   };
 }
 
@@ -48,6 +49,15 @@ function checkoutHostAllowed(value) {
 export function safeDodoCheckoutUrl(value) {
   const text = String(value || "").trim();
   return checkoutHostAllowed(text) ? text : "";
+}
+
+export function webhookSecretUsable(secret) {
+  try {
+    new Webhook(secret);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function verifyDodoWebhookSignature({ payload, webhookId, webhookTimestamp, webhookSignature, secret }) {
@@ -186,6 +196,9 @@ export async function openEngagementFromPayment(env, { payment, at }) {
 export async function handleDodoWebhook(env, { rawBody, headers }, at = new Date().toISOString()) {
   if (!dodoWebhookReady(env)) {
     return { ok: false, status: 503, body: { error: "webhook_secret_missing" } };
+  }
+  if (!webhookSecretUsable(env.DODO_TINYSTUDIO_WEBHOOK_SECRET)) {
+    return { ok: false, status: 503, body: { error: "webhook_secret_invalid" } };
   }
   const { webhookId, webhookTimestamp, webhookSignature } = parseWebhookHeaders(headers);
   if (!webhookId || !webhookTimestamp || !webhookSignature) {

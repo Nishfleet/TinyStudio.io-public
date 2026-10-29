@@ -1,7 +1,7 @@
 import costing from "../config/costing.json" with { type: "json" };
 import offer from "../config/offer.json" with { type: "json" };
 import { advanceEngagement, correctionLines, markLinesRecorded, openEngagement } from "./engagement.js";
-import { assertPublishableLines, ENGAGEMENT_SETTLED_STATUSES } from "./guardrails.js";
+import { APPLIED_LINE_STATES, assertPublishableLines, ENGAGEMENT_SETTLED_STATUSES, REVIEWED_LINE_STATES } from "./guardrails.js";
 
 const ROWS = new Map(costing.rows.map((row) => [row.faultType, row]));
 
@@ -43,8 +43,6 @@ function proposalStartDate(renderedAt) {
 }
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const APPLIED_LINE_STATES = ["approved", "recorded"];
-const REVIEWED_LINE_STATES = [...APPLIED_LINE_STATES, "rejected"];
 
 function longDate(iso) {
   const parsed = new Date(`${iso}T00:00:00Z`);
