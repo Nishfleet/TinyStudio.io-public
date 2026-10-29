@@ -179,7 +179,7 @@ test("webhook: a signed payment.succeeded opens the engagement and logs the webh
   const logged = sqlite.prepare("SELECT * FROM dodo_webhook_events WHERE webhook_id = 'wh_123'").get();
   assert.equal(logged.status, "processed");
   assert.equal(logged.event_type, "payment.succeeded");
-  const events = sqlite.prepare("SELECT from_status, to_status, type FROM engagement_events WHERE engagement_id = ? ORDER BY created_at").all(engagement.id);
+  const events = sqlite.prepare("SELECT from_status, to_status, type FROM engagement_events WHERE engagement_id = ? ORDER BY created_at, id").all(engagement.id);
   assert.deepEqual(events.map((row) => [row.type, row.from_status, row.to_status]), [
     ["engagement_opened", null, "requested"],
     ["status_changed", "requested", "appraised"],

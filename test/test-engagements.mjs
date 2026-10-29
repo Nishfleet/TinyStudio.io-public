@@ -65,7 +65,7 @@ test("engagement: one request has one engagement, opened once", async () => {
   const second = await openEngagement(env, "req-1", "2026-10-12T09:05:00.000Z");
   assert.equal(second.id, first.id, "a second open returns the same engagement");
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM engagements").get().n, 1);
-  const events = sqlite.prepare("SELECT type, from_status, to_status FROM engagement_events ORDER BY created_at").all();
+  const events = sqlite.prepare("SELECT type, from_status, to_status FROM engagement_events ORDER BY created_at, id").all();
   assert.deepEqual(events.map(({ type, from_status, to_status }) => ({ type, from_status, to_status })), [
     { type: "engagement_opened", from_status: null, to_status: "requested" }
   ]);
@@ -85,7 +85,7 @@ test("engagement: publishing the record walks requested to proposed, and the pay
   assert.equal(withCheckout.checkout_session_id, "cs_42");
   const paid = await advanceEngagement(env, withCheckout, "paid", { type: "payment_recorded", detail: "pay_42", at: "2026-10-12T12:00:00.000Z" });
   assert.equal(paid.status, "paid");
-  const journal = sqlite.prepare("SELECT type, from_status, to_status FROM engagement_events WHERE engagement_id = ? ORDER BY created_at").all(engagement.id);
+  const journal = sqlite.prepare("SELECT type, from_status, to_status FROM engagement_events WHERE engagement_id = ? ORDER BY created_at, id").all(engagement.id);
   assert.deepEqual(journal.map(({ type, from_status, to_status }) => ({ type, from_status, to_status })), [
     { type: "engagement_opened", from_status: null, to_status: "requested" },
     { type: "status_changed", from_status: "requested", to_status: "appraised" },

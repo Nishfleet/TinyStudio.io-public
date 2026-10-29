@@ -208,7 +208,7 @@ test("engagement walk: a pre-existing engagement is advanced by its state, not b
   const engagement = sqlite.prepare("SELECT status FROM engagements WHERE id = 'e-pre'").get();
   assert.equal(engagement.status, "proposed", "the engagement walks from its own state, so a record past version one still reaches the proposal");
 
-  const journal = sqlite.prepare("SELECT type, from_status, to_status FROM engagement_events WHERE engagement_id = 'e-pre' ORDER BY created_at").all();
+  const journal = sqlite.prepare("SELECT type, from_status, to_status FROM engagement_events WHERE engagement_id = 'e-pre' ORDER BY created_at, id").all();
   assert.deepEqual(journal.map(({ type, from_status, to_status }) => ({ type, from_status, to_status })), [
     { type: "status_changed", from_status: "requested", to_status: "appraised" },
     { type: "status_changed", from_status: "appraised", to_status: "proposed" }

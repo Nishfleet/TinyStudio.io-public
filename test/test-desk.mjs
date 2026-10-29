@@ -268,7 +268,7 @@ test("desk: a rejected line is not published, and the last approval republishes 
   assert.equal(kickoff.status, "tracking");
   const afterKickoff = objects.get(`records/${recordId}.html`);
   assert.ok(afterKickoff.includes("Tracking starts 1 November 2026."), "the kickoff note is published on the record");
-  const journal = sqlite.prepare("SELECT type FROM engagement_events WHERE engagement_id = ? ORDER BY created_at").all(engagementId).map((row) => row.type);
+  const journal = sqlite.prepare("SELECT type FROM engagement_events WHERE engagement_id = ? ORDER BY created_at, id").all(engagementId).map((row) => row.type);
   assert.deepEqual(journal, [
     "engagement_opened",
     "status_changed",
