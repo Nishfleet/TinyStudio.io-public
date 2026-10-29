@@ -51,24 +51,9 @@ export function safeDodoCheckoutUrl(value) {
   return checkoutHostAllowed(text) ? text : "";
 }
 
-export function decodeWebhookSecret(secret) {
-  const raw = String(secret ?? "").trim();
-  if (!raw) throw new Error("the Dodo webhook secret is empty");
-  const body = raw.startsWith("whsec_") ? raw.slice(6) : raw;
-  if (!body) throw new Error("the Dodo webhook secret is empty");
-  let decoded;
-  try {
-    decoded = atob(body);
-  } catch {
-    throw new Error("the Dodo webhook secret is not valid base64");
-  }
-  if (!decoded) throw new Error("the Dodo webhook secret is empty");
-  return Uint8Array.from(decoded, (char) => char.charCodeAt(0));
-}
-
 export function webhookSecretUsable(secret) {
   try {
-    decodeWebhookSecret(secret);
+    new Webhook(secret);
     return true;
   } catch {
     return false;
@@ -77,14 +62,8 @@ export function webhookSecretUsable(secret) {
 
 export function verifyDodoWebhookSignature({ payload, webhookId, webhookTimestamp, webhookSignature, secret }) {
   if (!payload || !webhookId || !webhookSignature) return false;
-  let key;
   try {
-    key = decodeWebhookSecret(secret);
-  } catch {
-    return false;
-  }
-  try {
-    new Webhook(key, { format: "raw" }).verify(String(payload), {
+    new Webhook(secret).verify(String(payload), {
       "webhook-id": webhookId,
       "webhook-timestamp": webhookTimestamp,
       "webhook-signature": webhookSignature

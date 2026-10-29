@@ -8,7 +8,6 @@ import { publishRecord } from "../src/record.js";
 import {
   createDodoCheckout,
   dodoConfigStatus,
-  decodeWebhookSecret,
   extractDodoPayment,
   handleDodoWebhook,
   paymentMatchesOffer,
@@ -547,20 +546,30 @@ test("webhook: the route refuses an unsigned POST and never opens an engagement"
   assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagement.id).status, "paid");
 });
 
-test("webhook secret: a malformed or empty secret fails closed with a clear error", () => {
-  assert.throws(() => decodeWebhookSecret(""), /webhook secret is empty/);
-  assert.throws(() => decodeWebhookSecret("   "), /webhook secret is empty/);
-  assert.throws(() => decodeWebhookSecret("whsec_"), /webhook secret is empty/);
-  assert.throws(() => decodeWebhookSecret("not-base64!!"), /not valid base64/);
-  assert.throws(() => decodeWebhookSecret("whsec_not-base64!!"), /not valid base64/);
+test("webhook secret: the library's own decoder is the only one, and a bad secret fails closed", () => {
   assert.equal(webhookSecretUsable(""), false);
+  assert.equal(webhookSecretUsable("   "), false);
   assert.equal(webhookSecretUsable("whsec_"), false);
   assert.equal(webhookSecretUsable("not-base64!!"), false);
-  assert.equal(webhookSecretUsable(WEBHOOK_SECRET), true);
+  assert.equal(webhookSecretUsable("whsec_not-base64!!"), false);
+  assert.equal(webhookSecretUsable(undefined), false);
+  assert.equal(webhookSecretUsable(WEBHOOK_SECRET), true, "the secret Dodo issues, with its whsec_ prefix, is usable");
 
-  const decoded = decodeWebhookSecret(WEBHOOK_SECRET);
-  assert.equal(Buffer.from(decoded).toString("utf8"), "tinystudio-test-secret-key", "the secret decodes to the key Dodo signed with");
-  assert.equal(Buffer.from(decodeWebhookSecret(Buffer.from("tinystudio-test-secret-key").toString("base64"))).toString("utf8"), "tinystudio-test-secret-key");
+  const bareKey = Buffer.from("tinystudio-test-secret-key").toString("base64");
+  const signed = signedEvent({ webhookId: "wh_prefix" });
+  const verify = (secret) =>
+    verifyDodoWebhookSignature({
+      payload: signed.body,
+      webhookId: signed.headers["webhook-id"],
+      webhookTimestamp: signed.headers["webhook-timestamp"],
+      webhookSignature: signed.headers["webhook-signature"],
+      secret
+    });
+  assert.equal(verify(bareKey), true, "a signature made with the bare base64 key verifies");
+  assert.equal(verify(`whsec_${bareKey}`), true, "the whsec_ form of that key is the same key");
+  assert.equal(verify(""), false, "an empty secret verifies nothing");
+  assert.equal(verify("not-base64!!"), false, "a secret that is not base64 verifies nothing");
+  assert.equal(verify(Buffer.from("a-different-tinystudio-key").toString("base64")), false, "a well-formed secret that is not the signing key verifies nothing");
 });
 
 test("webhook secret: a malformed secret is refused before the signature is read", async () => {
