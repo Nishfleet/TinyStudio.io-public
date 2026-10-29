@@ -18,6 +18,12 @@
 # is the invisibility this job exists to end. The age release itself is
 # digest-pinned.
 #
+# The private key has one copy, on the fleet host, so the restore path is that
+# host's own backup rather than anything this repository holds: losing the host
+# loses every artifact, and a rotation leaves the artifacts the old key sealed
+# unreadable. Keep the offline copy, and rotate the key only with the artifacts
+# it covers.
+#
 # The dump is one stock command, `wrangler d1 export --remote`: it starts the
 # D1 export API, follows the returned bookmark to the finished dump, downloads
 # the signed URL and writes the SQL file. That replaces the hand-built export
@@ -35,13 +41,19 @@
 # cancelled sibling.
 #
 # Retention 90 days keeps 13 weekly points.
+#
+# Mondays 05:37 UTC is off-peak for this site: the export holds a write lock
+# while it runs, so moving the cron onto a working hour takes the appraisal
+# form's writes with it.
 name: D1 weekly backup
 
 on:
   schedule:
     # Mondays 05:37 UTC, the same minute as the sibling backups.
     - cron: "37 5 * * 1"
-  workflow_dispatch: {} # a manual run for restore drills
+  # A manual export. A restore drill is the other half, and it needs the age
+  # private key, which this runner must never hold.
+  workflow_dispatch: {}
 
 concurrency:
   group: d1-export
@@ -61,7 +73,6 @@ jobs:
         database:
           - name: tinystudio_email_signups
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: f670a698e17bf160c8e4679823e68916
       AGE_RECIPIENT: age1650j6pxe55udk93gv3qsjeugfrdkhazc3ynpydjm64qm8k7fvvjqc093e4
       DB_NAME: ${{ matrix.database.name }}
@@ -75,27 +86,38 @@ jobs:
           cache: npm
       # Wrangler comes from the committed lockfile (4.152.0), not a floating
       # `npx` cache: pulling the moving latest tag broke every CI run repo-wide
-      # on 2026-08-11 (upstream publish E404).
+      # on 2026-08-11 (upstream publish E404). `--no-install` makes that pin
+      # the only wrangler this job can run, so a lockfile that no longer
+      # carries it fails here instead of quietly fetching a newer one.
       - run: npm ci
       - name: Install age, pinned by digest
         env:
           AGE_VERSION: v1.3.2
           AGE_LINUX_AMD64_SHA256: cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/age.tar.gz" "https://github.com/FiloSottile/age/releases/download/$AGE_VERSION/age-$AGE_VERSION-linux-amd64.tar.gz"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$RUNNER_TEMP/age.tar.gz" "https://github.com/FiloSottile/age/releases/download/$AGE_VERSION/age-$AGE_VERSION-linux-amd64.tar.gz"
           echo "$AGE_LINUX_AMD64_SHA256  $RUNNER_TEMP/age.tar.gz" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/age-bin"
           tar -xzf "$RUNNER_TEMP/age.tar.gz" -C "$RUNNER_TEMP/age-bin" --strip-components=1 age/age
           test -x "$RUNNER_TEMP/age-bin/age"
       - name: Dump and seal ${{ matrix.database.name }}
+        env:
+          # The token lives in this step and nowhere else, so `npm ci` and every
+          # dependency install script above run without a credential that can
+          # export production D1.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           umask 077
           test -n "$AGE_RECIPIENT" || { echo "::error::the age recipient is unset: AGE_RECIPIENT in .github/workflows/d1-export.yml must be the backup key's public key — the backup refuses to ship plaintext dumps"; exit 1; }
+          # Prove the recipient parses before the export runs: a typo'd key is
+          # an age error here, not a week lost after the dump.
+          printf x | "$RUNNER_TEMP/age-bin/age" -r "$AGE_RECIPIENT" >/dev/null \
+            || { echo "::error::the age recipient is not a valid age public key: AGE_RECIPIENT in .github/workflows/d1-export.yml must be the backup key's public key"; exit 1; }
           mkdir -p "$RUNNER_TEMP/d1-export"
           file="$RUNNER_TEMP/d1-export/$DB_NAME-$(date -u +%Y%m%d).sql"
           # `-y` skips wrangler's interactive "this locks the database" prompt,
           # which no runner can answer.
-          npx wrangler d1 export "$DB_NAME" --remote -y --output "$file" \
+          npx --no-install wrangler d1 export "$DB_NAME" --remote -y --output "$file" \
             || { echo "::error::$DB_NAME export: wrangler d1 export failed"; exit 1; }
           test -s "$file" || { echo "::error::$DB_NAME export: the dump is empty"; exit 1; }
           echo "exported $DB_NAME -> ${file##*/} ($(wc -c < "$file") bytes, sha256 $(sha256sum "$file" | cut -d' ' -f1))"
