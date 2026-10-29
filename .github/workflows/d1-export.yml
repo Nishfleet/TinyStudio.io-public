@@ -31,9 +31,13 @@
 # no-hand-built-orchestration gate fails by design: a quiet poll loop in shell
 # is hand-built orchestration, and the stock tool already owns that wait.
 #
-# Wrangler is the fleet's last-resort Cloudflare tool. Nish approved this one
-# command, `wrangler d1 export`, for the weekly D1 backups, and every other
-# Cloudflare call in these repositories uses `cf`.
+# Wrangler is the fleet's last-resort Cloudflare tool: every other Cloudflare
+# call in these repositories goes through `cf`. It is used here for one command,
+# `wrangler d1 export`, because that command owns the D1 export wait. The
+# sibling repositories hold a copy of drive's job, which starts the export over
+# REST and polls the bookmark by hand (fleet-ops#10829). That shape is the
+# hand-built orchestration the gate fails, so this job differs from its siblings
+# on purpose.
 #
 # The matrix keeps the same shape as the other repositories that hold this job,
 # with the one database this repository deploys: GitHub runs one job per
@@ -43,8 +47,8 @@
 # Retention 90 days keeps 13 weekly points.
 #
 # Mondays 05:37 UTC is off-peak for this site: the export holds a write lock
-# while it runs, so moving the cron onto a working hour takes the appraisal
-# form's writes with it.
+# while it runs, so moving the cron onto a working hour takes the waitlist
+# signup writes with it.
 name: D1 weekly backup
 
 on:
@@ -84,11 +88,6 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-      # Wrangler comes from the committed lockfile (4.152.0), not a floating
-      # `npx` cache: pulling the moving latest tag broke every CI run repo-wide
-      # on 2026-08-11 (upstream publish E404). `--no-install` makes that pin
-      # the only wrangler this job can run, so a lockfile that no longer
-      # carries it fails here instead of quietly fetching a newer one.
       - run: npm ci
       - name: Install age, pinned by digest
         env:
@@ -117,6 +116,13 @@ jobs:
           file="$RUNNER_TEMP/d1-export/$DB_NAME-$(date -u +%Y%m%d).sql"
           # `-y` skips wrangler's interactive "this locks the database" prompt,
           # which no runner can answer.
+          #
+          # Wrangler comes from the committed lockfile (4.152.0), not a floating
+          # `npx` cache: pulling the moving latest tag broke every CI run
+          # repo-wide on 2026-08-11 (upstream publish E404). `--no-install`
+          # makes that pin the only wrangler this job can run, so a lockfile
+          # that no longer carries it fails here instead of quietly fetching a
+          # newer one.
           npx --no-install wrangler d1 export "$DB_NAME" --remote -y --output "$file" \
             || { echo "::error::$DB_NAME export: wrangler d1 export failed"; exit 1; }
           test -s "$file" || { echo "::error::$DB_NAME export: the dump is empty"; exit 1; }
