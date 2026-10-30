@@ -7,11 +7,15 @@ ciphertext as the GitHub artifact `d1-backup-tinystudio_email_signups` (90 days,
 decrypts it, loads it into a local D1 database, and counts rows to prove the load
 worked.
 
-The producer landed with Nishfleet/TinyStudio.io-public#89, but its first run
-failed because the D1 database it exports is the one the account no longer
-holds (Nishfleet/TinyStudio.io-public#74). Until that is fixed and one weekly
-run goes green, the repository has no backup artifact and this drill has
-nothing to restore.
+Until one weekly run goes green, the repository has no backup artifact and
+this drill has nothing to restore.
+
+> **Status (2026-10-30).** The producer landed in
+> [Nishfleet/TinyStudio.io-public#89](https://github.com/Nishfleet/TinyStudio.io-public/issues/89),
+> but its first run failed because the D1 database it exports is the one the
+> account no longer holds
+> ([Nishfleet/TinyStudio.io-public#74](https://github.com/Nishfleet/TinyStudio.io-public/issues/74)).
+> Delete this note once a weekly run has gone green.
 
 **Warning: the decrypted dump holds real customer email addresses from the
 waitlist form.** Keep it in a scratch directory that is outside the repository,
@@ -116,11 +120,15 @@ npx --no-install wrangler d1 execute tinystudio_email_signups \
 
 `migration_rows` must be non-zero. Zero rows, or `no such table:
 d1_migrations`, means the dump did not load. It must also stay at or below the
-number of migration files in the repository (`ls migrations/*.sql | wc -l`,
-which is 7 today): a dump holding more rows than that was sealed from a
-database carrying a migration this repository does not have, so it is not this
-database's dump. Fewer rows mean the database is behind the repository's
-migrations, which is a note for the report, not a failed drill.
+number of migration files in the repository (`ls migrations/*.sql | wc -l`):
+a dump holding more rows than that was sealed from a database carrying a
+migration this repository does not have, so it is not this database's dump.
+Fewer rows mean the database is behind the repository's migrations, which is a
+note for the report, not a failed drill.
+
+The D1 database is named `tinystudio_email_signups` and the table inside it is
+`email_signups`. The name `tinystudio_email_signups` goes to `wrangler d1
+execute`, and `email_signups` goes to the SQL.
 
 `email_signups` is the customer table, and its count may legitimately be zero:
 a site nobody has signed up on yet exports a dump with no signup rows, and
@@ -144,10 +152,12 @@ were skipped, and the drill failed even though the count is above zero.
 `grep -c ';$'` counts lines that end in a semicolon, and wrangler's export
 writes one statement per line, with a value that holds a newline escaped as
 `replace(..., char(10))` and a value that holds a semicolon left inside its
-quotes. So for this format the line count is the statement count. If the two
-numbers ever differ the other way round, the dump's format changed and the
-line count is the wrong measure: count the statements in the dump again before
-calling the drill failed.
+quotes. So for this format the line count is the statement count. The export
+also ends its last statement with a semicolon, so the count is not off by one.
+
+If the two numbers ever differ, the dump's format changed and the line count
+is the wrong measure: count the statements in the dump again before calling
+the drill failed.
 
 To see every table the dump created, run the same command with:
 
@@ -176,7 +186,8 @@ and the local database are the only copies that are not sealed, so delete both.
 
 Add one line here for each real drill: the date, the artifact date, and the row
 count. Whoever runs the drill writes the row, so the table cannot stay empty
-because nobody thought to update it.
+because nobody thought to update it. Replace the placeholder row, not sit
+beside it.
 
 | drill date | artifact | `email_signups` rows |
 |---|---|---|
