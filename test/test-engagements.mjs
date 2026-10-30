@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { recordsMock } from "./records-mock.js";
 import {
   ENGAGEMENT_ID,
   addCorrectionLine,
@@ -44,14 +45,7 @@ function freshEnv() {
   const env = {
     DB: d1(sqlite),
     EMAIL: { async send(message) { sent.push(message); } },
-    RECORDS: {
-      async put(key, body) { objects.set(key, body); },
-      async get(key) {
-        if (!objects.has(key)) return null;
-        const body = objects.get(key);
-        return { body, text: async () => body };
-      }
-    }
+    RECORDS: recordsMock(objects)
   };
   return { sqlite, env, sent, objects };
 }

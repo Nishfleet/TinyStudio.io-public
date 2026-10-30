@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { recordsMock } from "./records-mock.js";
 import worker from "../src/worker.js";
 import { publishRecord } from "../src/record.js";
 import {
@@ -65,14 +66,7 @@ function freshEnv() {
     DB: d1(sqlite),
     APPRAISAL_LIMITER: fakeLimiter(50),
     EMAIL: { async send(message) { sent.push(message); } },
-    RECORDS: {
-      async put(key, body) { objects.set(key, body); },
-      async get(key) {
-        if (!objects.has(key)) return null;
-        const value = objects.get(key);
-        return { body: value, text: async () => value, json: async () => JSON.parse(value) };
-      }
-    }
+    RECORDS: recordsMock(objects)
   };
   return { sqlite, env, sent, objects };
 }
