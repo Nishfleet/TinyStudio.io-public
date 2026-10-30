@@ -227,19 +227,25 @@ test("drift email: one email above the cost floor with the record link, and sile
   const first = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
   assert.equal(sent.length, 1);
   const drifted = [...faults, driftedFault];
-  await publishRecord(env, "req-1", { faults: drifted, review: { keep: ["f1", "f2", "f4"], summary: "The rerun found a new mobile layout fault." } }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z", { kind: "drift" });
-  assert.equal(sent.length, 2, "a rerun with a new fault above the floor sends exactly one email");
+  await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z", { kind: "drift" });
+  assert.equal(sent.length, 1, "a drift rerun during an active engagement sends nothing");
+  assert.equal(sqlite.prepare("SELECT type FROM appraisal_events WHERE type = 'drift_engagement_active'").all().length, 1, "the active-engagement gate, not the cost floor, kept it quiet");
+  assert.equal(sqlite.prepare("SELECT type FROM appraisal_events WHERE type = 'drift_below_threshold'").all().length, 0);
+  sqlite.prepare("UPDATE engagements SET status = 'closed'").run();
+  await publishRecord(env, "req-1", { faults: drifted, review: { keep: ["f1", "f2", "f4"], summary: "The rerun found a new mobile layout fault." } }, "https://tinystudio.io", "2026-10-15T08:00:00.000Z", { kind: "drift" });
+  assert.equal(sent.length, 2, "a closed engagement's rerun with a new fault above the floor sends exactly one email");
+  const emailedReceipt = sqlite.prepare("SELECT id FROM proof_receipts ORDER BY created_at DESC LIMIT 1").get().id;
   assert.equal(sent[1].to, "dana@clinic.example");
   assert.ok(sent[1].text.includes(`https://tinystudio.io/records/${first.id}`), "the drift email carries the record link");
-  assert.ok(sent[1].text.includes(`https://tinystudio.io/records/${receiptRow(sqlite, "req-1").id}`), "the drift email carries the receipt link");
+  assert.ok(sent[1].text.includes(`https://tinystudio.io/records/${emailedReceipt}`), "the drift email carries the receipt link");
   assert.doesNotMatch(sent[1].text, /\$/i, "the drift email prices nothing");
   assert.doesNotMatch(sent[1].text, /correction|book|call|offer|price|upgrade/i, "the drift email carries no sales copy");
   assert.deepEqual(JSON.parse(JSON.stringify(sqlite.prepare("SELECT detail FROM appraisal_events WHERE type = 'drift_email_sent'").all())), [{ detail: `${first.id} +26880` }]);
 
-  await publishRecord(env, "req-1", { faults: drifted, review: { keep: ["f1", "f2", "f4"], summary: "The rerun confirmed the same faults." } }, "https://tinystudio.io", "2026-10-15T08:00:00.000Z", { kind: "drift" });
+  await publishRecord(env, "req-1", { faults: drifted, review: { keep: ["f1", "f2", "f4"], summary: "The rerun confirmed the same faults." } }, "https://tinystudio.io", "2026-10-16T08:00:00.000Z", { kind: "drift" });
   assert.equal(sent.length, 2, "a rerun with no new fault sends nothing");
-  assert.deepEqual(JSON.parse(JSON.stringify(sqlite.prepare("SELECT detail FROM appraisal_events WHERE type = 'drift_below_threshold'").all())), [{ detail: `${first.id} +0` }]);
-  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM proof_receipts").all()[0].n, 2, "a below-threshold rerun still writes its receipt");
+  assert.deepEqual(JSON.parse(JSON.stringify(sqlite.prepare("SELECT detail FROM appraisal_events WHERE type = 'drift_below_threshold' ORDER BY id").all())), [{ detail: `${first.id} +0` }]);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM proof_receipts").all()[0].n, 3, "every drift rerun, even one that emails nothing, writes its receipt");
 });
 
 test("a rerun without a stored baseline writes no receipt and sends nothing", async () => {
@@ -267,6 +273,10 @@ test("scheduled drift rerun: a record untouched for 90 days is requeued once per
   assert.deepEqual(jobs(), [], "a record rendered 88 days ago is not due");
 
   env.APPRAISAL_NOW = "2027-01-11T08:00:00.000Z";
+  await worker.scheduled(controller, env);
+  assert.deepEqual(jobs(), [], "the record of an engagement that never paid is not queued");
+
+  sqlite.prepare("INSERT INTO engagement_payments (payment_id, engagement_id, status, role, created_at) SELECT 'pay-drift-1', id, 'paid', 'engagement', '2026-10-13T08:00:00.000Z' FROM engagements").run();
   await worker.scheduled(controller, env);
   assert.deepEqual(jobs(), [{ status: "queued" }], "a record untouched for 90 days is requeued");
 

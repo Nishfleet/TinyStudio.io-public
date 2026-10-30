@@ -509,6 +509,12 @@ function appraisalMonth(now) {
   return now.toISOString().slice(0, 7);
 }
 
+function previousMonth(month) {
+  const year = Number(month.slice(0, 4));
+  const mon = Number(month.slice(5, 7));
+  return mon === 1 ? `${year - 1}-12` : `${year}-${String(mon - 1).padStart(2, "0")}`;
+}
+
 function nextSlotDate(now) {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
 }
@@ -659,11 +665,13 @@ async function queueDriftReruns(env, now) {
     `SELECT r.id AS request_id
      FROM appraisal_requests r
      JOIN appraisal_records rec ON rec.request_id = r.id
+     JOIN engagements e ON e.request_id = r.id
      LEFT JOIN (
        SELECT request_id, MAX(created_at) AS last_queued
        FROM appraisal_rerun_jobs
        GROUP BY request_id
      ) d ON d.request_id = r.id
+     WHERE EXISTS (SELECT 1 FROM engagement_payments p WHERE p.engagement_id = e.id)
      GROUP BY r.id
      HAVING MAX(rec.rendered_at) <= ?1 AND (MAX(d.last_queued) IS NULL OR MAX(d.last_queued) <= ?1)
      LIMIT ?2`
@@ -697,9 +705,9 @@ async function placeAppraisalRequest(env, input, now) {
   let referred = false;
   if (slots.full && input.referral) {
     const claim = await env.DB.prepare(
-      "UPDATE appraisal_referrals SET used_request_id = ?1, used_at = ?2 WHERE code = ?3 AND used_request_id IS NULL AND substr(created_at, 1, 7) = ?4"
+      "UPDATE appraisal_referrals SET used_request_id = ?1, used_at = ?2 WHERE code = ?3 AND used_request_id IS NULL AND substr(created_at, 1, 7) IN (?4, ?5)"
     )
-      .bind(id, at, input.referral, month)
+      .bind(id, at, input.referral, month, previousMonth(month))
       .run();
     referred = Boolean(claim.meta?.changes);
   }
@@ -2180,13 +2188,15 @@ async function specimenResponse(request, env, url, assetResponse) {
     if (!section) return assetResponse;
     const html = await assetResponse.text();
     const marker = '<div class="band">';
-    if (!html.includes(marker)) {
-      return new Response(html, { status: assetResponse.status, headers: new Headers(assetResponse.headers) });
-    }
-    const rewritten = html.replace(marker, `${section}\n  ${marker}`);
-    return new Response(rewritten, {
+    const body = html.includes(marker) ? html.replace(marker, `${section}\n  ${marker}`) : html;
+    const headers = new Headers(assetResponse.headers);
+    headers.delete("content-length");
+    headers.delete("etag");
+    headers.delete("last-modified");
+    return new Response(body, {
       status: assetResponse.status,
-      headers: new Headers(assetResponse.headers)
+      statusText: assetResponse.statusText,
+      headers
     });
   } catch {
     return assetResponse;

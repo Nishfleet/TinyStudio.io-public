@@ -63,7 +63,9 @@ No call at any point. The report lands in your inbox; there is no meeting,
 no onboarding sequence and no call to book.
 
 Buyer: high-ticket service businesses — clinics, surgeons, dentists, spas,
-dealers, brokers — and clients are never named.
+dealers, brokers. Clients are never named, except on the specimen wall
+(https://tinystudio.io/specimen), where a proof pair appears only with the
+client's own say-so.
 
 Six appraisals a month, done by hand. When the sixth is taken, the intake
 closes until the next.

@@ -146,6 +146,26 @@ test("a desk republish re-renders the stored record and writes no receipt and no
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM appraisal_events WHERE type IN ('drift_email_sent', 'drift_below_threshold')").get().n, 0, "no drift check runs on a desk republish");
 });
 
+test("a republish after the proof rerun keeps the receipt link on the record", async () => {
+  const { env, objects, sent, sqlite } = freshEnv();
+  const recordId = (await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z")).id;
+  await payEngagement(env, sqlite, recordId);
+  const engagementId = sqlite.prepare("SELECT id FROM engagements WHERE request_id = 'req-1'").get().id;
+  await addDeskCorrectionLine(
+    env,
+    { engagementId, faultId: "f1", faultTitle: "Home page loads in 6.1 seconds", beforeText: "6.1 s LCP", afterText: "1.9 s LCP" },
+    "reviewer@tinystudio.io",
+    "2026-10-20T08:00:00.000Z"
+  );
+  await reviewDeskCorrectionLine(env, { lineId: sqlite.prepare("SELECT id FROM correction_lines").get().id, action: "approve" }, "reviewer@tinystudio.io", "2026-10-24T08:00:00.000Z");
+  await proofRerun(env);
+  const receiptId = sqlite.prepare("SELECT id FROM proof_receipts").get().id;
+  await addDeskKickoffNote(env, { engagementId, note: "Brand words stay as written." }, "reviewer@tinystudio.io", "2026-10-25T08:00:00.000Z");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM proof_receipts").get().n, 1, "the republish after the rerun writes no second receipt");
+  assert.ok(objects.get(`records/${recordId}.html`).includes(`href="/records/${receiptId}"`), "the record still links its latest receipt");
+  assert.equal(sent.length, 1, "no email from the republish");
+});
+
 test("the nightly clock queues one tracking check per engagement day, once per day", async () => {
   const { env, sqlite } = freshEnv();
   const { engagementId } = await engagementInTracking(env, sqlite);
@@ -221,7 +241,7 @@ test("a full engagement runs through to the Close-out, with the receipt and clos
   assert.ok(html.includes("Day 7: Speed holds"), "the day-7 note is on the page");
   assert.ok(html.includes("Day 14: Four form submissions"), "the day-14 note is on the page");
   assert.ok(html.includes(result.referralCode));
-  assert.ok(html.includes("skips the waitlist for the current month"));
+  assert.ok(html.includes("for the month it was minted and the month after"));
   assert.doesNotMatch(html, /class="fig"/, "the close-out prices nothing");
 
   const res = await worker.fetch(new Request("https://tinystudio.io/records/" + result.closeOutId), env);

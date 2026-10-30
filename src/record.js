@@ -338,6 +338,15 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
   const before = version === 1 ? null : await loadRun(env, id, version - 1);
   const rerun = kind === "rerun" || kind === "drift";
   const receiptId = before && rerun ? crypto.randomUUID() : null;
+  let linkedReceiptId = receiptId;
+  if (!linkedReceiptId && version > 1) {
+    const last = await env.DB.prepare(
+      "SELECT id FROM proof_receipts WHERE record_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 1"
+    )
+      .bind(id)
+      .first();
+    linkedReceiptId = last?.id ?? null;
+  }
   const html = renderRecord({
     request,
     faults: reviewed.faults,
@@ -345,7 +354,7 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
     version,
     renderedAt: at,
     recordId: id,
-    receiptId,
+    receiptId: linkedReceiptId,
     engagementId: engagement.id,
     engagementStatus: engagement.status,
     kickoffNote: engagement.kickoff_note,
@@ -354,10 +363,18 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
   if (receiptId) {
     await publishProofReceipt(env, request, id, receiptId, before, run, at);
   }
-  await storeRecord(env, { id, requestId, version, html, at, faults, review });
-  await env.DB.prepare("UPDATE engagements SET record_id = ?1 WHERE id = ?2").bind(id, engagement.id).run();
-  await markLinesRecorded(env, engagement, version, at);
-  await storeRun(env, id, run);
+  try {
+    await storeRecord(env, { id, requestId, version, html, at, faults, review });
+    await env.DB.prepare("UPDATE engagements SET record_id = ?1 WHERE id = ?2").bind(id, engagement.id).run();
+    await markLinesRecorded(env, engagement, version, at);
+    await storeRun(env, id, run);
+  } catch (error) {
+    if (receiptId) {
+      await env.DB.prepare("DELETE FROM proof_receipts WHERE id = ?1").bind(receiptId).run().catch(() => {});
+      await env.RECORDS.delete(recordKey(receiptId)).catch(() => {});
+    }
+    throw error;
+  }
   if (version === 1) {
     await env.EMAIL.send(recordEmail({ env, request, recordId: id, origin }));
     return { id, version };
@@ -370,6 +387,10 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
     return { id, version };
   }
   if (kind !== "drift") {
+    return { id, version };
+  }
+  if (engagement.status !== "closed") {
+    await writeEvent(env, requestId, "drift_engagement_active", `${id} ${engagement.status}`, at);
     return { id, version };
   }
   if (!origin) {
@@ -440,7 +461,7 @@ ${specimenLine}
 <h2>Who else should see their record?</h2>
 <p>That is the only question this page asks. You have seen what the correction did to your own numbers. If one other business comes to mind, send them here and give them this code:</p>
 <p class="referral">${esc(referralCode)}</p>
-<p>A business that names this code when it requests its appraisal skips the waitlist for the current month.</p>
+<p>A business that names this code when it requests its appraisal skips the waitlist for the month it was minted and the month after.</p>
 </main>
 </body>
 </html>

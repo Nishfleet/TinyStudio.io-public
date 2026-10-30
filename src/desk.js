@@ -188,6 +188,9 @@ export async function closeOutEngagement(env, input, reviewer, at) {
       .bind(closeOutId, engagement.id, engagement.request_id, engagement.record_id, receipt?.id ?? null, referralCode, at)
       .run();
     if (Number(inserted.meta?.changes) === 0) {
+      await env.DB.prepare("DELETE FROM appraisal_referrals WHERE code = ?1 AND used_request_id IS NULL")
+        .bind(referralCode)
+        .run();
       const raced = await env.DB.prepare("SELECT id, referral_code FROM close_outs WHERE engagement_id = ?1")
         .bind(engagement.id)
         .first();

@@ -35,7 +35,7 @@ A "conversion audit" search intent is answered truthfully: the appraisal is the 
 
 ## Buyer
 
-High-ticket service businesses — clinics, surgeons, dentists, spas, dealers, brokers — and clients are never named.
+High-ticket service businesses — clinics, surgeons, dentists, spas, dealers, brokers. Clients are never named, except on the specimen wall (https://tinystudio.io/specimen), where a proof pair appears only with the client's own say-so.
 
 ## Price And Terms
 
