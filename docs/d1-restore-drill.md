@@ -7,8 +7,11 @@ ciphertext as the GitHub artifact `d1-backup-tinystudio_email_signups` (90 days,
 decrypts it, loads it into a local D1 database, and counts rows to prove the load
 worked.
 
-The producer lands with #89. Until its first green run, the repository has no
-backup artifact and this drill has nothing to restore.
+The producer landed with Nishfleet/TinyStudio.io-public#89, but its first run
+failed because the D1 database it exports is the one the account no longer
+holds (Nishfleet/TinyStudio.io-public#74). Until that is fixed and one weekly
+run goes green, the repository has no backup artifact and this drill has
+nothing to restore.
 
 **Warning: the decrypted dump holds real customer email addresses from the
 waitlist form.** Keep it in a scratch directory that is outside the repository,
@@ -23,8 +26,8 @@ directory when the drill ends.
   on the fleet host only, at `~/.config/drive/d1-backup-key.txt`, which is the
   path fleet-ops's monthly drill unit reads
   ([`systemd/fleet-d1-restore-drill.service`](https://github.com/Nishfleet/fleet-ops/blob/main/systemd/fleet-d1-restore-drill.service),
-  `DRILL_KEY`). Nothing in this repository or its workflows holds it, and no
-  runner can reach it.
+  `DRILL_KEY`, path as of 2026-10-30). Nothing in this repository or its
+  workflows holds it, and no runner can reach it.
 - Run the drill after the first green weekly backup, after a key rotation, and
   after a change to the workflow or the schema. A backup nobody has restored is
   a claim, not a backup.
@@ -100,20 +103,32 @@ version. The load ends with one summary line, `N commands executed successfully`
 
 ## 5. Prove the load: count rows in a table that has rows
 
-`email_signups` is the table the public form writes, so a real dump always has
-rows in it.
+`d1_migrations` is the table every dump of this database has rows in: it holds
+one row per applied migration, so it is never empty. Count it and the signups
+in one query:
 
 ```bash
 npx --no-install wrangler d1 execute tinystudio_email_signups \
   --local \
   --persist-to "$DRILL/db" \
-  --command "SELECT count(*) AS email_signups_rows FROM email_signups"
+  --command "SELECT (SELECT count(*) FROM d1_migrations) AS migration_rows, (SELECT count(*) FROM email_signups) AS email_signups_rows"
 ```
 
-The answer must be a non-zero `email_signups_rows`. Zero rows, or
-`no such table: email_signups`, means the dump did not load. `PRAGMA
-integrity_check` is not available here: on this repository's local D1 it answers
-`not authorized: SQLITE_AUTH`, so the row count is the check.
+`migration_rows` must be non-zero. Zero rows, or `no such table:
+d1_migrations`, means the dump did not load. It must also stay at or below the
+number of migration files in the repository (`ls migrations/*.sql | wc -l`,
+which is 7 today): a dump holding more rows than that was sealed from a
+database carrying a migration this repository does not have, so it is not this
+database's dump. Fewer rows mean the database is behind the repository's
+migrations, which is a note for the report, not a failed drill.
+
+`email_signups` is the customer table, and its count may legitimately be zero:
+a site nobody has signed up on yet exports a dump with no signup rows, and
+that is a good restore. It is the number to write in the log below, not the
+number that proves the load.
+
+`PRAGMA integrity_check` is not available here: on this repository's local D1
+it answers `not authorized: SQLITE_AUTH`, so the row count is the check.
 
 A count on its own does not prove the whole dump loaded, because a load that
 stops halfway still counts rows. Compare the `N` in the load line with the
@@ -123,8 +138,16 @@ number of statements in the dump:
 grep -c ';$' "$DRILL/tinystudio_email_signups-YYYYMMDD.sql"
 ```
 
-The two numbers must match. A smaller `N` on the load line means statements were
-skipped, and the drill failed even though the count is above zero.
+The two numbers must match. A smaller `N` on the load line means statements
+were skipped, and the drill failed even though the count is above zero.
+
+`grep -c ';$'` counts lines that end in a semicolon, and wrangler's export
+writes one statement per line, with a value that holds a newline escaped as
+`replace(..., char(10))` and a value that holds a semicolon left inside its
+quotes. So for this format the line count is the statement count. If the two
+numbers ever differ the other way round, the dump's format changed and the
+line count is the wrong measure: count the statements in the dump again before
+calling the drill failed.
 
 To see every table the dump created, run the same command with:
 
@@ -132,8 +155,8 @@ To see every table the dump created, run the same command with:
 --command "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
 ```
 
-A full dump creates every table the migrations create, including `email_signups`,
-`engagements` and `correction_lines`.
+A full dump creates every table the migrations create, including `d1_migrations`,
+`email_signups`, `engagements` and `correction_lines`.
 
 ## 6. Clean up
 
@@ -141,13 +164,19 @@ A full dump creates every table the migrations create, including `email_signups`
 rm -r "$DRILL"
 ```
 
+Run each attempt in a fresh scratch directory, because `--persist-to
+"$DRILL/db"` reuses the local database from an earlier attempt and a second
+load then counts rows the first load left behind. Delete `$DRILL/db` between
+attempts, or start over from step 0.
+
 The ciphertext is in the artifact and can be downloaded again. The decrypted SQL
 and the local database are the only copies that are not sealed, so delete both.
 
 ## Record the drill
 
 Add one line here for each real drill: the date, the artifact date, and the row
-count.
+count. Whoever runs the drill writes the row, so the table cannot stay empty
+because nobody thought to update it.
 
 | drill date | artifact | `email_signups` rows |
 |---|---|---|
