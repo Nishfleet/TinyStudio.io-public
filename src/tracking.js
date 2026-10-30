@@ -19,13 +19,6 @@ export async function trackingStartedAt(env, engagementId) {
   return row?.started_at ?? null;
 }
 
-export async function trackingChecks(env, engagementId) {
-  const result = await env.DB.prepare("SELECT * FROM tracking_checks WHERE engagement_id = ?1 ORDER BY day ASC")
-    .bind(engagementId)
-    .all();
-  return result.results ?? [];
-}
-
 export async function trackingNotes(env, engagementId) {
   const result = await env.DB.prepare("SELECT * FROM tracking_notes WHERE engagement_id = ?1 ORDER BY day ASC")
     .bind(engagementId)
@@ -67,6 +60,10 @@ export async function addTrackingNote(env, engagement, input, reviewer, at) {
   const day = Number(input.day);
   if (![7, 14].includes(day)) {
     throw Object.assign(new Error("a tracking note is written at day 7 or day 14"), { code: "BAD_DAY" });
+  }
+  const startedAt = await trackingStartedAt(env, engagement.id);
+  if (!startedAt || trackingDay(at, startedAt) < day) {
+    throw Object.assign(new Error(`the day-${day} note waits for day ${day} of tracking`), { code: "DAY_TOO_EARLY" });
   }
   const text = String(input.note ?? "").trim();
   if (!text) throw Object.assign(new Error("tracking note missing"), { code: "NOTE_MISSING" });

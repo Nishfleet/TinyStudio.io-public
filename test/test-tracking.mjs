@@ -82,6 +82,18 @@ const faults = [
   { id: "f2", type: "missing-title", title: "Missing page title", url: "https://clinic.example/about", evidence: "The <title> element is empty." }
 ];
 const review = { keep: ["f1", "f2"], summary: "The home page is slow on phones and one page has no title." };
+const rerunReview = { keep: ["f2"], summary: "The home page now loads in under two seconds. The about page still has no title." };
+
+function proofRerun(env) {
+  return publishRecord(
+    env,
+    "req-1",
+    { faults: faults.filter((fault) => fault.id !== "f1"), review: rerunReview },
+    "https://tinystudio.io",
+    "2026-10-26T08:00:00.000Z",
+    { kind: "rerun" }
+  );
+}
 
 function payEngagement(env, sqlite, recordId) {
   const engagement = sqlite.prepare("SELECT id FROM engagements WHERE request_id = 'req-1'").get();
@@ -125,6 +137,14 @@ async function engagementInTracking(env, sqlite) {
   await addDeskKickoffNote(env, { engagementId, note: "Brand words stay as written." }, "reviewer@tinystudio.io", "2026-10-25T08:00:00.000Z");
   return { engagementId, recordId };
 }
+
+test("a desk republish re-renders the stored record and writes no receipt and no email", async () => {
+  const { env, sent, sqlite } = freshEnv();
+  await engagementInTracking(env, sqlite);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM proof_receipts").get().n, 0, "the approval and the kickoff republishes write no receipt");
+  assert.equal(sent.length, 1, "no email beyond the first record email");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM appraisal_events WHERE type IN ('drift_email_sent', 'drift_below_threshold')").get().n, 0, "no drift check runs on a desk republish");
+});
 
 test("the nightly clock queues one tracking check per engagement day, once per day", async () => {
   const { env, sqlite } = freshEnv();
@@ -172,8 +192,11 @@ test("the day-7 and day-14 notes are the reviewer's, once each, only in tracking
 });
 
 test("a full engagement runs through to the Close-out, with the receipt and close-out links attached", async () => {
-  const { env, objects, sqlite } = freshEnv();
+  const { env, objects, sent, sqlite } = freshEnv();
   const { engagementId, recordId } = await engagementInTracking(env, sqlite);
+  await proofRerun(env);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM proof_receipts").get().n, 1, "only the engine rerun writes a receipt");
+  assert.equal(sent.length, 1, "the proof rerun emails nothing while the engagement runs");
   await addDeskTrackingNote(env, { engagementId, day: "7", note: "Speed holds and the pages are indexed." }, "reviewer@tinystudio.io", "2026-11-01T08:00:00.000Z");
   await assert.rejects(
     closeOutEngagement(env, { engagementId: engagementId }, "reviewer@tinystudio.io", "2026-11-01T09:00:00.000Z").then(() => {}),
@@ -259,6 +282,19 @@ test("the close-out's referral code skips the waitlist for the current month", a
   const referred = await (await submit({ website: "https://d.example", email: "d@d.example", name: "D", referral: referralCode }, "192.0.2.3")).json();
   assert.equal(referred.status, "accepted", "the close-out's code skips the waitlist for the current month");
   assert.equal(sqlite.prepare("SELECT referrer FROM appraisal_referrals WHERE code = ?").get(referralCode).referrer, "Dana Reyes");
+
+  env.APPRAISAL_NOW = "2026-12-10T08:00:00.000Z";
+  sqlite.prepare(
+    `INSERT INTO appraisal_requests (id, site_url, business_type, avg_deal_value, monthly_leads, name, email, month, created_at)
+     VALUES ('dec-1','https://1.example','Dental clinic',8000,40,'One','1@1.example','2026-12','2026-12-01T08:00:00.000Z'),
+            ('dec-2','https://2.example','Dental clinic',8000,40,'Two','2@2.example','2026-12','2026-12-01T08:00:00.000Z'),
+            ('dec-3','https://3.example','Dental clinic',8000,40,'Three','3@3.example','2026-12','2026-12-01T08:00:00.000Z'),
+            ('dec-4','https://4.example','Dental clinic',8000,40,'Four','4@4.example','2026-12','2026-12-01T08:00:00.000Z'),
+            ('dec-5','https://5.example','Dental clinic',8000,40,'Five','5@5.example','2026-12','2026-12-01T08:00:00.000Z'),
+            ('dec-6','https://6.example','Dental clinic',8000,40,'Six','6@6.example','2026-12','2026-12-01T08:00:00.000Z')`
+  ).run();
+  const later = await (await submit({ website: "https://late.example", email: "l@l.example", name: "L", referral: referralCode }, "192.0.2.9")).json();
+  assert.equal(later.status, "waitlisted", "the code skips nothing in a month after the one it was minted in");
 });
 
 test("specimen consent is the client's say-so, recorded on the engagement and shown on the wall", async () => {
@@ -267,10 +303,20 @@ test("specimen consent is the client's say-so, recorded on the engagement and sh
 
   assert.equal(engagementAllows({ status: "paid" }, "set_specimen_consent"), false, "no consent is asked before the proof exists");
   assert.equal(engagementAllows({ status: "tracking" }, "set_specimen_consent"), true);
-  const consented = await setDeskSpecimenConsent(env, { engagementId, consent: true }, "reviewer@tinystudio.io", "2026-11-01T08:00:00.000Z");
+  await assert.rejects(
+    setDeskSpecimenConsent(env, { engagementId, consent: true }, "reviewer@tinystudio.io", "2026-11-01T08:00:00.000Z"),
+    /own words/,
+    "a yes carries the client's own words"
+  );
+  const consented = await setDeskSpecimenConsent(
+    env,
+    { engagementId, consent: true, sayso: "Yes — put our before and after on the wall. Dana" },
+    "reviewer@tinystudio.io",
+    "2026-11-01T08:00:00.000Z"
+  );
   assert.equal(consented.specimen_consent, 1);
   const event = sqlite.prepare("SELECT detail FROM engagement_events WHERE type = 'specimen_consent_recorded'").get();
-  assert.equal(event.detail, "the client said yes to the specimen gallery");
+  assert.ok(event.detail.includes("put our before and after on the wall"), "the client's own words are on file with the consent");
 
   await addDeskTrackingNote(env, { engagementId, day: "7", note: "Holding." }, "reviewer@tinystudio.io", "2026-11-01T08:00:00.000Z");
   await addDeskTrackingNote(env, { engagementId, day: "14", note: "Holding." }, "reviewer@tinystudio.io", "2026-11-08T08:00:00.000Z");

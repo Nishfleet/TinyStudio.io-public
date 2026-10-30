@@ -1,9 +1,10 @@
 -- M3: the 14-day tracking and the Close-out (docs/PLAN.md 6.8 and 6.9).
 -- The nightly scheduled handler queues one tracking check per engagement day
--- into the same outbox the audit and drift jobs use; the SEO Fix Kit engine
--- consumer reads them the same way. The day-7 and day-14 notes are the
--- reviewer's own words, and the Close-out mints the referral code the
--- appraisal form already honours as the waitlist skip for the current month.
+-- into tracking_checks, a third outbox beside the audit and drift rerun jobs;
+-- the SEO Fix Kit engine consumer reads each of them. The day-7 and day-14
+-- notes are the reviewer's own words, and the Close-out mints the referral
+-- code the appraisal form already honours as the waitlist skip for the
+-- month the code was minted.
 CREATE TABLE IF NOT EXISTS tracking_checks (
   id TEXT PRIMARY KEY,
   engagement_id TEXT NOT NULL,

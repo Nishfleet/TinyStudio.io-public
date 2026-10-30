@@ -10,9 +10,8 @@ import {
   revertCorrectionLine,
   setKickoffNote
 } from "./engagement.js";
-import { addTrackingNote } from "./tracking.js";
+import { addTrackingNote, TRACKING_DAYS, trackingDay, trackingNotes, trackingStartedAt } from "./tracking.js";
 import { renderCloseOut, republishRecord } from "./record.js";
-import { TRACKING_DAYS, trackingNotes } from "./tracking.js";
 
 export async function deskQueue(env) {
   const result = await env.DB.prepare(
@@ -119,12 +118,16 @@ export async function setDeskSpecimenConsent(env, input, reviewer, at) {
     throw Object.assign(new Error("specimen consent is recorded once the correction is proved"), { code: "NOT_PROVED" });
   }
   const consent = input.consent ? 1 : 0;
+  const sayso = String(input.sayso ?? "").trim();
+  if (consent && !sayso) {
+    throw Object.assign(new Error("a yes to the specimen gallery carries the client's own words"), { code: "SAYSO_MISSING" });
+  }
   await env.DB.prepare("UPDATE engagements SET specimen_consent = ?1, changed_at = ?2 WHERE id = ?3")
     .bind(consent, at, engagement.id)
     .run();
   await journalEngagementEvent(env, engagement, {
     type: "specimen_consent_recorded",
-    detail: consent ? "the client said yes to the specimen gallery" : "the client said no to the specimen gallery",
+    detail: consent ? `the client said yes to the specimen gallery: ${sayso}` : "the client said no to the specimen gallery",
     at
   });
   return { ...engagement, specimen_consent: consent };
@@ -156,6 +159,10 @@ export async function closeOutEngagement(env, input, reviewer, at) {
       throw Object.assign(new Error(`the close-out waits for the day-${day} tracking note`), { code: `NOTE_${day}_MISSING` });
     }
   }
+  const startedAt = await trackingStartedAt(env, engagement.id);
+  if (!startedAt || trackingDay(at, startedAt) < TRACKING_DAYS) {
+    throw Object.assign(new Error("the close-out waits for the fourteen days of tracking"), { code: "TRACKING_TOO_SHORT" });
+  }
   const request = await env.DB.prepare("SELECT * FROM appraisal_requests WHERE id = ?1").bind(engagement.request_id).first();
   if (!request) throw Object.assign(new Error("appraisal request not found"), { code: "NOT_FOUND" });
   const receipt = await env.DB.prepare(
@@ -163,8 +170,33 @@ export async function closeOutEngagement(env, input, reviewer, at) {
   )
     .bind(engagement.request_id)
     .first();
-  const referralCode = await mintReferralCode(env, request.name, at);
-  const closeOutId = crypto.randomUUID();
+  let closeOutId;
+  let referralCode;
+  const existing = await env.DB.prepare("SELECT id, referral_code FROM close_outs WHERE engagement_id = ?1")
+    .bind(engagement.id)
+    .first();
+  if (existing) {
+    closeOutId = existing.id;
+    referralCode = existing.referral_code;
+  } else {
+    referralCode = await mintReferralCode(env, request.name, at);
+    closeOutId = crypto.randomUUID();
+    const inserted = await env.DB.prepare(
+      `INSERT OR IGNORE INTO close_outs (id, engagement_id, request_id, record_id, receipt_id, referral_code, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+    )
+      .bind(closeOutId, engagement.id, engagement.request_id, engagement.record_id, receipt?.id ?? null, referralCode, at)
+      .run();
+    if (Number(inserted.meta?.changes) === 0) {
+      const raced = await env.DB.prepare("SELECT id, referral_code FROM close_outs WHERE engagement_id = ?1")
+        .bind(engagement.id)
+        .first();
+      closeOutId = raced.id;
+      referralCode = raced.referral_code;
+    } else {
+      await journalEngagementEvent(env, engagement, { type: "close_out_rendered", detail: `${closeOutId} ${referralCode}`, at });
+    }
+  }
   const html = renderCloseOut({
     request,
     notes,
@@ -175,13 +207,6 @@ export async function closeOutEngagement(env, input, reviewer, at) {
     renderedAt: at
   });
   await env.RECORDS.put(`records/${closeOutId}.html`, html, { httpMetadata: { contentType: "text/html; charset=utf-8" } });
-  await env.DB.prepare(
-    `INSERT INTO close_outs (id, engagement_id, request_id, record_id, receipt_id, referral_code, created_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
-  )
-    .bind(closeOutId, engagement.id, engagement.request_id, engagement.record_id, receipt?.id ?? null, referralCode, at)
-    .run();
-  await journalEngagementEvent(env, engagement, { type: "close_out_rendered", detail: `${closeOutId} ${referralCode}`, at });
   const closed = await advanceEngagement(env, engagement, "closed", {
     type: "status_changed",
     detail: `close-out by ${reviewer}`,

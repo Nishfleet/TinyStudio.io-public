@@ -174,7 +174,7 @@ test("a waitlisted request gets one waitlist confirmation that names the slot da
 test("a referred business skips the waitlist for the current month, once per code", async () => {
   const { sqlite, env } = freshEnv();
   sqlite.prepare("INSERT INTO appraisal_referrals (code, referrer, created_at) VALUES (?, ?, ?)")
-    .run("REF-ONE", "closed-out client", "2026-09-30T00:00:00.000Z");
+    .run("REF-ONE", "closed-out client", "2026-10-01T00:00:00.000Z");
   for (let n = 1; n <= 6; n += 1) {
     await submit(env, { website: `site${n}.example`, email: `owner${n}@site${n}.example` });
   }
@@ -188,6 +188,10 @@ test("a referred business skips the waitlist for the current month, once per cod
   assert.equal(reused.status, "waitlisted", "a code works once");
   const events = sqlite.prepare("SELECT type, detail FROM appraisal_events WHERE type = 'referral_used'").all();
   assert.deepEqual(events.map((row) => ({ ...row })), [{ type: "referral_used", detail: "REF-ONE" }]);
+  sqlite.prepare("INSERT INTO appraisal_referrals (code, referrer, created_at) VALUES (?, ?, ?)")
+    .run("REF-OLD", "closed-out client", "2026-09-30T00:00:00.000Z");
+  const stale = await (await submit(env, { website: "e.example", email: "e@e.example", referral: "REF-OLD" })).json();
+  assert.equal(stale.status, "waitlisted", "a code skips nothing in a month after the one it was minted in");
 });
 
 test("every state change writes an event row", async () => {

@@ -166,7 +166,7 @@ test("proof receipt: a rerun renders before and after side by side with the delt
   const { env, objects, sqlite } = freshEnv();
   const first = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
   const corrected = { keep: ["f2"], summary: "The home page now loads in under two seconds. The about page still has no title." };
-  await publishRecord(env, "req-1", { faults, review: corrected }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z");
+  await publishRecord(env, "req-1", { faults, review: corrected }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z", { kind: "rerun" });
 
   const receipt = receiptRow(sqlite, "req-1");
   assert.ok(receipt, "the rerun writes a receipt row");
@@ -196,7 +196,7 @@ test("proof receipt: a rerun renders before and after side by side with the delt
 test("quality gate: no uncited number in a proof receipt", async () => {
   const { env, objects, sqlite } = freshEnv();
   await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
-  await publishRecord(env, "req-1", { faults: [...faults, driftedFault], review: { keep: ["f1", "f2", "f4"], summary: "The rerun found a new mobile layout fault." } }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z");
+  await publishRecord(env, "req-1", { faults: [...faults, driftedFault], review: { keep: ["f1", "f2", "f4"], summary: "The rerun found a new mobile layout fault." } }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z", { kind: "rerun" });
   const html = objects.get(`records/${receiptRow(sqlite, "req-1").id}.html`);
 
   const ids = new Set(costing.rows.map((r) => r.id));
@@ -227,7 +227,7 @@ test("drift email: one email above the cost floor with the record link, and sile
   const first = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
   assert.equal(sent.length, 1);
   const drifted = [...faults, driftedFault];
-  await publishRecord(env, "req-1", { faults: drifted, review: { keep: ["f1", "f2", "f4"], summary: "The rerun found a new mobile layout fault." } }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z");
+  await publishRecord(env, "req-1", { faults: drifted, review: { keep: ["f1", "f2", "f4"], summary: "The rerun found a new mobile layout fault." } }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z", { kind: "drift" });
   assert.equal(sent.length, 2, "a rerun with a new fault above the floor sends exactly one email");
   assert.equal(sent[1].to, "dana@clinic.example");
   assert.ok(sent[1].text.includes(`https://tinystudio.io/records/${first.id}`), "the drift email carries the record link");
@@ -236,7 +236,7 @@ test("drift email: one email above the cost floor with the record link, and sile
   assert.doesNotMatch(sent[1].text, /correction|book|call|offer|price|upgrade/i, "the drift email carries no sales copy");
   assert.deepEqual(JSON.parse(JSON.stringify(sqlite.prepare("SELECT detail FROM appraisal_events WHERE type = 'drift_email_sent'").all())), [{ detail: `${first.id} +26880` }]);
 
-  await publishRecord(env, "req-1", { faults: drifted, review: { keep: ["f1", "f2", "f4"], summary: "The rerun confirmed the same faults." } }, "https://tinystudio.io", "2026-10-15T08:00:00.000Z");
+  await publishRecord(env, "req-1", { faults: drifted, review: { keep: ["f1", "f2", "f4"], summary: "The rerun confirmed the same faults." } }, "https://tinystudio.io", "2026-10-15T08:00:00.000Z", { kind: "drift" });
   assert.equal(sent.length, 2, "a rerun with no new fault sends nothing");
   assert.deepEqual(JSON.parse(JSON.stringify(sqlite.prepare("SELECT detail FROM appraisal_events WHERE type = 'drift_below_threshold'").all())), [{ detail: `${first.id} +0` }]);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM proof_receipts").all()[0].n, 2, "a below-threshold rerun still writes its receipt");
@@ -246,7 +246,7 @@ test("a rerun without a stored baseline writes no receipt and sends nothing", as
   const { env, objects, sent, sqlite } = freshEnv();
   const first = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
   objects.delete(`records/${first.id}.v1.json`);
-  await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z");
+  await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-14T08:00:00.000Z", { kind: "rerun" });
   assert.equal(sent.length, 1, "no drift email without the run to compare against");
   assert.equal(receiptRow(sqlite, "req-1"), undefined);
   assert.equal(sqlite.prepare("SELECT type FROM appraisal_events WHERE type = 'drift_baseline_missing'").all().length, 1);

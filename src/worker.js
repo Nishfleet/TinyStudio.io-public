@@ -501,8 +501,8 @@ async function signupResponse(request, env, url) {
   return jsonResponse({ ok: true, message: "signal_saved" }, { status: 201 });
 }
 
-function appraisalNow(env) {
-  return new Date(env.APPRAISAL_NOW || Date.now());
+function appraisalNow(env, fallback) {
+  return new Date(env.APPRAISAL_NOW || fallback || Date.now());
 }
 
 function appraisalMonth(now) {
@@ -697,9 +697,9 @@ async function placeAppraisalRequest(env, input, now) {
   let referred = false;
   if (slots.full && input.referral) {
     const claim = await env.DB.prepare(
-      "UPDATE appraisal_referrals SET used_request_id = ?1, used_at = ?2 WHERE code = ?3 AND used_request_id IS NULL"
+      "UPDATE appraisal_referrals SET used_request_id = ?1, used_at = ?2 WHERE code = ?3 AND used_request_id IS NULL AND substr(created_at, 1, 7) = ?4"
     )
-      .bind(id, at, input.referral)
+      .bind(id, at, input.referral, month)
       .run();
     referred = Boolean(claim.meta?.changes);
   }
@@ -1959,7 +1959,12 @@ async function deskActionResponse(request, env, url, kind) {
           );
     }
     if (kind === "specimen-consent") {
-      const result = await setDeskSpecimenConsent(env, { engagementId, consent: form.get("consent") === "1" }, identity.email, at);
+      const result = await setDeskSpecimenConsent(
+        env,
+        { engagementId, consent: form.get("consent") === "1", sayso: cleanField(form.get("sayso"), 2000) },
+        identity.email,
+        at
+      );
       return browserForm
         ? deskActionPage(`Specimen consent recorded: ${result.specimen_consent === 1 ? "yes" : "no"}.`)
         : withSecurityHeaders(jsonResponse({ ok: true, specimenConsent: result.specimen_consent }));
@@ -2175,7 +2180,9 @@ async function specimenResponse(request, env, url, assetResponse) {
     if (!section) return assetResponse;
     const html = await assetResponse.text();
     const marker = '<div class="band">';
-    if (!html.includes(marker)) return assetResponse;
+    if (!html.includes(marker)) {
+      return new Response(html, { status: assetResponse.status, headers: new Headers(assetResponse.headers) });
+    }
     const rewritten = html.replace(marker, `${section}\n  ${marker}`);
     return new Response(rewritten, {
       status: assetResponse.status,
@@ -2362,7 +2369,16 @@ export default {
   },
 
   async scheduled(controller, env) {
-    await queueDriftReruns(env, appraisalNow(env));
-    await queueTrackingChecks(env, appraisalNow(env));
+    const now = appraisalNow(env, controller.scheduledTime);
+    try {
+      await queueDriftReruns(env, now);
+    } catch (error) {
+      console.error("tinystudio_drift_rerun_queue_failed", error?.message ?? String(error));
+    }
+    try {
+      await queueTrackingChecks(env, now);
+    } catch (error) {
+      console.error("tinystudio_tracking_checks_queue_failed", error?.message ?? String(error));
+    }
   }
 };

@@ -28,6 +28,10 @@ function esc(value) {
 
 const money = (n) => `$${n.toLocaleString("en-US")}`;
 
+export function faultKey(fault) {
+  return `${fault.type ?? ""}\u0000${fault.url ?? ""}`;
+}
+
 function cited(text, cite) {
   return `<span class="fig" data-cite="${esc(cite)}">${esc(text)}</span>`;
 }
@@ -215,11 +219,11 @@ function faultLine(costed, verdict) {
 export function renderProofReceipt({ request, before, after, renderedAt }) {
   const inputs = { dealValue: request.avg_deal_value, monthlyLeads: request.monthly_leads };
   const cost = (faults) => faults.map((fault) => costFault(fault, inputs));
-  const afterIds = new Set(after.faults.map((fault) => fault.id));
-  const beforeIds = new Set(before.faults.map((fault) => fault.id));
-  const closed = cost(before.faults.filter((fault) => !afterIds.has(fault.id)));
-  const kept = cost(after.faults.filter((fault) => beforeIds.has(fault.id)));
-  const added = cost(after.faults.filter((fault) => !beforeIds.has(fault.id)));
+  const afterKeys = new Set(after.faults.map(faultKey));
+  const beforeKeys = new Set(before.faults.map(faultKey));
+  const closed = cost(before.faults.filter((fault) => !afterKeys.has(faultKey(fault))));
+  const kept = cost(after.faults.filter((fault) => beforeKeys.has(faultKey(fault))));
+  const added = cost(after.faults.filter((fault) => !beforeKeys.has(faultKey(fault))));
   const total = (items) => items.reduce((sum, item) => sum + (item.monthlyCost || 0), 0);
   const sources = [...new Map(
     [...closed, ...kept, ...added].filter((item) => item.row && item.row.deltaPct > 0).map((item) => [item.row.id, item.row])
@@ -314,7 +318,7 @@ async function storeRecord(env, { id, requestId, version, html, at, faults, revi
     .run();
 }
 
-export async function publishRecord(env, requestId, { faults, review }, origin, at) {
+export async function publishRecord(env, requestId, { faults, review }, origin, at, { kind = "publish" } = {}) {
   const request = await env.DB.prepare("SELECT * FROM appraisal_requests WHERE id = ?1").bind(requestId).first();
   if (!request) throw new Error("appraisal request not found");
   const reviewed = reviewFaults(faults, review);
@@ -332,7 +336,8 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
 
   const run = { version, renderedAt: at, summary: reviewed.summary, faults: reviewed.faults };
   const before = version === 1 ? null : await loadRun(env, id, version - 1);
-  const receiptId = before ? crypto.randomUUID() : null;
+  const rerun = kind === "rerun" || kind === "drift";
+  const receiptId = before && rerun ? crypto.randomUUID() : null;
   const html = renderRecord({
     request,
     faults: reviewed.faults,
@@ -346,6 +351,9 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
     kickoffNote: engagement.kickoff_note,
     correctionLines: (await correctionLines(env, engagement.id)).filter((line) => REVIEWED_LINE_STATES.includes(line.status))
   });
+  if (receiptId) {
+    await publishProofReceipt(env, request, id, receiptId, before, run, at);
+  }
   await storeRecord(env, { id, requestId, version, html, at, faults, review });
   await env.DB.prepare("UPDATE engagements SET record_id = ?1 WHERE id = ?2").bind(id, engagement.id).run();
   await markLinesRecorded(env, engagement, version, at);
@@ -354,15 +362,24 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
     await env.EMAIL.send(recordEmail({ env, request, recordId: id, origin }));
     return { id, version };
   }
+  if (!rerun) {
+    return { id, version };
+  }
   if (!before) {
     await writeEvent(env, requestId, "drift_baseline_missing", `${id} v${version}`, at);
     return { id, version };
   }
-  await publishProofReceipt(env, request, id, receiptId, before, run, at);
-  const beforeIds = new Set(before.faults.map((fault) => fault.id));
+  if (kind !== "drift") {
+    return { id, version };
+  }
+  if (!origin) {
+    await writeEvent(env, requestId, "drift_email_skipped", `${id} no origin`, at);
+    return { id, version };
+  }
+  const beforeKeys = new Set(before.faults.map(faultKey));
   const inputs = { dealValue: request.avg_deal_value, monthlyLeads: request.monthly_leads };
   const newCost = run.faults
-    .filter((fault) => !beforeIds.has(fault.id))
+    .filter((fault) => !beforeKeys.has(faultKey(fault)))
     .reduce((sum, fault) => sum + (costFault(fault, inputs).monthlyCost || 0), 0);
   const floor = costing.drift?.minNewMonthlyCost;
   if (typeof floor === "number" && newCost >= floor) {
