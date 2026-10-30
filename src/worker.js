@@ -1,9 +1,19 @@
 import { RECORD_ID, recordKey } from "./record.js";
 import { deskAccessConfigured, deskIdentity, deskUnauthorized } from "./desk-access.js";
-import { addDeskCorrectionLine, addDeskKickoffNote, deskDraftLines, deskQueue, reviewDeskCorrectionLine } from "./desk.js";
+import {
+  addDeskCorrectionLine,
+  addDeskKickoffNote,
+  addDeskTrackingNote,
+  closeOutEngagement,
+  deskDraftLines,
+  deskQueue,
+  reviewDeskCorrectionLine,
+  setDeskSpecimenConsent
+} from "./desk.js";
 import { handleDodoWebhook, startCheckoutForRequest } from "./payments.js";
 import { deskQueuePage } from "./desk-page.js";
 import { ENGAGEMENT_ID } from "./engagement.js";
+import { queueTrackingChecks } from "./tracking.js";
 
 const SECURITY_HEADERS = {
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
@@ -1929,6 +1939,31 @@ async function deskActionResponse(request, env, url, kind) {
     }
     const engagementId = cleanField(form.get("engagementId"), 64);
     if (!ENGAGEMENT_ID.test(engagementId)) return fail({ code: "bad_engagement" });
+    if (kind === "tracking-note") {
+      const notes = await addDeskTrackingNote(
+        env,
+        { engagementId, day: cleanField(form.get("day"), 2), note: cleanField(form.get("note"), 4000) },
+        identity.email,
+        at
+      );
+      return browserForm
+        ? deskActionPage("Tracking note saved.")
+        : withSecurityHeaders(jsonResponse({ ok: true, noteDays: notes.map((note) => note.day) }));
+    }
+    if (kind === "close-out") {
+      const result = await closeOutEngagement(env, { engagementId }, identity.email, at);
+      return browserForm
+        ? deskActionPage(`Close-out rendered. Engagement ${result.engagement.status}. Code ${result.referralCode}.`)
+        : withSecurityHeaders(
+            jsonResponse({ ok: true, engagementStatus: result.engagement.status, closeOutId: result.closeOutId, referralCode: result.referralCode })
+          );
+    }
+    if (kind === "specimen-consent") {
+      const result = await setDeskSpecimenConsent(env, { engagementId, consent: form.get("consent") === "1" }, identity.email, at);
+      return browserForm
+        ? deskActionPage(`Specimen consent recorded: ${result.specimen_consent === 1 ? "yes" : "no"}.`)
+        : withSecurityHeaders(jsonResponse({ ok: true, specimenConsent: result.specimen_consent }));
+    }
     const engagement = await addDeskKickoffNote(env, { engagementId, note: cleanField(form.get("note"), 4000) }, identity.email, at);
     return browserForm
       ? deskActionPage(`Kickoff note saved. Engagement ${engagement.status}.`)
@@ -2109,6 +2144,48 @@ async function recordResponse(request, env, url) {
   );
 }
 
+async function specimenPairsSection(env) {
+  const result = await env.DB.prepare(
+    `SELECT r.site_url, e.record_id,
+            (SELECT pr.id FROM proof_receipts pr WHERE pr.request_id = e.request_id
+              ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS receipt_id
+       FROM engagements e
+       JOIN appraisal_requests r ON r.id = e.request_id
+      WHERE e.specimen_consent = 1
+      ORDER BY e.changed_at DESC
+      LIMIT 12`
+  ).all();
+  const pairs = (result.results ?? []).filter((row) => row.record_id);
+  if (!pairs.length) return "";
+  const items = pairs
+    .map((row) =>
+      `<li><a href="/records/${escapeHtml(row.record_id)}">The record of ${escapeHtml(row.site_url)}</a>${
+        row.receipt_id
+          ? ` · <a href="/records/${escapeHtml(row.receipt_id)}">its Proof Receipt</a>`
+          : ""
+      }</li>`
+    )
+    .join("\n");
+  return `<section id="client-proof-pairs"><h2>On the wall, with their say-so</h2><p>These clients said yes to their proof pair sitting here. Each link is the same unguessable page a paying customer gets: the record, and the proof receipt that sets the before and after side by side, fault by fault.</p><ul>\n${items}\n</ul></section>`;
+}
+
+async function specimenResponse(request, env, url, assetResponse) {
+  try {
+    const section = await specimenPairsSection(env);
+    if (!section) return assetResponse;
+    const html = await assetResponse.text();
+    const marker = '<div class="band">';
+    if (!html.includes(marker)) return assetResponse;
+    const rewritten = html.replace(marker, `${section}\n  ${marker}`);
+    return new Response(rewritten, {
+      status: assetResponse.status,
+      headers: new Headers(assetResponse.headers)
+    });
+  } catch {
+    return assetResponse;
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -2180,6 +2257,18 @@ export default {
       return deskActionResponse(request, env, url, "kickoff");
     }
 
+    if (url.pathname === "/api/desk/tracking-note") {
+      return deskActionResponse(request, env, url, "tracking-note");
+    }
+
+    if (url.pathname === "/api/desk/close-out") {
+      return deskActionResponse(request, env, url, "close-out");
+    }
+
+    if (url.pathname === "/api/desk/specimen-consent") {
+      return deskActionResponse(request, env, url, "specimen-consent");
+    }
+
     if (url.pathname.startsWith("/records/")) {
       return recordResponse(request, env, url);
     }
@@ -2246,6 +2335,9 @@ export default {
       }
 
       const assetResponse = await env.ASSETS.fetch(request);
+      if ((url.pathname === "/specimen" || url.pathname === "/specimen.html") && request.method === "GET") {
+        return withSecurityHeaders(await specimenResponse(request, env, url, assetResponse));
+      }
       return withSecurityHeaders(assetResponse);
     }
 
@@ -2271,5 +2363,6 @@ export default {
 
   async scheduled(controller, env) {
     await queueDriftReruns(env, appraisalNow(env));
+    await queueTrackingChecks(env, appraisalNow(env));
   }
 };

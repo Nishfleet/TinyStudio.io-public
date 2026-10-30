@@ -37,7 +37,11 @@ function freshEnv() {
     EMAIL: { async send() {} },
     RECORDS: {
       async put(key, body) { objects.set(key, body); },
-      async get(key) { return objects.has(key) ? { body: objects.get(key) } : null; }
+      async get(key) {
+        if (!objects.has(key)) return null;
+        const body = objects.get(key);
+        return { body, text: async () => body };
+      }
     }
   };
   return { sqlite, env, objects };

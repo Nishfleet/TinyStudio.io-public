@@ -21,18 +21,17 @@ The plan also lists `/correction`, `/method` and `/records/{id}`; these are buil
 
 ## Endpoints
 
-- `/api/signups` stores an appraisal request in Cloudflare D1.
-- `/api/appraisal-requests` stores an appraisal request or a waitlist place in Cloudflare D1.
-- `/api/appraisal-slots` reports how many of the six appraisals this month are left, and the next open slot.
+- `/api/signups` and `/api/appraisal-requests` store an appraisal request or a waitlist place in Cloudflare D1, and `/api/appraisal-slots` reports how many of the six appraisals this month are left, and the next open slot.
 - `/api/agent-audit` is the existing audit generation endpoint. It runs at most 50 times a day across all callers, and setting `AGENT_AUDIT_DISABLED=1` turns it off.
 - `/api/engagements/checkout` starts the Dodo checkout for the record's engagement, and returns the checkout URL the record page sends the customer to.
 - `/api/webhooks/dodo` receives the signed Dodo payment event. The signature is verified before an engagement opens, and a replayed event opens nothing new.
-- `/desk` is the reviewer's queue, and `/api/desk/correction-lines`, `/api/desk/correction-lines/{id}/review` and `/api/desk/kickoff` write the correction lines, the review decisions and the kickoff note. All four answer 503 until `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set, and every write is journalled with the reviewer and the time.
+- `/desk` is the reviewer's queue, and `/api/desk/correction-lines`, `/api/desk/correction-lines/{id}/review`, `/api/desk/kickoff`, `/api/desk/tracking-note`, `/api/desk/close-out` and `/api/desk/specimen-consent` write the correction lines, the review decisions, the kickoff note, the day-7 and day-14 tracking notes, the Close-out and the specimen consent. All seven answer 503 until `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set, and every write is journalled with the reviewer and the time.
 - `/health` reports readiness.
-- The scheduled drift check runs nightly at 06:17 UTC. It requeues the appraisal of any record untouched for 90 days.
+- The scheduled drift check runs nightly at 06:17 UTC. It requeues the appraisal of any record untouched for 90 days. The same clock queues one tracking check per day for every engagement in tracking, up to day 14, and a tracking note is written at day 7 and at day 14 in the reviewer's own words.
+- The Close-out waits for both notes, ends the engagement, links the record and its Proof Receipt, and asks the one question: who else should see their record. Its referral code skips the waitlist for the current month.
 - A rerun whose new faults cost at least the `drift.minNewMonthlyCost` floor in `config/costing.json` sends one email with the record link and the receipt link. A below-threshold rerun sends nothing.
 - Every rerun writes a proof receipt at `/records/{receiptId}` that sets the two runs side by side, fault by fault. The record page links its latest receipt.
-- `app.tinystudio.io` and `api.tinystudio.io` answer with a 410 retirement response.
+- `/specimen` lists the proof pairs whose clients agreed to have them on the wall. Without that agreement the pair stays off the site, and `/app.tinystudio.io` and `api.tinystudio.io` answer with a 410 retirement response.
 
 ## Agent dispatch
 

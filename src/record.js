@@ -388,3 +388,44 @@ export async function republishRecord(env, requestId, at, origin) {
   if (!Array.isArray(faults) || !review) throw new Error("stored appraisal record cannot be re-rendered");
   return publishRecord(env, requestId, { faults, review }, origin, at);
 }
+
+export function renderCloseOut({ request, notes, recordId, receiptId, referralCode, specimenConsent, renderedAt }) {
+  const noteHtml = notes
+    .map((note) => `<li class="tracking-note" data-note-day="${Number(note.day)}"><p>Day ${Number(note.day)}: ${esc(note.note)}</p></li>`)
+    .join("\n");
+  const specimenLine = specimenConsent
+    ? `<p>With your say-so on file, this proof pair now sits in our specimen gallery.</p>`
+    : `<p>If you agree, this proof pair joins our specimen gallery. Say the word and it goes up.</p>`;
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Close-out for ${esc(request.site_url)} | TinyStudio</title>
+<style>
+body{font:16px/1.6 Georgia,serif;max-width:42rem;margin:2rem auto;padding:0 1rem;color:#111;background:#fff}
+h1{font-size:1.7rem}h2{margin-top:1.5rem}.note{margin-bottom:1rem}
+.referral{font-size:1.2rem;border:2px solid #111;padding:1rem}
+@media print{body{margin:0;max-width:none}a{color:inherit}}
+</style>
+</head>
+<body>
+<main data-close-out-rendered-at="${esc(renderedAt)}">
+<h1>Close-out: ${esc(request.site_url)}</h1>
+<p>Prepared for ${esc(request.name)}. The engagement ends here. The correction is delivered, proved and tracked for fourteen days.</p>
+<h2>The fourteen days</h2>
+<ul>
+${noteHtml}
+</ul>
+<p>Your record stays where it was: <a href="/records/${esc(recordId)}">the Appraisal Record</a>${receiptId ? `, and the Proof Receipt that sets the two runs side by side: <a href="/records/${esc(receiptId)}">the Proof Receipt</a>` : ""}.</p>
+${specimenLine}
+<h2>Who else should see their record?</h2>
+<p>That is the only question this page asks. You have seen what the correction did to your own numbers. If one other business comes to mind, send them here and give them this code:</p>
+<p class="referral">${esc(referralCode)}</p>
+<p>A business that names this code when it requests its appraisal skips the waitlist for the current month.</p>
+</main>
+</body>
+</html>
+`;
+}
