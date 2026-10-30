@@ -12,6 +12,7 @@ TinyStudio is a boutique that finds where a high-ticket service website loses mo
 - `/appraisal` what the appraisal is and how the six-a-month queue works
 - `/pricing` the price and terms
 - `/specimen` a specimen appraisal of a public site
+- `/waitlist` the six-a-month waitlist, and the form that holds a place in it
 - `/contact`, `/privacy`, `/terms`
 - `/llms.txt` and `/offer.md`, the agent-readable offer
 - `/brief-requested` the confirmation page after a request
@@ -21,7 +22,12 @@ The plan also lists `/correction`, `/method` and `/records/{id}`; these are buil
 ## Endpoints
 
 - `/api/signups` stores an appraisal request in Cloudflare D1.
+- `/api/appraisal-requests` stores an appraisal request or a waitlist place in Cloudflare D1.
+- `/api/appraisal-slots` reports how many of the six appraisals this month are left, and the next open slot.
 - `/api/agent-audit` is the existing audit generation endpoint. It runs at most 50 times a day across all callers, and setting `AGENT_AUDIT_DISABLED=1` turns it off.
+- `/api/engagements/checkout` starts the Dodo checkout for the record's engagement, and returns the checkout URL the record page sends the customer to.
+- `/api/webhooks/dodo` receives the signed Dodo payment event. The signature is verified before an engagement opens, and a replayed event opens nothing new.
+- `/desk` is the reviewer's queue, and `/api/desk/correction-lines`, `/api/desk/correction-lines/{id}/review` and `/api/desk/kickoff` write the correction lines, the review decisions and the kickoff note. All four answer 503 until `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set, and every write is journalled with the reviewer and the time.
 - `/health` reports readiness.
 - The scheduled drift check runs nightly at 06:17 UTC. It requeues the appraisal of any record untouched for 90 days.
 - A rerun whose new faults cost at least the `drift.minNewMonthlyCost` floor in `config/costing.json` sends one email with the record link and the receipt link. A below-threshold rerun sends nothing.

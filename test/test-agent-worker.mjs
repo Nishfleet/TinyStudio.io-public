@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import worker from "../src/worker.js";
+import worker, { AGENT_MODELS } from "../src/worker.js";
 
 const METRIC_MARKER = "WEEKLY_SECRET_METRIC_7000";
 
@@ -1046,7 +1046,7 @@ test("worker /health names the current Website Appraisal surface, not the retire
   class HealthStatement extends FakeStatement {
     async all() {
       this.db.calls.push({ method: "all", sql: this.sql, values: this.values });
-      return { results: [{ name: "email_signups" }, { name: "agent_runs" }, { name: "agent_usage_limits" }] };
+      return { results: [{ name: "email_signups" }, { name: "engagements" }, { name: "agent_runs" }, { name: "agent_usage_limits" }] };
     }
   }
 
@@ -1070,7 +1070,7 @@ test("worker /health verdict keys off the current intake path, not the retired A
   class HealthStatement extends FakeStatement {
     async all() {
       this.db.calls.push({ method: "all", sql: this.sql, values: this.values });
-      return { results: [{ name: "email_signups" }] };
+      return { results: [{ name: "email_signups" }, { name: "engagements" }] };
     }
   }
 
@@ -1085,6 +1085,7 @@ test("worker /health verdict keys off the current intake path, not the retired A
   const body = await res.json();
   assert.equal(body.ok, true, "the current product is ready even without the retired Agent Desk machinery");
   assert.equal(body.checks.signupsTable, true, "the intake table is present");
+  assert.equal(body.checks.engagementsTable, true, "the engagement table is present");
   assert.equal(body.checks.ai, false, "the retired AI binding is absent");
   assert.equal(body.checks.agentRunsTable, false, "the retired agent_runs table is absent");
   assert.equal(body.checks.usageLimitsTable, false, "the retired usage-limits table is absent");
@@ -1101,6 +1102,100 @@ test("legacy /api/agent-audit still labels its rows with the retired self-serve 
   const runInsert = db.calls.find((call) => call.sql.includes("INSERT INTO agent_runs"));
   assert.ok(runInsert, "agent audit must record the legacy run");
   assert.equal(runInsert.values[2], "agent-self-serve", "the legacy run keeps its own source label");
+});
+
+test("the agent chain logs the winning model with per-attempt completion tokens", async () => {
+  class ScriptedAI {
+    constructor(results) {
+      this.results = results;
+      this.calls = [];
+    }
+
+    async run(model, options, gatewayOptions) {
+      this.calls.push({ model, options, gatewayOptions });
+      const result = this.results[this.calls.length - 1] ?? this.results.at(-1);
+      if (result instanceof Error) throw result;
+      return result;
+    }
+  }
+
+  const invalid = { response: "# Pipeline Brief\n\n- readiness diagnosis without the other sections." };
+  const valid = { response: VALID_AGENT_OUTPUT, usage: { prompt_tokens: 10, completion_tokens: 432 } };
+  const ai = new ScriptedAI([invalid, valid]);
+  const db = new FakeDB();
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (...parts) => logs.push(parts.join(" "));
+  try {
+    const res = await worker.fetch(agentRequest(validBody()), { DB: db, AI: ai });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).model, "@cf/qwen/qwen3-30b-a3b-fp8");
+  } finally {
+    console.log = originalLog;
+  }
+  assert.equal(ai.calls[1].gatewayOptions.gateway.id, "default", "the winning call routes through the default gateway");
+  assert.equal(ai.calls[1].options.gateway, undefined, "the gateway option is a run option, not a model input");
+  const selection = logs.find((line) => line.startsWith("tinystudio_agent_model_selected"));
+  assert.ok(selection, "the winning model must be logged");
+  const payload = JSON.parse(selection.replace(/^tinystudio_agent_model_selected /, ""));
+  assert.equal(payload.model, "@cf/qwen/qwen3-30b-a3b-fp8");
+  assert.equal(payload.attempts, 2);
+  assert.equal(payload.modelAttempts[0].model, "@cf/mistralai/mistral-small-3.1-24b-instruct");
+  assert.equal(payload.modelAttempts[0].completionTokens, null);
+  assert.equal(payload.modelAttempts[1].completionTokens, 432);
+});
+
+test("the agent chain disables qwen3 thinking, sets gpt-oss low effort, and routes through the default gateway", async () => {
+  class AllInvalidAI {
+    constructor() {
+      this.calls = [];
+    }
+
+    async run(model, options, gatewayOptions) {
+      this.calls.push({ model, options, gatewayOptions });
+      return { response: "# Pipeline Brief\n\n- readiness diagnosis without the other sections." };
+    }
+  }
+
+  const ai = new AllInvalidAI();
+  const db = new FakeDB();
+  const logs = [];
+  const originalWarn = console.warn;
+  console.warn = (...parts) => logs.push(parts.join(" "));
+  let status;
+  try {
+    status = (await worker.fetch(agentRequest(validBody()), { DB: db, AI: ai })).status;
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(status, 502, "every candidate fails on the same invalid output");
+  assert.equal(ai.calls.length, AGENT_MODELS.length, "every model in the chain must be tried before giving up");
+  assert.equal(new Set(ai.calls.map((call) => call.model)).size, AGENT_MODELS.length, "the chain tries each model once");
+  const failure = logs.find((line) => line.startsWith("tinystudio_agent_ai_failed"));
+  assert.ok(failure, "the all-models-failed path must be logged");
+  const failurePayload = JSON.parse(failure.replace(/^tinystudio_agent_ai_failed /, ""));
+  assert.equal(failurePayload.attempts, AGENT_MODELS.length, "the failure log counts every attempt");
+  assert.equal(failurePayload.modelAttempts.length, AGENT_MODELS.length);
+  assert.deepEqual(
+    failurePayload.modelAttempts.map((entry) => entry.model),
+    AGENT_MODELS,
+    "the failure log names every model it tried"
+  );
+  const options = new Map(ai.calls.map((call) => [call.model, call.options]));
+  const gatewayOptions = new Map(ai.calls.map((call) => [call.model, call.gatewayOptions]));
+  const qwen = options.get("@cf/qwen/qwen3-30b-a3b-fp8");
+  const gptOss = options.get("@cf/openai/gpt-oss-20b");
+  assert.equal(qwen.chat_template_kwargs.enable_thinking, false, "qwen3 must not spend tokens thinking");
+  assert.equal(qwen.reasoning_effort, undefined, "reasoning_effort is not a qwen3 parameter");
+  assert.equal(gptOss.reasoning_effort, "low", "gpt-oss must run at low effort");
+  assert.equal(gptOss.chat_template_kwargs, undefined, "chat_template_kwargs is not a gpt-oss parameter");
+  for (const [model, runOptions] of options) {
+    assert.equal(runOptions.gateway, undefined, `${model} must not carry the gateway as a model input`);
+    assert.equal(runOptions.max_tokens, 2400);
+  }
+  for (const [model, runGatewayOptions] of gatewayOptions) {
+    assert.equal(runGatewayOptions.gateway?.id, "default", `${model} must route through the default gateway`);
+  }
 });
 
 test("signup handler redirects a rejected email to /?signal=invalid so the homepage can render it", async () => {
@@ -1219,6 +1314,24 @@ test("/appraisal is served as an asset and the retired Agent Desk, desk and MSP 
     const res = await worker.fetch(new Request(`https://tinystudio.io${path}`), env);
     assert.equal(res.status, 404, `${path} must be gone`);
   }
+});
+
+test("/waitlist is served as its own public asset with its page, stylesheet and script", async () => {
+  const served = [];
+  const env = {
+    ASSETS: {
+      fetch: async (request) => {
+        const path = new URL(request.url).pathname;
+        served.push(path);
+        return new Response("<html>asset</html>", { status: 200 });
+      }
+    }
+  };
+  for (const path of ["/waitlist", "/waitlist.html", "/waitlist.css", "/waitlist.js"]) {
+    const res = await worker.fetch(new Request(`https://tinystudio.io${path}`), env);
+    assert.equal(res.status, 200, `${path} must be served`);
+  }
+  assert.deepEqual(served, ["/waitlist", "/waitlist.html", "/waitlist.css", "/waitlist.js"], "each waitlist path must be fetched as its own asset");
 });
 
 test("canonical host redirect leaves the apex and the retired hosts alone", async () => {
@@ -2067,5 +2180,81 @@ test("signup handler accepts a same-origin Origin, or a same-origin Referer when
   ]) {
     const res = await worker.fetch(originSignupRequest(headers), { DB: new FakeDB() });
     assert.equal(res.status, 201, `headers ${JSON.stringify(headers)} must be accepted`);
+  }
+});
+
+const ROUTE_RECORD_ID = "11111111-2222-4333-8444-555555555555";
+
+function checkoutRequest(headers = {}, body = `recordId=${ROUTE_RECORD_ID}`) {
+  return new Request("https://tinystudio.io/api/engagements/checkout", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", ...headers },
+    body
+  });
+}
+
+function deskLineRequest(headers = {}) {
+  return new Request("https://tinystudio.io/api/desk/correction-lines", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", ...headers },
+    body: new URLSearchParams({ engagementId: ROUTE_RECORD_ID }).toString()
+  });
+}
+
+test("checkout route refuses a cross-site POST and an oversized body before Dodo is called", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("the checkout route must not reach Dodo");
+  };
+  try {
+    for (const headers of [
+      {},
+      { Origin: "https://evil.example" },
+      { Referer: "https://evil.example/page" },
+      { Origin: "https://tinystudio.io", "Sec-Fetch-Site": "cross-site" }
+    ]) {
+      const res = await worker.fetch(checkoutRequest(headers), {});
+      assert.equal(res.status, 403, `headers ${JSON.stringify(headers)} must be refused`);
+      assert.equal((await res.json()).error, "origin_not_allowed");
+    }
+
+    const declared = await worker.fetch(checkoutRequest({ Origin: "https://tinystudio.io", "content-length": String(30000) }, `recordId=${"x".repeat(30000)}`), {});
+    assert.equal(declared.status, 413);
+    assert.equal((await declared.json()).error, "request_too_large");
+
+    const streamed = await worker.fetch(
+      new Request("https://tinystudio.io/api/engagements/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", Origin: "https://tinystudio.io" },
+        body: (async function* () { yield new TextEncoder().encode(`recordId=${"x".repeat(30000)}`); })(),
+        duplex: "half"
+      }),
+      {}
+    );
+    assert.equal(streamed.status, 413, "a body over the cap is refused even without a content-length");
+    assert.equal((await streamed.json()).error, "request_too_large");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("dodo webhook route refuses an oversized body instead of answering 500", async () => {
+  const res = await worker.fetch(
+    new Request("https://tinystudio.io/api/webhooks/dodo", {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": String(30000) },
+      body: JSON.stringify({ type: "payment.succeeded", data: {} }).padEnd(30000)
+    }),
+    {}
+  );
+  assert.equal(res.status, 413);
+  assert.equal((await res.json()).error, "request_too_large");
+});
+
+test("desk action route refuses a cross-site POST before it reads the form", async () => {
+  for (const headers of [{}, { Origin: "https://evil.example" }, { Referer: "https://evil.example/page" }]) {
+    const res = await worker.fetch(deskLineRequest(headers), {});
+    assert.equal(res.status, 403, `headers ${JSON.stringify(headers)} must be refused`);
+    assert.equal((await res.json()).error, "cross_site_blocked");
   }
 });

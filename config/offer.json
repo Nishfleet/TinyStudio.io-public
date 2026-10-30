@@ -1,0 +1,10 @@
+{
+  "name": "Website Correction",
+  "productKey": "website-correction",
+  "priceCents": 1000000,
+  "currency": "USD",
+  "slotsPerMonth": 6,
+  "workingDays": 10,
+  "requires": ["Access to the site and its host", "One decision-maker we can reach"],
+  "noGuarantee": "TinyStudio promises proof, not outcomes. We fix the faults in the record and show you the before and after. We do not promise revenue, rankings or any business result."
+}

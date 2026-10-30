@@ -5,6 +5,7 @@ import test from "node:test";
 import worker from "../src/worker.js";
 import { publishRecord, renderProofReceipt, renderRecord } from "../src/record.js";
 import costing from "../config/costing.json" with { type: "json" };
+import offer from "../config/offer.json" with { type: "json" };
 
 function d1(sqlite) {
   return {
@@ -73,15 +74,26 @@ test("quality gate: no uncited number in a rendered record", async () => {
   const { id } = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
   const html = objects.get(`records/${id}.html`);
   const ids = new Set(costing.rows.map((r) => r.id));
+  const offerRefs = new Set(["priceCents", "workingDays", "slotsPerMonth", "startDate"]);
   const figs = [...html.matchAll(/<span class="fig" data-cite="([^"]+)">/g)];
   assert.ok(figs.length > 0);
   for (const [, cite] of figs) {
     for (const ref of cite.split(" ")) {
       const [kind, name] = ref.split(":");
-      assert.ok((kind === "row" && ids.has(name)) || (kind === "input" && ["dealValue", "monthlyLeads"].includes(name)), `bad citation ${ref}`);
+      assert.ok(
+        (kind === "row" && ids.has(name)) ||
+          (kind === "input" && ["dealValue", "monthlyLeads"].includes(name)) ||
+          (kind === "offer" && offerRefs.has(name)),
+        `bad citation ${ref}`
+      );
     }
   }
 
+  const price = `$${(offer.priceCents / 100).toLocaleString("en-US")}`;
+  assert.ok(html.includes(`data-cite="offer:priceCents">${price}<`), "the proposal price is cited from the offer");
+  assert.ok(html.includes(`data-cite="offer:workingDays">${offer.workingDays}<`));
+  assert.ok(html.includes(`data-cite="offer:slotsPerMonth">${offer.slotsPerMonth}<`));
+  assert.ok(html.includes('data-cite="offer:startDate">1 November 2026<'));
   const body = html
     .replace(/<span class="fig"[^>]*>[^<]*<\/span>/g, "")
     .replace(/<style>[\s\S]*?<\/style>/, "")
@@ -264,4 +276,79 @@ test("scheduled drift rerun: a record untouched for 90 days is requeued once per
   env.APPRAISAL_NOW = "2027-04-15T00:00:00.000Z";
   await worker.scheduled(controller, env);
   assert.equal(jobs().length, 2, "a new window requeues it");
+});
+
+test("record: the checkout button is offered only while the engagement awaits payment", async () => {
+  const { sqlite } = freshEnv();
+  const request = sqlite.prepare("SELECT * FROM appraisal_requests WHERE id = 'req-1'").get();
+  const args = { request, faults, summary: "S", version: 1, renderedAt: "2026-10-13T08:00:00.000Z", recordId: "r1", engagementId: "e1" };
+
+  const awaiting = renderRecord({ ...args, engagementStatus: "proposed" });
+  assert.ok(awaiting.includes('action="/api/engagements/checkout"'), "the proposal asks for the payment while the engagement is proposed");
+  assert.ok(awaiting.includes("Start the correction"));
+
+  const settled = renderRecord({ ...args, engagementStatus: "paid" });
+  assert.ok(!settled.includes('action="/api/engagements/checkout"'), "a paid record offers no second checkout");
+  assert.ok(!settled.includes("Start the correction"));
+  assert.ok(settled.includes("We received your payment."), "the record says the payment arrived");
+
+  const unsettled = renderRecord({ ...args, engagementStatus: "appraised" });
+  assert.ok(!unsettled.includes('action="/api/engagements/checkout"'), "a record whose engagement has no proposal yet offers no checkout");
+  assert.ok(unsettled.includes("This record is being prepared."));
+
+  const undated = renderRecord({ ...args });
+  assert.ok(!undated.includes('action="/api/engagements/checkout"'), "a record with no engagement status offers no checkout");
+  assert.ok(undated.includes("This record is being prepared."));
+});
+
+test("record: only a settled engagement says the payment arrived", async () => {
+  const { sqlite } = freshEnv();
+  const request = sqlite.prepare("SELECT * FROM appraisal_requests WHERE id = 'req-1'").get();
+  const args = { request, faults, summary: "S", version: 1, renderedAt: "2026-10-13T08:00:00.000Z", recordId: "r1", engagementId: "e1" };
+
+  for (const status of ["requested", "appraised"]) {
+    const html = renderRecord({ ...args, engagementStatus: status });
+    assert.ok(!html.includes("We received your payment."), `an engagement in ${status} has paid nothing`);
+    assert.ok(!html.includes('action="/api/engagements/checkout"'), `an engagement in ${status} cannot pay yet`);
+  }
+
+  for (const status of ["paid", "in_correction", "proved", "tracking", "closed"]) {
+    const html = renderRecord({ ...args, engagementStatus: status });
+    assert.ok(html.includes("We received your payment."), `an engagement in ${status} has paid`);
+    assert.ok(!html.includes('action="/api/engagements/checkout"'), `an engagement in ${status} offers no second checkout`);
+  }
+});
+
+test("engagement walk: a pre-existing engagement is advanced by its state, not by the record version", async () => {
+  const { env, sqlite } = freshEnv();
+  sqlite.prepare(
+    "INSERT INTO engagements (id, request_id, status, created_at, changed_at) VALUES ('e-pre', 'req-1', 'requested', '2026-10-12T09:00:00.000Z', '2026-10-12T09:00:00.000Z')"
+  ).run();
+  sqlite.prepare(
+    "INSERT INTO appraisal_records (id, request_id, version, rendered_at, faults_json, review_json) VALUES ('rec-pre', 'req-1', 3, '2026-10-12T09:30:00.000Z', ?1, ?2)"
+  ).run(JSON.stringify(faults), JSON.stringify(review));
+
+  const { version } = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
+  assert.equal(version, 4, "the pre-existing record is republished as the next version");
+
+  const engagement = sqlite.prepare("SELECT status FROM engagements WHERE id = 'e-pre'").get();
+  assert.equal(engagement.status, "proposed", "the engagement walks from its own state, so a record past version one still reaches the proposal");
+
+  const journal = sqlite.prepare("SELECT type, from_status, to_status FROM engagement_events WHERE engagement_id = 'e-pre' ORDER BY created_at, id").all();
+  assert.deepEqual(journal.map(({ type, from_status, to_status }) => ({ type, from_status, to_status })), [
+    { type: "status_changed", from_status: "requested", to_status: "appraised" },
+    { type: "status_changed", from_status: "appraised", to_status: "proposed" }
+  ]);
+});
+
+test("engagement walk: a paid engagement is never walked back to a proposal", async () => {
+  const { env, sqlite } = freshEnv();
+  sqlite.prepare(
+    "INSERT INTO engagements (id, request_id, status, created_at, changed_at) VALUES ('e-paid', 'req-1', 'paid', '2026-10-12T09:00:00.000Z', '2026-10-12T09:00:00.000Z')"
+  ).run();
+
+  const { version } = await publishRecord(env, "req-1", { faults, review }, "https://tinystudio.io", "2026-10-13T08:00:00.000Z");
+  assert.equal(version, 1);
+  const engagement = sqlite.prepare("SELECT status FROM engagements WHERE id = 'e-paid'").get();
+  assert.equal(engagement.status, "paid", "a paid engagement stays paid when the record is published");
 });
