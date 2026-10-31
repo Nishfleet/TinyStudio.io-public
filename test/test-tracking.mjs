@@ -3,6 +3,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { recordsMock } from "./records-mock.js";
+import { installHtmlRewriterShim } from "./html-rewriter-shim.js";
+
+installHtmlRewriterShim();
+
 import worker from "../src/worker.js";
 import { publishRecord } from "../src/record.js";
 import {
@@ -369,4 +373,30 @@ test("specimen consent is the client's say-so, recorded on the engagement and sh
   assert.match(body, /id="client-proof-pairs"/);
   assert.ok(body.includes("https://clinic.example"), "the consented proof pair is on the wall");
   assert.ok(body.includes("/records/"), "the wall links the record");
+
+  const markerless = new Map([["/specimen", "<!doctype html><html><body><main><h2>Yours is read the same way.</h2></main></body></html>"]]);
+  const markerlessEnv = {
+    ...env,
+    ASSETS: { async fetch(request) { return new Response(markerless.get(new URL(request.url).pathname), { headers: { "content-type": "text/html; charset=utf-8" } }); } }
+  };
+  const staticPage = await worker.fetch(new Request("https://tinystudio.io/specimen"), markerlessEnv);
+  assert.equal(staticPage.status, 200, "a page without the band marker still serves");
+  const staticBody = await staticPage.text();
+  assert.ok(!staticBody.includes("client-proof-pairs"), "no wall section lands without the band marker");
+  assert.ok(staticBody.includes("Yours is read the same way."), "the static page reaches the visitor unchanged");
+});
+
+test("a wall query failure serves the static specimen page and warns", async () => {
+  const { env } = freshEnv();
+  const assets = new Map([["/specimen", '<!doctype html><html><body><main><div class="band"><h2>Yours is read the same way.</h2></div></main></body></html>']]);
+  const failingEnv = {
+    ...env,
+    DB: { prepare() { throw new Error("d1 unavailable"); } },
+    ASSETS: { async fetch(request) { return new Response(assets.get(new URL(request.url).pathname), { headers: { "content-type": "text/html; charset=utf-8" } }); } }
+  };
+  const page = await worker.fetch(new Request("https://tinystudio.io/specimen"), failingEnv);
+  assert.equal(page.status, 200, "a failed wall query does not take the page down");
+  const body = await page.text();
+  assert.ok(body.includes("Yours is read the same way."), "the static page still serves when the wall query fails");
+  assert.ok(!body.includes("client-proof-pairs"), "no wall section without a working query");
 });

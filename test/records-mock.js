@@ -1,4 +1,3 @@
-// Shared R2 RECORDS mock for test environments that build `env` by hand.
 export function recordsMock(objects) {
   return {
     async put(key, body) { objects.set(key, body); },

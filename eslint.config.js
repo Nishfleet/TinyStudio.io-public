@@ -24,12 +24,12 @@ export default [
   js.configs.recommended,
   { rules: { "no-irregular-whitespace": ["error", { skipTemplates: true }] } },
   {
-    files: ["**/*.mjs"],
+    files: ["**/*.mjs", "test/**/*.js"],
     languageOptions: { ecmaVersion: "latest", sourceType: "module", globals: { ...globals.node, ...globals.browser } },
   },
   {
     files: ["src/**/*.js"],
-    languageOptions: { ecmaVersion: "latest", sourceType: "module", globals: { ...globals.browser, ...globals.node } },
+    languageOptions: { ecmaVersion: "latest", sourceType: "module", globals: { ...globals.browser, ...globals.node, HTMLRewriter: "readonly" } },
   },
   {
     files: ["public/**/*.js"],

@@ -2176,20 +2176,21 @@ async function specimenPairsSection(env) {
   return `<section id="client-proof-pairs"><h2>On the wall, with their say-so</h2><p>These clients said yes to their proof pair sitting here. Each link is the same unguessable page a paying customer gets: the record, and the proof receipt that sets the before and after side by side, fault by fault.</p><ul>\n${items}\n</ul></section>`;
 }
 
-async function specimenResponse(request, env, url, assetResponse) {
-  const section = await specimenPairsSection(env).catch(() => "");
-  const html = await assetResponse.text();
-  const marker = '<div class="band">';
-  const body = section && html.includes(marker) ? html.replace(marker, `${section}\n  ${marker}`) : html;
-  const headers = new Headers(assetResponse.headers);
-  headers.delete("content-length");
-  headers.delete("etag");
-  headers.delete("last-modified");
-  return new Response(body, {
-    status: assetResponse.status,
-    statusText: assetResponse.statusText,
-    headers
-  });
+async function specimenResponse(assetResponse, env) {
+  let section = "";
+  try {
+    section = await specimenPairsSection(env);
+  } catch (error) {
+    console.warn("tinystudio_specimen_wall_failed", error.message || "wall failed");
+  }
+  if (!section) return assetResponse;
+  return new HTMLRewriter()
+    .on("div.band", {
+      element(element) {
+        element.before(section, { html: true });
+      }
+    })
+    .transform(assetResponse);
 }
 
 export default {
@@ -2342,7 +2343,7 @@ export default {
 
       const assetResponse = await env.ASSETS.fetch(request);
       if ((url.pathname === "/specimen" || url.pathname === "/specimen.html") && request.method === "GET") {
-        return withSecurityHeaders(await specimenResponse(request, env, url, assetResponse));
+        return withSecurityHeaders(await specimenResponse(assetResponse, env));
       }
       return withSecurityHeaders(assetResponse);
     }
