@@ -13,7 +13,7 @@ Contact: hello@tinystudio.io
 - https://tinystudio.io/ — homepage: the Website Appraisal offer and intake
 - https://tinystudio.io/appraisal — the audit method and controlled AI-search evidence
 - https://tinystudio.io/pricing — price and terms for the human-reviewed desk
-- https://tinystudio.io/specimen — a specimen appraisal showing the report format
+- https://tinystudio.io/specimen — the proof pairs whose clients said yes, each with the client's own say-so on file
 - https://tinystudio.io/waitlist — the six-a-month waitlist, and the form that holds a place in it
 - https://tinystudio.io/offer.md — machine-readable offer mirror
 - https://tinystudio.io/llms.txt — this file
@@ -63,7 +63,9 @@ No call at any point. The report lands in your inbox; there is no meeting,
 no onboarding sequence and no call to book.
 
 Buyer: high-ticket service businesses — clinics, surgeons, dentists, spas,
-dealers, brokers — and clients are never named.
+dealers, brokers. Clients are never named, except on the specimen wall
+(https://tinystudio.io/specimen), where a proof pair appears only with the
+client's own say-so.
 
 Six appraisals a month, done by hand. When the sixth is taken, the intake
 closes until the next.

@@ -5,11 +5,13 @@ import {
   correctionLineById,
   correctionLines,
   engagementById,
+  journalEngagementEvent,
   reviewCorrectionLine,
   revertCorrectionLine,
   setKickoffNote
 } from "./engagement.js";
-import { republishRecord } from "./record.js";
+import { addTrackingNote, TRACKING_DAYS, trackingDay, trackingNotes, trackingStartedAt } from "./tracking.js";
+import { renderCloseOut, republishRecord } from "./record.js";
 
 export async function deskQueue(env) {
   const result = await env.DB.prepare(
@@ -101,4 +103,117 @@ export async function addDeskKickoffNote(env, input, reviewer, at) {
     detail: `tracking opened by ${reviewer}`,
     at
   });
+}
+
+export async function addDeskTrackingNote(env, input, reviewer, at) {
+  const engagement = await engagementById(env, input.engagementId);
+  if (!engagement) throw Object.assign(new Error("engagement not found"), { code: "NOT_FOUND" });
+  return addTrackingNote(env, engagement, { day: input.day, note: input.note }, reviewer, at);
+}
+
+export async function setDeskSpecimenConsent(env, input, reviewer, at) {
+  const engagement = await engagementById(env, input.engagementId);
+  if (!engagement) throw Object.assign(new Error("engagement not found"), { code: "NOT_FOUND" });
+  if (!engagementAllows(engagement, "set_specimen_consent")) {
+    throw Object.assign(new Error("specimen consent is recorded once the correction is proved"), { code: "NOT_PROVED" });
+  }
+  const consent = input.consent ? 1 : 0;
+  const sayso = String(input.sayso ?? "").trim();
+  if (consent && !sayso) {
+    throw Object.assign(new Error("a yes to the specimen gallery carries the client's own words"), { code: "SAYSO_MISSING" });
+  }
+  await env.DB.prepare("UPDATE engagements SET specimen_consent = ?1, changed_at = ?2 WHERE id = ?3")
+    .bind(consent, at, engagement.id)
+    .run();
+  await journalEngagementEvent(env, engagement, {
+    type: "specimen_consent_recorded",
+    detail: consent ? `the client said yes to the specimen gallery: ${sayso}` : "the client said no to the specimen gallery",
+    at
+  });
+  return { ...engagement, specimen_consent: consent };
+}
+
+async function mintReferralCode(env, referrer, at) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const code = `TS-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+    const minted = await env.DB.prepare(
+      "INSERT OR IGNORE INTO appraisal_referrals (code, referrer, created_at) VALUES (?1, ?2, ?3)"
+    )
+      .bind(code, referrer, at)
+      .run();
+    if (Number(minted.meta?.changes) > 0) return code;
+  }
+  throw Object.assign(new Error("no referral code could be minted"), { code: "REFERRAL_MINT_FAILED" });
+}
+
+export async function closeOutEngagement(env, input, reviewer, at) {
+  const engagement = await engagementById(env, input.engagementId);
+  if (!engagement) throw Object.assign(new Error("engagement not found"), { code: "NOT_FOUND" });
+  if (!engagementAllows(engagement, "close_out")) {
+    throw Object.assign(new Error("the close-out ends an engagement that is in tracking"), { code: "NOT_TRACKING" });
+  }
+  const notes = await trackingNotes(env, engagement.id);
+  const notedDays = new Set(notes.map((note) => Number(note.day)));
+  for (const day of [7, TRACKING_DAYS]) {
+    if (!notedDays.has(day)) {
+      throw Object.assign(new Error(`the close-out waits for the day-${day} tracking note`), { code: `NOTE_${day}_MISSING` });
+    }
+  }
+  const startedAt = await trackingStartedAt(env, engagement.id);
+  if (!startedAt || trackingDay(at, startedAt) < TRACKING_DAYS) {
+    throw Object.assign(new Error("the close-out waits for the fourteen days of tracking"), { code: "TRACKING_TOO_SHORT" });
+  }
+  const request = await env.DB.prepare("SELECT * FROM appraisal_requests WHERE id = ?1").bind(engagement.request_id).first();
+  if (!request) throw Object.assign(new Error("appraisal request not found"), { code: "NOT_FOUND" });
+  const receipt = await env.DB.prepare(
+    "SELECT id FROM proof_receipts WHERE request_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 1"
+  )
+    .bind(engagement.request_id)
+    .first();
+  let closeOutId;
+  let referralCode;
+  const existing = await env.DB.prepare("SELECT id, referral_code FROM close_outs WHERE engagement_id = ?1")
+    .bind(engagement.id)
+    .first();
+  if (existing) {
+    closeOutId = existing.id;
+    referralCode = existing.referral_code;
+  } else {
+    referralCode = await mintReferralCode(env, request.name, at);
+    closeOutId = crypto.randomUUID();
+    const inserted = await env.DB.prepare(
+      `INSERT OR IGNORE INTO close_outs (id, engagement_id, request_id, record_id, receipt_id, referral_code, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+    )
+      .bind(closeOutId, engagement.id, engagement.request_id, engagement.record_id, receipt?.id ?? null, referralCode, at)
+      .run();
+    if (Number(inserted.meta?.changes) === 0) {
+      await env.DB.prepare("DELETE FROM appraisal_referrals WHERE code = ?1 AND used_request_id IS NULL")
+        .bind(referralCode)
+        .run();
+      const raced = await env.DB.prepare("SELECT id, referral_code FROM close_outs WHERE engagement_id = ?1")
+        .bind(engagement.id)
+        .first();
+      closeOutId = raced.id;
+      referralCode = raced.referral_code;
+    } else {
+      await journalEngagementEvent(env, engagement, { type: "close_out_rendered", detail: `${closeOutId} ${referralCode}`, at });
+    }
+  }
+  const html = renderCloseOut({
+    request,
+    notes,
+    recordId: engagement.record_id,
+    receiptId: receipt?.id ?? null,
+    referralCode,
+    specimenConsent: Number(engagement.specimen_consent) === 1,
+    renderedAt: at
+  });
+  await env.RECORDS.put(`records/${closeOutId}.html`, html, { httpMetadata: { contentType: "text/html; charset=utf-8" } });
+  const closed = await advanceEngagement(env, engagement, "closed", {
+    type: "status_changed",
+    detail: `close-out by ${reviewer}`,
+    at
+  });
+  return { engagement: closed, closeOutId, referralCode, receiptId: receipt?.id ?? null };
 }

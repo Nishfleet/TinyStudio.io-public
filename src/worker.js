@@ -1,9 +1,19 @@
 import { RECORD_ID, recordKey } from "./record.js";
 import { deskAccessConfigured, deskIdentity, deskUnauthorized } from "./desk-access.js";
-import { addDeskCorrectionLine, addDeskKickoffNote, deskDraftLines, deskQueue, reviewDeskCorrectionLine } from "./desk.js";
+import {
+  addDeskCorrectionLine,
+  addDeskKickoffNote,
+  addDeskTrackingNote,
+  closeOutEngagement,
+  deskDraftLines,
+  deskQueue,
+  reviewDeskCorrectionLine,
+  setDeskSpecimenConsent
+} from "./desk.js";
 import { handleDodoWebhook, startCheckoutForRequest } from "./payments.js";
 import { deskQueuePage } from "./desk-page.js";
 import { ENGAGEMENT_ID } from "./engagement.js";
+import { queueTrackingChecks } from "./tracking.js";
 
 const SECURITY_HEADERS = {
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
@@ -491,8 +501,8 @@ async function signupResponse(request, env, url) {
   return jsonResponse({ ok: true, message: "signal_saved" }, { status: 201 });
 }
 
-function appraisalNow(env) {
-  return new Date(env.APPRAISAL_NOW || Date.now());
+function appraisalNow(env, fallback) {
+  return new Date(env.APPRAISAL_NOW || fallback || Date.now());
 }
 
 function appraisalMonth(now) {
@@ -636,6 +646,44 @@ async function queueAppraisalAudit(env, requestId, at) {
   if (queued.meta?.changes) await recordAppraisalEvent(env, requestId, "audit_queued", "seo-fix-kit", at);
 }
 
+const DRIFT_RERUN_AFTER_DAYS = 90;
+const DRIFT_RERUN_BATCH = 50;
+
+function driftCutoff(now) {
+  return new Date(now.getTime() - DRIFT_RERUN_AFTER_DAYS * 86400000).toISOString();
+}
+
+async function queueDriftReruns(env, now) {
+  const cutoff = driftCutoff(now);
+  const due = await env.DB.prepare(
+    `SELECT r.id AS request_id
+     FROM appraisal_requests r
+     JOIN appraisal_records rec ON rec.request_id = r.id
+     JOIN engagements e ON e.request_id = r.id
+     LEFT JOIN (
+       SELECT request_id, MAX(created_at) AS last_queued
+       FROM appraisal_rerun_jobs
+       GROUP BY request_id
+     ) d ON d.request_id = r.id
+     WHERE EXISTS (SELECT 1 FROM engagement_payments p WHERE p.engagement_id = e.id)
+     GROUP BY r.id
+     HAVING MAX(rec.rendered_at) <= ?1 AND (MAX(d.last_queued) IS NULL OR MAX(d.last_queued) <= ?1)
+     LIMIT ?2`
+  ).bind(cutoff, DRIFT_RERUN_BATCH).all();
+  let queued = 0;
+  for (const { request_id: requestId } of due.results) {
+    const inserted = await env.DB.prepare(
+      "INSERT INTO appraisal_rerun_jobs (id, request_id, kind, status, created_at) VALUES (?1, ?2, 'drift', 'queued', ?3)"
+    ).bind(crypto.randomUUID(), requestId, now.toISOString()).run();
+    if (inserted.meta?.changes) {
+      await recordAppraisalEvent(env, requestId, "drift_check_queued", "seo-fix-kit", now.toISOString());
+      queued += 1;
+    }
+  }
+  console.log("tinystudio_drift_reruns_queued", queued);
+  return queued;
+}
+
 async function placeAppraisalRequest(env, input, now) {
   const at = now.toISOString();
   const month = appraisalMonth(now);
@@ -651,9 +699,9 @@ async function placeAppraisalRequest(env, input, now) {
   let referred = false;
   if (slots.full && input.referral) {
     const claim = await env.DB.prepare(
-      "UPDATE appraisal_referrals SET used_request_id = ?1, used_at = ?2 WHERE code = ?3 AND used_request_id IS NULL"
+      "UPDATE appraisal_referrals SET used_request_id = ?1, used_at = ?2 WHERE code = ?3 AND used_request_id IS NULL AND substr(created_at, 1, 7) = ?4"
     )
-      .bind(id, at, input.referral)
+      .bind(id, at, input.referral, month)
       .run();
     referred = Boolean(claim.meta?.changes);
   }
@@ -1893,6 +1941,36 @@ async function deskActionResponse(request, env, url, kind) {
     }
     const engagementId = cleanField(form.get("engagementId"), 64);
     if (!ENGAGEMENT_ID.test(engagementId)) return fail({ code: "bad_engagement" });
+    if (kind === "tracking-note") {
+      const notes = await addDeskTrackingNote(
+        env,
+        { engagementId, day: cleanField(form.get("day"), 2), note: cleanField(form.get("note"), 4000) },
+        identity.email,
+        at
+      );
+      return browserForm
+        ? deskActionPage("Tracking note saved.")
+        : withSecurityHeaders(jsonResponse({ ok: true, noteDays: notes.map((note) => note.day) }));
+    }
+    if (kind === "close-out") {
+      const result = await closeOutEngagement(env, { engagementId }, identity.email, at);
+      return browserForm
+        ? deskActionPage(`Close-out rendered. Engagement ${result.engagement.status}. Code ${result.referralCode}.`)
+        : withSecurityHeaders(
+            jsonResponse({ ok: true, engagementStatus: result.engagement.status, closeOutId: result.closeOutId, referralCode: result.referralCode })
+          );
+    }
+    if (kind === "specimen-consent") {
+      const result = await setDeskSpecimenConsent(
+        env,
+        { engagementId, consent: form.get("consent") === "1", sayso: cleanField(form.get("sayso"), 2000) },
+        identity.email,
+        at
+      );
+      return browserForm
+        ? deskActionPage(`Specimen consent recorded: ${result.specimen_consent === 1 ? "yes" : "no"}.`)
+        : withSecurityHeaders(jsonResponse({ ok: true, specimenConsent: result.specimen_consent }));
+    }
     const engagement = await addDeskKickoffNote(env, { engagementId, note: cleanField(form.get("note"), 4000) }, identity.email, at);
     return browserForm
       ? deskActionPage(`Kickoff note saved. Engagement ${engagement.status}.`)
@@ -2073,6 +2151,48 @@ async function recordResponse(request, env, url) {
   );
 }
 
+async function specimenPairsSection(env) {
+  const result = await env.DB.prepare(
+    `SELECT r.site_url, e.record_id,
+            (SELECT pr.id FROM proof_receipts pr WHERE pr.request_id = e.request_id
+              ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS receipt_id
+       FROM engagements e
+       JOIN appraisal_requests r ON r.id = e.request_id
+      WHERE e.specimen_consent = 1
+      ORDER BY e.changed_at DESC
+      LIMIT 12`
+  ).all();
+  const pairs = (result.results ?? []).filter((row) => row.record_id);
+  if (!pairs.length) return "";
+  const items = pairs
+    .map((row) =>
+      `<li><a href="/records/${escapeHtml(row.record_id)}">The record of ${escapeHtml(row.site_url)}</a>${
+        row.receipt_id
+          ? ` · <a href="/records/${escapeHtml(row.receipt_id)}">its Proof Receipt</a>`
+          : ""
+      }</li>`
+    )
+    .join("\n");
+  return `<section id="client-proof-pairs"><h2>On the wall, with their say-so</h2><p>These clients said yes to their proof pair sitting here. Each link is the same unguessable page a paying customer gets: the record, and the proof receipt that sets the before and after side by side, fault by fault.</p><ul>\n${items}\n</ul></section>`;
+}
+
+async function specimenResponse(assetResponse, env) {
+  let section = "";
+  try {
+    section = await specimenPairsSection(env);
+  } catch (error) {
+    console.warn("tinystudio_specimen_wall_failed", error.message || "wall failed");
+  }
+  if (!section) return assetResponse;
+  return new HTMLRewriter()
+    .on("div.band", {
+      element(element) {
+        element.before(section, { html: true });
+      }
+    })
+    .transform(assetResponse);
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -2144,6 +2264,18 @@ export default {
       return deskActionResponse(request, env, url, "kickoff");
     }
 
+    if (url.pathname === "/api/desk/tracking-note") {
+      return deskActionResponse(request, env, url, "tracking-note");
+    }
+
+    if (url.pathname === "/api/desk/close-out") {
+      return deskActionResponse(request, env, url, "close-out");
+    }
+
+    if (url.pathname === "/api/desk/specimen-consent") {
+      return deskActionResponse(request, env, url, "specimen-consent");
+    }
+
     if (url.pathname.startsWith("/records/")) {
       return recordResponse(request, env, url);
     }
@@ -2210,6 +2342,9 @@ export default {
       }
 
       const assetResponse = await env.ASSETS.fetch(request);
+      if ((url.pathname === "/specimen" || url.pathname === "/specimen.html") && request.method === "GET") {
+        return withSecurityHeaders(await specimenResponse(assetResponse, env));
+      }
       return withSecurityHeaders(assetResponse);
     }
 
@@ -2231,5 +2366,19 @@ export default {
 
     const indexResponse = await env.ASSETS.fetch(assetRequest(url, request, "/index.html"));
     return withSecurityHeaders(indexResponse);
+  },
+
+  async scheduled(controller, env) {
+    const now = appraisalNow(env, controller.scheduledTime);
+    try {
+      await queueDriftReruns(env, now);
+    } catch (error) {
+      console.error("tinystudio_drift_rerun_queue_failed", error?.message ?? String(error));
+    }
+    try {
+      await queueTrackingChecks(env, now);
+    } catch (error) {
+      console.error("tinystudio_tracking_checks_queue_failed", error?.message ?? String(error));
+    }
   }
 };

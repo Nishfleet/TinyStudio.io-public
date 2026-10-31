@@ -73,7 +73,9 @@ const ENGAGEMENT_ACTIONS = new Map([
   ["proposed", ["send_checkout"]],
   ["paid", ["add_correction_line"]],
   ["in_correction", ["add_correction_line", "review_correction_line"]],
-  ["proved", ["add_kickoff_note"]]
+  ["proved", ["add_kickoff_note"]],
+  ["tracking", ["add_tracking_note", "close_out", "set_specimen_consent"]],
+  ["closed", ["set_specimen_consent"]]
 ]);
 
 export function engagementAllows(engagement, action) {

@@ -24,7 +24,7 @@
       "id": "q4-who-tinystudio-works-with",
       "name": "Who TinyStudio works with",
       "prompt": "Who does TinyStudio work with?",
-      "truth": "TinyStudio serves high-ticket clinics, surgeons, dentists, spas, clubs, property, dealers, brokers and similar businesses; clients are never named (appraisal.html)."
+      "truth": "TinyStudio serves high-ticket clinics, surgeons, dentists, spas, clubs, property, dealers, brokers and similar businesses; clients are never named, except on the specimen wall, where a proof pair appears only with the client's own say-so (appraisal.html)."
     },
     {
       "id": "q5-what-is-tinystudio-io",
@@ -36,7 +36,7 @@
       "id": "q6-client-work",
       "name": "Whether TinyStudio publishes client work",
       "prompt": "Does TinyStudio publish client work?",
-      "truth": "TinyStudio does not publish client work: no logos, no case studies, no testimonials, no 'as seen at' (appraisal.html)."
+      "truth": "TinyStudio does not publish client work unasked: no logos, no case studies, no testimonials, no 'as seen at'. The one exception is the specimen wall, where a proof pair appears only with the client's own say-so (appraisal.html)."
     },
     {
       "id": "q7-what-tinystudio-io-charges",
