@@ -36,19 +36,20 @@ export async function queueTrackingChecks(env, now) {
       LIMIT 200`
   ).all();
   const at = now.toISOString();
-  let queued = 0;
+  const checks = [];
   for (const row of engagements.results ?? []) {
     if (!row.started_at) continue;
     const dueDay = trackingDay(at, row.started_at);
     for (let day = 1; day <= dueDay; day += 1) {
-      const inserted = await env.DB.prepare(
-        "INSERT OR IGNORE INTO tracking_checks (id, engagement_id, request_id, day, status, created_at) VALUES (?1, ?2, ?3, ?4, 'queued', ?5)"
-      )
-        .bind(crypto.randomUUID(), row.id, row.request_id, day, at)
-        .run();
-      if (Number(inserted.meta?.changes) > 0) queued += 1;
+      checks.push(
+        env.DB.prepare(
+          "INSERT OR IGNORE INTO tracking_checks (id, engagement_id, request_id, day, status, created_at) VALUES (?1, ?2, ?3, ?4, 'queued', ?5)"
+        ).bind(crypto.randomUUID(), row.id, row.request_id, day, at)
+      );
     }
   }
+  const results = await env.DB.batch(checks);
+  const queued = results.filter((result) => Number(result.meta?.changes) > 0).length;
   console.log("tinystudio_tracking_checks_queued", queued);
   return queued;
 }

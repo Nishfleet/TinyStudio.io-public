@@ -19,6 +19,11 @@ function d1(sqlite) {
         async all() { return { results: sqlite.prepare(sql).all(...values) }; }
       };
       return statement;
+    },
+    async batch(statements) {
+      const results = [];
+      for (const statement of statements) results.push(await statement.run());
+      return results;
     }
   };
 }
