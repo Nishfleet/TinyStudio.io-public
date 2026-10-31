@@ -231,6 +231,7 @@ test("drift email: one email above the cost floor with the record link, and sile
   assert.equal(sqlite.prepare("SELECT type FROM appraisal_events WHERE type = 'drift_engagement_active'").all().length, 1, "the active-engagement gate, not the cost floor, kept it quiet");
   assert.equal(sqlite.prepare("SELECT type FROM appraisal_events WHERE type = 'drift_below_threshold'").all().length, 0);
   assert.equal(receiptRow(sqlite, "req-1"), undefined, "a drift rerun on an active engagement writes no receipt");
+  assert.equal(sqlite.prepare("SELECT version FROM appraisal_records WHERE request_id = 'req-1'").get().version, 1, "a drift rerun on an active engagement leaves the stored record where it was");
   sqlite.prepare("UPDATE engagements SET status = 'closed'").run();
   await publishRecord(env, "req-1", { faults: drifted, review: { keep: ["f1", "f2", "f4"], summary: "The rerun found a new mobile layout fault." } }, "https://tinystudio.io", "2026-10-15T08:00:00.000Z", { kind: "drift" });
   assert.equal(sent.length, 2, "a closed engagement's rerun with a new fault above the floor sends exactly one email");

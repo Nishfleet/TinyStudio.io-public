@@ -334,7 +334,11 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
   const run = { version, renderedAt: at, summary: reviewed.summary, faults: reviewed.faults };
   const before = runFromRow(existing);
   const rerun = kind === "rerun" || kind === "drift";
-  const receiptId = before && rerun && !(kind === "drift" && engagement.status !== "closed") ? crypto.randomUUID() : null;
+  if (kind === "drift" && engagement.status !== "closed") {
+    await writeEvent(env, requestId, "drift_engagement_active", `${id} ${engagement.status}`, at);
+    return { id, version: existing ? existing.version : 1 };
+  }
+  const receiptId = before && rerun ? crypto.randomUUID() : null;
   let linkedReceiptId = receiptId;
   if (!linkedReceiptId && version > 1) {
     const last = await env.DB.prepare(
@@ -383,10 +387,6 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
     return { id, version };
   }
   if (kind !== "drift") {
-    return { id, version };
-  }
-  if (engagement.status !== "closed") {
-    await writeEvent(env, requestId, "drift_engagement_active", `${id} ${engagement.status}`, at);
     return { id, version };
   }
   if (!origin) {
