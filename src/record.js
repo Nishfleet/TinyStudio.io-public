@@ -184,19 +184,14 @@ export function recordEmail({ env, request, recordId, origin }) {
 export const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const recordKey = (id) => `records/${id}.html`;
 
-const runKey = (id, version) => `records/${id}.v${version}.json`;
-
-async function storeRun(env, recordId, run) {
-  await env.RECORDS.put(runKey(recordId, run.version), JSON.stringify(run), {
-    httpMetadata: { contentType: "application/json" }
-  });
-}
-
-async function loadRun(env, recordId, version) {
-  const object = await env.RECORDS.get(runKey(recordId, version));
-  if (!object) return null;
-  const run = JSON.parse(await object.text());
-  return Array.isArray(run.faults) && typeof run.renderedAt === "string" ? run : null;
+export function runFromRow(existing) {
+  if (!existing || typeof existing.rendered_at !== "string") return null;
+  try {
+    const reviewed = reviewFaults(JSON.parse(existing.faults_json ?? "null"), JSON.parse(existing.review_json ?? "null"));
+    return { version: existing.version, renderedAt: existing.rendered_at, summary: reviewed.summary, faults: reviewed.faults };
+  } catch {
+    return null;
+  }
 }
 
 function rowCite(faults) {
@@ -322,7 +317,9 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
   const request = await env.DB.prepare("SELECT * FROM appraisal_requests WHERE id = ?1").bind(requestId).first();
   if (!request) throw new Error("appraisal request not found");
   const reviewed = reviewFaults(faults, review);
-  const existing = await env.DB.prepare("SELECT id, version FROM appraisal_records WHERE request_id = ?1").bind(requestId).first();
+  const existing = await env.DB.prepare(
+    "SELECT id, version, rendered_at, faults_json, review_json FROM appraisal_records WHERE request_id = ?1"
+  ).bind(requestId).first();
   const id = existing ? existing.id : crypto.randomUUID();
   const version = existing ? existing.version + 1 : 1;
 
@@ -335,9 +332,9 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
   }
 
   const run = { version, renderedAt: at, summary: reviewed.summary, faults: reviewed.faults };
-  const before = version === 1 ? null : await loadRun(env, id, version - 1);
+  const before = runFromRow(existing);
   const rerun = kind === "rerun" || kind === "drift";
-  const receiptId = before && rerun ? crypto.randomUUID() : null;
+  const receiptId = before && rerun && !(kind === "drift" && engagement.status !== "closed") ? crypto.randomUUID() : null;
   let linkedReceiptId = receiptId;
   if (!linkedReceiptId && version > 1) {
     const last = await env.DB.prepare(
@@ -367,7 +364,6 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
     await storeRecord(env, { id, requestId, version, html, at, faults, review });
     await env.DB.prepare("UPDATE engagements SET record_id = ?1 WHERE id = ?2").bind(id, engagement.id).run();
     await markLinesRecorded(env, engagement, version, at);
-    await storeRun(env, id, run);
   } catch (error) {
     if (receiptId) {
       await env.DB.prepare("DELETE FROM proof_receipts WHERE id = ?1").bind(receiptId).run().catch(() => {});
@@ -433,7 +429,7 @@ export function renderCloseOut({ request, notes, recordId, receiptId, referralCo
     .join("\n");
   const specimenLine = specimenConsent
     ? `<p>With your say-so on file, this proof pair now sits in our specimen gallery.</p>`
-    : `<p>If you agree, this proof pair joins our specimen gallery. Say the word and it goes up.</p>`;
+    : `<p>If you agree, this proof pair joins our specimen gallery: your site named, with everything these pages show — the faults, their costs, the price we charged, and the deal-value and lead figures behind them. Say the word and it goes up.</p>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -461,7 +457,7 @@ ${specimenLine}
 <h2>Who else should see their record?</h2>
 <p>That is the only question this page asks. You have seen what the correction did to your own numbers. If one other business comes to mind, send them here and give them this code:</p>
 <p class="referral">${esc(referralCode)}</p>
-<p>A business that names this code when it requests its appraisal skips the waitlist for the month it was minted and the month after.</p>
+<p>A business that names this code when it requests its appraisal skips the waitlist for the month it was minted.</p>
 </main>
 </body>
 </html>

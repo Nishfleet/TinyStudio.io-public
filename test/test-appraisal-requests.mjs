@@ -191,7 +191,7 @@ test("a referred business skips the waitlist for the current month, once per cod
   sqlite.prepare("INSERT INTO appraisal_referrals (code, referrer, created_at) VALUES (?, ?, ?)")
     .run("REF-LAST-MONTH", "closed-out client", "2026-09-15T00:00:00.000Z");
   const lastMonth = await (await submit(env, { website: "f.example", email: "f@f.example", referral: "REF-LAST-MONTH" })).json();
-  assert.equal(lastMonth.status, "accepted", "a code minted late in the month before still skips the waitlist");
+  assert.equal(lastMonth.status, "waitlisted", "a code from the month before skips nothing");
   sqlite.prepare("INSERT INTO appraisal_referrals (code, referrer, created_at) VALUES (?, ?, ?)")
     .run("REF-OLD", "closed-out client", "2026-08-31T00:00:00.000Z");
   const stale = await (await submit(env, { website: "e.example", email: "e@e.example", referral: "REF-OLD" })).json();

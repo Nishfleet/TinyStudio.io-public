@@ -15,6 +15,7 @@ import {
 } from "../src/desk.js";
 import { handleDodoWebhook } from "../src/payments.js";
 import { engagementAllows } from "../src/guardrails.js";
+import { queueTrackingChecks } from "../src/tracking.js";
 import { Webhook } from "standardwebhooks";
 import offer from "../config/offer.json" with { type: "json" };
 
@@ -137,6 +138,19 @@ async function engagementInTracking(env, sqlite) {
   return { engagementId, recordId };
 }
 
+test("a night with no engagement in tracking queues nothing and calls no batch", async () => {
+  const { env } = freshEnv();
+  let batches = 0;
+  const batch = env.DB.batch.bind(env.DB);
+  env.DB.batch = async (statements) => {
+    batches += 1;
+    return batch(statements);
+  };
+  const queued = await queueTrackingChecks(env, new Date("2026-11-20T00:00:00.000Z"));
+  assert.equal(queued, 0);
+  assert.equal(batches, 0, "no empty batch goes to D1");
+});
+
 test("a desk republish re-renders the stored record and writes no receipt and no email", async () => {
   const { env, sent, sqlite } = freshEnv();
   await engagementInTracking(env, sqlite);
@@ -240,7 +254,7 @@ test("a full engagement runs through to the Close-out, with the receipt and clos
   assert.ok(html.includes("Day 7: Speed holds"), "the day-7 note is on the page");
   assert.ok(html.includes("Day 14: Four form submissions"), "the day-14 note is on the page");
   assert.ok(html.includes(result.referralCode));
-  assert.ok(html.includes("for the month it was minted and the month after"));
+  assert.ok(html.includes("for the month it was minted"), "the referral's window is the month it was minted in");
   assert.doesNotMatch(html, /class="fig"/, "the close-out prices nothing");
 
   const res = await worker.fetch(new Request("https://tinystudio.io/records/" + result.closeOutId), env);
@@ -312,8 +326,11 @@ test("the close-out's referral code skips the waitlist for the current month", a
             ('dec-5','https://5.example','Dental clinic',8000,40,'Five','5@5.example','2026-12','2026-12-01T08:00:00.000Z'),
             ('dec-6','https://6.example','Dental clinic',8000,40,'Six','6@6.example','2026-12','2026-12-01T08:00:00.000Z')`
   ).run();
+  sqlite.prepare("INSERT INTO appraisal_referrals (code, referrer, created_at) VALUES ('TS-OLDCODE1', 'Dana Reyes', '2026-10-15T08:00:00.000Z')").run();
+  const stale = await (await submit({ website: "https://stale.example", email: "s@s.example", name: "S", referral: "TS-OLDCODE1" }, "192.0.2.8")).json();
+  assert.equal(stale.status, "waitlisted", "a code from an earlier month skips nothing");
   const later = await (await submit({ website: "https://late.example", email: "l@l.example", name: "L", referral: referralCode }, "192.0.2.9")).json();
-  assert.equal(later.status, "waitlisted", "the code skips nothing in a month after the one it was minted in");
+  assert.equal(later.status, "waitlisted", "a used code skips nothing");
 });
 
 test("specimen consent is the client's say-so, recorded on the engagement and shown on the wall", async () => {

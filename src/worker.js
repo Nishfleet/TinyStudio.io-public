@@ -509,12 +509,6 @@ function appraisalMonth(now) {
   return now.toISOString().slice(0, 7);
 }
 
-function previousMonth(month) {
-  const year = Number(month.slice(0, 4));
-  const mon = Number(month.slice(5, 7));
-  return mon === 1 ? `${year - 1}-12` : `${year}-${String(mon - 1).padStart(2, "0")}`;
-}
-
 function nextSlotDate(now) {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
 }
@@ -705,9 +699,9 @@ async function placeAppraisalRequest(env, input, now) {
   let referred = false;
   if (slots.full && input.referral) {
     const claim = await env.DB.prepare(
-      "UPDATE appraisal_referrals SET used_request_id = ?1, used_at = ?2 WHERE code = ?3 AND used_request_id IS NULL AND substr(created_at, 1, 7) IN (?4, ?5)"
+      "UPDATE appraisal_referrals SET used_request_id = ?1, used_at = ?2 WHERE code = ?3 AND used_request_id IS NULL AND substr(created_at, 1, 7) = ?4"
     )
-      .bind(id, at, input.referral, month, previousMonth(month))
+      .bind(id, at, input.referral, month)
       .run();
     referred = Boolean(claim.meta?.changes);
   }
@@ -2183,24 +2177,19 @@ async function specimenPairsSection(env) {
 }
 
 async function specimenResponse(request, env, url, assetResponse) {
-  try {
-    const section = await specimenPairsSection(env);
-    if (!section) return assetResponse;
-    const html = await assetResponse.text();
-    const marker = '<div class="band">';
-    const body = html.includes(marker) ? html.replace(marker, `${section}\n  ${marker}`) : html;
-    const headers = new Headers(assetResponse.headers);
-    headers.delete("content-length");
-    headers.delete("etag");
-    headers.delete("last-modified");
-    return new Response(body, {
-      status: assetResponse.status,
-      statusText: assetResponse.statusText,
-      headers
-    });
-  } catch {
-    return assetResponse;
-  }
+  const section = await specimenPairsSection(env).catch(() => "");
+  const html = await assetResponse.text();
+  const marker = '<div class="band">';
+  const body = section && html.includes(marker) ? html.replace(marker, `${section}\n  ${marker}`) : html;
+  const headers = new Headers(assetResponse.headers);
+  headers.delete("content-length");
+  headers.delete("etag");
+  headers.delete("last-modified");
+  return new Response(body, {
+    status: assetResponse.status,
+    statusText: assetResponse.statusText,
+    headers
+  });
 }
 
 export default {

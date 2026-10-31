@@ -48,6 +48,10 @@ export async function queueTrackingChecks(env, now) {
       );
     }
   }
+  if (!checks.length) {
+    console.log("tinystudio_tracking_checks_queued", 0);
+    return 0;
+  }
   const results = await env.DB.batch(checks);
   const queued = results.filter((result) => Number(result.meta?.changes) > 0).length;
   console.log("tinystudio_tracking_checks_queued", queued);
