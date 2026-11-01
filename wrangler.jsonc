@@ -4,7 +4,7 @@
   "main": "src/worker.js",
   "compatibility_date": "2026-05-29",
   "workers_dev": false,
-  "preview_urls": false,
+  "preview_urls": true,
   "routes": [
     { "pattern": "tinystudio.io/*", "zone_name": "tinystudio.io" },
     { "pattern": "www.tinystudio.io/*", "zone_name": "tinystudio.io" },
@@ -41,5 +41,6 @@
     "directory": "./public",
     "binding": "ASSETS",
     "run_worker_first": ["/*"]
-  }
+  },
+  "previews": {}
 }

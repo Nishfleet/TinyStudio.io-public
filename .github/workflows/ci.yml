@@ -1,24 +1,28 @@
+# The product lane: pull request -> these checks -> merge queue -> deploy.yml. Every job also runs on
+# merge_group, where the queue evaluates required checks (GitHub docs, "Managing a merge queue").
+# Each job names its incident or standing rule (owner decision 2026-09-11 on 0509#2994).
 name: CI
-
 on:
   pull_request:
-  push:
-    branches: [main]
-
+  merge_group:
 permissions:
   contents: read
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
-
 jobs:
-  verify:
+  ci:
+    # The repository's own test gate (`npm test`, AGENTS.md) plus the config dry run.
+    # Check names `verify` and `Secret scan` are the ones the main ruleset requires.
+    name: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: No helper scripts
+        # Standing rule, no glue (Nish 2026-10-25): a script dir in a product repo is a defect.
         run: test -z "$(git ls-files scripts bin tools ops .specify '*.sh')"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -29,28 +33,12 @@ jobs:
       - run: npm test
       - run: npm run check:render-blocking
       - name: Wrangler config and bundle check
-        run: npx wrangler@latest deploy --dry-run
+        # The lockfile's wrangler, never a floating tag: `npx wrangler@latest` broke every CI
+        # run repo-wide on 2026-08-11 (upstream publish E404).
+        run: npx --no-install wrangler deploy --dry-run
 
-  workflow-lint:
-    name: Lint the workflows
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: actionlint
-        # Stock linter for workflow syntax, expressions and the shell inside
-        # run: blocks (the official image ships shellcheck and pyflakes as
-        # documented at https://github.com/rhysd/actionlint/blob/main/docs/usage.md#docker).
-        # Pinned like gitleaks.
-        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-        with:
-          args: -color
-
-  gitleaks:
+  secrets:
+    # Incidents: leaked Telegram token (fleet-ops#9578) and GitHub login token (fleet-ops#8771).
     name: Secret scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -63,5 +51,35 @@ jobs:
         run: |
           curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.27.2/gitleaks_8.27.2_linux_x64.tar.gz | tar -xz -C /tmp
           sudo mv /tmp/gitleaks /usr/local/bin/
-      - name: Scan
-        run: gitleaks detect --source . --no-banner --redact
+      - run: gitleaks detect --source . --no-banner --redact
+
+  preview:
+    # Owner decision 2026-11-01 (fleet-ops#10935): a clickable preview is the last gate of every PR.
+    # Official action (cloudflare/wrangler-action, "Workers Previews"): one Preview per PR, shown on
+    # the PR as a deployment. Skipped (reports green) in the merge group, and for fork and Dependabot
+    # PRs, which get no secrets (Cloudflare Previews CI example, "Add repository secrets").
+    name: preview
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: preview --name pr-${{ github.event.pull_request.number }}
