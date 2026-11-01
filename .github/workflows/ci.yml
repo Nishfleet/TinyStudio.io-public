@@ -1,7 +1,6 @@
-# The product lane: pull request -> these checks -> reviewer App -> merge queue -> deploy.yml.
-# Every job also runs on merge_group, because the queue evaluates the required checks on the
-# merge group (GitHub docs, "Managing a merge queue"). Each job names the incident or the
-# standing rule that keeps it (owner decision 2026-09-11 on 0509#2994: gates need a named incident).
+# The product lane: pull request -> these checks -> merge queue -> deploy.yml. Every job also runs on
+# merge_group, where the queue evaluates required checks (GitHub docs, "Managing a merge queue").
+# Each job names its incident or standing rule (owner decision 2026-09-11 on 0509#2994).
 name: CI
 on:
   pull_request:
@@ -54,13 +53,15 @@ jobs:
       - run: gitleaks detect --source . --no-banner --redact
 
   preview:
-    # Owner decision 2026-11-01 (fleet-ops#10935): a preview link the owner can click is the last
-    # gate of every product PR. Cloudflare Workers Previews through the official action
-    # (https://github.com/cloudflare/wrangler-action#workers-previews): one Preview per PR, a
-    # GitHub Deployment on the PR and a job summary with the link. The merge group has no PR, so
-    # the step is skipped there and the job still reports green.
+    # Owner decision 2026-11-01 (fleet-ops#10935): a clickable preview is the last gate of every PR.
+    # Official action (cloudflare/wrangler-action, "Workers Previews"): one Preview per PR, shown on
+    # the PR as a deployment. Skipped (reports green) in the merge group, and for fork and Dependabot
+    # PRs, which get no secrets (Cloudflare Previews CI example, "Add repository secrets").
     name: preview
-    if: github.event_name == 'pull_request'
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -75,11 +76,9 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - id: preview
-        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+      - uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           command: preview --name pr-${{ github.event.pull_request.number }}
-      - run: echo "Preview ${{ steps.preview.outputs.preview-url }}"
