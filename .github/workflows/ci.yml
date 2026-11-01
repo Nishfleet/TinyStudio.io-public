@@ -13,7 +13,8 @@ concurrency:
 jobs:
   ci:
     # The repository's own test gate (`npm test`, AGENTS.md) plus the config dry run.
-    name: ci
+    # Check names `verify` and `Secret scan` are the ones the main ruleset requires.
+    name: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -38,7 +39,7 @@ jobs:
 
   secrets:
     # Incidents: leaked Telegram token (fleet-ops#9578) and GitHub login token (fleet-ops#8771).
-    name: secrets
+    name: Secret scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
