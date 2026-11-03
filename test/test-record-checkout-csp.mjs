@@ -84,7 +84,7 @@ async function submitCheckoutForm(recordHtml, recordCsp) {
     await page.click('button:has-text("Start the correction")', { noWaitAfter: true });
     await Promise.race([
       page.waitForResponse((response) => response.url() === CHECKOUT_URL),
-      page.waitForEvent("requestfailed", (request) => request.url().includes("/api/engagements/checkout")),
+      page.waitForEvent("console", (message) => /Content Security Policy/i.test(message.text())),
       page.waitForTimeout(10000)
     ]);
   } finally {
