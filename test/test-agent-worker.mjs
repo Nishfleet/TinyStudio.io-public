@@ -1014,6 +1014,23 @@ test("agent audit rejects model output that misses required sections", async () 
   assert.equal(json.error, "empty_agent_output");
 });
 
+test("form handlers answer 400 to a JSON body that is not an object", async () => {
+  for (const path of ["/api/signups", "/api/appraisal-requests", "/api/agent-audit"]) {
+    for (const body of ["null", "[]", "42"]) {
+      const env = { DB: new FakeDB(), AI: new FakeAI("") };
+      const res = await worker.fetch(
+        new Request(`https://tinystudio.io${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Origin: "https://tinystudio.io" },
+          body
+        }),
+        env
+      );
+      assert.equal(res.status, 400, `${path} with body ${body}`);
+    }
+  }
+});
+
 test("signup handler accepts a bare-domain website with a test email and stores the normalized URL", async () => {
   const db = new FakeDB();
   const env = { DB: db, AI: new FakeAI("") };

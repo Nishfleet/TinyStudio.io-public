@@ -1,7 +1,10 @@
 const DESK_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
-const esc = (value) =>
-  String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+/** @type {Record<string, string>} */
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+/** @param {unknown} value */
+const esc = (value) => String(value).replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
 
+/** @param {string} title @param {string} body */
 const SHELL = (title, body) => `<!doctype html>
 <html lang="en">
 <head>
@@ -26,6 +29,7 @@ ${body}
 </html>
 `;
 
+/** @param {CorrectionLineRow} line */
 function lineCell(line) {
   return `<div class="line">
 <p><strong>${esc(line.fault_title)}</strong></p>
@@ -45,11 +49,12 @@ ${Number(line.legal_copy) === 1 ? '<p class="muted">Legal copy: it publishes onl
 </div>`;
 }
 
+/** @param {DeskQueueRow[]} rows @param {CorrectionLineRow[]} lines */
 export function deskQueuePage(rows, lines) {
+  /** @type {Map<string, CorrectionLineRow[]>} */
   const byEngagement = new Map();
   for (const line of lines) {
-    if (!byEngagement.has(line.engagement_id)) byEngagement.set(line.engagement_id, []);
-    byEngagement.get(line.engagement_id).push(line);
+    byEngagement.set(line.engagement_id, [...(byEngagement.get(line.engagement_id) ?? []), line]);
   }
   const body = rows.length
     ? `<h1>Desk review</h1>

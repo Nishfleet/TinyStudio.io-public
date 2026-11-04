@@ -1,14 +1,18 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
+/** @type {Map<string, ReturnType<typeof createRemoteJWKSet>>} */
 const jwksCache = new Map();
 
+/** @param {string} team */
 function jwks(team) {
-  if (!jwksCache.has(team)) {
-    jwksCache.set(team, createRemoteJWKSet(new URL(`https://${team}/cdn-cgi/access/certs`)));
-  }
-  return jwksCache.get(team);
+  const cached = jwksCache.get(team);
+  if (cached) return cached;
+  const fresh = createRemoteJWKSet(new URL(`https://${team}/cdn-cgi/access/certs`));
+  jwksCache.set(team, fresh);
+  return fresh;
 }
 
+/** @param {Env} env @param {Request} request @returns {Promise<{ authenticated: true, email: string } | { authenticated: false, reason: string }>} */
 export async function deskIdentity(env, request) {
   const team = String(env.CF_ACCESS_TEAM_DOMAIN || "").trim();
   const aud = String(env.CF_ACCESS_AUD || "").trim();
@@ -24,6 +28,7 @@ export async function deskIdentity(env, request) {
   }
 }
 
+/** @param {string} reason */
 export function deskUnauthorized(reason) {
   return new Response("Desk review needs Cloudflare Access.", {
     status: reason === "invalid_token" ? 403 : 401,
@@ -31,5 +36,6 @@ export function deskUnauthorized(reason) {
   });
 }
 
+/** @param {Env} env */
 export const deskAccessConfigured = (env) =>
   Boolean(String(env.CF_ACCESS_TEAM_DOMAIN || "").trim() && String(env.CF_ACCESS_AUD || "").trim());

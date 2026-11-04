@@ -2,16 +2,21 @@ import { assertCorrectionLineStatus, assertEngagementStatus, assertLegalCopyCons
 
 export const ENGAGEMENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
+/** @param {Env} env @param {string} requestId @returns {Promise<EngagementRow | null>} */
 export async function engagementForRequest(env, requestId) {
+  /** @type {EngagementRow | null} */
   const row = await env.DB.prepare("SELECT * FROM engagements WHERE request_id = ?1").bind(requestId).first();
   return row ?? null;
 }
 
+/** @param {Env} env @param {string} engagementId @returns {Promise<EngagementRow | null>} */
 export async function engagementById(env, engagementId) {
+  /** @type {EngagementRow | null} */
   const row = await env.DB.prepare("SELECT * FROM engagements WHERE id = ?1").bind(engagementId).first();
   return row ?? null;
 }
 
+/** @param {Env} env @param {EngagementRef} engagement @param {{ type: string, detail?: string | null, at: string, from?: string | null, to?: string }} event */
 export async function journalEngagementEvent(env, engagement, { type, detail, at, from = engagement.status, to = engagement.status }) {
   await env.DB.prepare(
     "INSERT INTO engagement_events (engagement_id, request_id, type, from_status, to_status, detail, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
@@ -20,10 +25,12 @@ export async function journalEngagementEvent(env, engagement, { type, detail, at
     .run();
 }
 
+/** @param {CorrectionLineRow} line @returns {EngagementRef} */
 function lineJournalRow(line) {
   return { id: line.engagement_id, request_id: line.request_id, status: line.status };
 }
 
+/** @param {Env} env @param {string} requestId @param {string} at */
 export async function openEngagement(env, requestId, at) {
   const existing = await engagementForRequest(env, requestId);
   if (existing) return existing;
@@ -34,9 +41,12 @@ export async function openEngagement(env, requestId, at) {
     .bind(id, requestId, at)
     .run();
   await journalEngagementEvent(env, { id, request_id: requestId, status: "requested" }, { type: "engagement_opened", detail: "intake", at, from: null, to: "requested" });
-  return engagementForRequest(env, requestId);
+  const opened = await engagementForRequest(env, requestId);
+  if (!opened) throw new Error(`engagement for request ${requestId} was not saved`);
+  return opened;
 }
 
+/** @template {EngagementRef} T @param {Env} env @param {T} engagement @param {string} to @param {{ type: string, detail?: string, at: string }} event @returns {Promise<T>} */
 export async function advanceEngagement(env, engagement, to, { type, detail, at }) {
   assertEngagementStatus(engagement.status, to);
   const claim = await env.DB.prepare("UPDATE engagements SET status = ?1, changed_at = ?2 WHERE id = ?3 AND status = ?4").bind(to, at, engagement.id, engagement.status).run();
@@ -45,6 +55,7 @@ export async function advanceEngagement(env, engagement, to, { type, detail, at 
   return { ...engagement, status: to };
 }
 
+/** @param {Env} env @param {EngagementRow} engagement @param {string} checkoutSessionId @param {string} at */
 export async function attachCheckoutSession(env, engagement, checkoutSessionId, at) {
   if (!checkoutSessionId) throw new Error("checkout session id missing");
   await env.DB.prepare("UPDATE engagements SET checkout_session_id = ?1, changed_at = ?2 WHERE id = ?3")
@@ -54,6 +65,7 @@ export async function attachCheckoutSession(env, engagement, checkoutSessionId, 
   return { ...engagement, checkout_session_id: checkoutSessionId };
 }
 
+/** @param {Env} env @param {EngagementRow} engagement @param {unknown} note @param {string} at */
 export async function setKickoffNote(env, engagement, note, at) {
   const text = String(note ?? "").trim();
   if (!text) throw new Error("kickoff note missing");
@@ -64,6 +76,7 @@ export async function setKickoffNote(env, engagement, note, at) {
   return { ...engagement, kickoff_note: text };
 }
 
+/** @param {Env} env @param {EngagementRef} engagement @param {{ faultId?: unknown, faultTitle?: unknown, beforeText?: unknown, afterText?: unknown, legalCopy?: unknown, consentReceived?: unknown }} line @param {string} at */
 export async function addCorrectionLine(env, engagement, line, at) {
   assertLegalCopyConsent(line);
   const faultId = String(line?.faultId ?? "").trim();
@@ -82,21 +95,28 @@ export async function addCorrectionLine(env, engagement, line, at) {
     .bind(id, engagement.id, engagement.request_id, faultId || null, faultTitle, beforeText, afterText, line.legalCopy ? 1 : 0, at)
     .run();
   await journalEngagementEvent(env, engagement, { type: "correction_line_added", detail: `${id} ${faultTitle}`, at });
-  return correctionLineById(env, id);
+  const added = await correctionLineById(env, id);
+  if (!added) throw new Error(`correction line ${id} could not be read back`);
+  return added;
 }
 
+/** @param {Env} env @param {string} lineId @returns {Promise<CorrectionLineRow | null>} */
 export async function correctionLineById(env, lineId) {
+  /** @type {CorrectionLineRow | null} */
   const row = await env.DB.prepare("SELECT * FROM correction_lines WHERE id = ?1").bind(lineId).first();
   return row ?? null;
 }
 
+/** @param {Env} env @param {string} engagementId @returns {Promise<CorrectionLineRow[]>} */
 export async function correctionLines(env, engagementId) {
+  /** @type {D1Result<CorrectionLineRow>} */
   const result = await env.DB.prepare("SELECT * FROM correction_lines WHERE engagement_id = ?1 ORDER BY created_at ASC")
     .bind(engagementId)
     .all();
   return result.results ?? [];
 }
 
+/** @param {Env} env @param {CorrectionLineRow} line @param {unknown} action @param {{ reviewer: unknown, note?: unknown, at: string }} review */
 export async function reviewCorrectionLine(env, line, action, { reviewer, note, at }) {
   const decision = action === "approve" ? "approved" : action === "reject" ? "rejected" : "";
   if (!decision) throw new Error("unknown correction review action");
@@ -114,9 +134,12 @@ export async function reviewCorrectionLine(env, line, action, { reviewer, note, 
     .bind(line.id, line.engagement_id, reviewerName, action, String(note ?? "").trim() || null, at)
     .run();
   await journalEngagementEvent(env, lineJournalRow(line), { type: `correction_line_${action}`, detail: `${line.id} by ${reviewerName}`, at, from: line.status, to: decision });
-  return correctionLineById(env, line.id);
+  const reviewed = await correctionLineById(env, line.id);
+  if (!reviewed) throw new Error(`correction line ${line.id} could not be read back`);
+  return reviewed;
 }
 
+/** @param {Env} env @param {CorrectionLineRow} line @param {string} at */
 export async function revertCorrectionLine(env, line, at) {
   const current = await correctionLineById(env, line.id);
   if (!current || current.status !== "approved") return current ?? line;
@@ -129,6 +152,7 @@ export async function revertCorrectionLine(env, line, at) {
   return correctionLineById(env, line.id);
 }
 
+/** @param {Env} env @param {EngagementRef} engagement @param {number} version @param {string} at */
 export async function markLinesRecorded(env, engagement, version, at) {
   const recorded = await correctionLines(env, engagement.id);
   for (const line of recorded) {

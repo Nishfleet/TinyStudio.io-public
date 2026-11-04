@@ -13,7 +13,9 @@ import {
 import { addTrackingNote, TRACKING_DAYS, trackingDay, trackingNotes, trackingStartedAt } from "./tracking.js";
 import { renderCloseOut, republishRecord } from "./record.js";
 
+/** @param {Env} env @returns {Promise<DeskQueueRow[]>} */
 export async function deskQueue(env) {
+  /** @type {D1Result<DeskQueueRow>} */
   const result = await env.DB.prepare(
     `SELECT e.*, r.site_url, r.email,
             (SELECT COUNT(*) FROM correction_lines cl WHERE cl.engagement_id = e.id AND cl.status = 'draft') AS open_lines,
@@ -26,7 +28,9 @@ export async function deskQueue(env) {
   return result.results ?? [];
 }
 
+/** @param {Env} env @returns {Promise<(CorrectionLineRow & { engagement_status: string })[]>} */
 export async function deskDraftLines(env) {
+  /** @type {D1Result<CorrectionLineRow & { engagement_status: string }>} */
   const result = await env.DB.prepare(
     `SELECT cl.*, e.status AS engagement_status
        FROM correction_lines cl
@@ -38,6 +42,7 @@ export async function deskDraftLines(env) {
   return result.results ?? [];
 }
 
+/** @param {Env} env @param {{ engagementId: string } & Parameters<typeof addCorrectionLine>[2]} input @param {string} reviewer @param {string} at */
 export async function addDeskCorrectionLine(env, input, reviewer, at) {
   const engagement = await engagementById(env, input.engagementId);
   if (!engagement) throw Object.assign(new Error("engagement not found"), { code: "NOT_FOUND" });
@@ -56,6 +61,7 @@ export async function addDeskCorrectionLine(env, input, reviewer, at) {
   return { engagement: advanced, line };
 }
 
+/** @param {Env} env @param {{ lineId: string, action: string, note?: string }} input @param {string} reviewer @param {string} at */
 export async function reviewDeskCorrectionLine(env, input, reviewer, at) {
   const line = await correctionLineById(env, input.lineId);
   if (!line) throw Object.assign(new Error("correction line not found"), { code: "NOT_FOUND" });
@@ -90,6 +96,7 @@ export async function reviewDeskCorrectionLine(env, input, reviewer, at) {
   return { engagement: current, line: reviewed };
 }
 
+/** @param {Env} env @param {{ engagementId: string, note?: string }} input @param {string} reviewer @param {string} at */
 export async function addDeskKickoffNote(env, input, reviewer, at) {
   const engagement = await engagementById(env, input.engagementId);
   if (!engagement) throw Object.assign(new Error("engagement not found"), { code: "NOT_FOUND" });
@@ -105,12 +112,14 @@ export async function addDeskKickoffNote(env, input, reviewer, at) {
   });
 }
 
+/** @param {Env} env @param {{ engagementId: string, day?: unknown, note?: unknown }} input @param {string} reviewer @param {string} at */
 export async function addDeskTrackingNote(env, input, reviewer, at) {
   const engagement = await engagementById(env, input.engagementId);
   if (!engagement) throw Object.assign(new Error("engagement not found"), { code: "NOT_FOUND" });
   return addTrackingNote(env, engagement, { day: input.day, note: input.note }, reviewer, at);
 }
 
+/** @param {Env} env @param {{ engagementId: string, consent?: unknown, sayso?: unknown }} input @param {string} reviewer @param {string} at */
 export async function setDeskSpecimenConsent(env, input, reviewer, at) {
   const engagement = await engagementById(env, input.engagementId);
   if (!engagement) throw Object.assign(new Error("engagement not found"), { code: "NOT_FOUND" });
@@ -133,6 +142,7 @@ export async function setDeskSpecimenConsent(env, input, reviewer, at) {
   return { ...engagement, specimen_consent: consent };
 }
 
+/** @param {Env} env @param {string} referrer @param {string} at */
 async function mintReferralCode(env, referrer, at) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const code = `TS-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
@@ -146,6 +156,7 @@ async function mintReferralCode(env, referrer, at) {
   throw Object.assign(new Error("no referral code could be minted"), { code: "REFERRAL_MINT_FAILED" });
 }
 
+/** @param {Env} env @param {{ engagementId: string }} input @param {string} reviewer @param {string} at */
 export async function closeOutEngagement(env, input, reviewer, at) {
   const engagement = await engagementById(env, input.engagementId);
   if (!engagement) throw Object.assign(new Error("engagement not found"), { code: "NOT_FOUND" });
@@ -163,8 +174,10 @@ export async function closeOutEngagement(env, input, reviewer, at) {
   if (!startedAt || trackingDay(at, startedAt) < TRACKING_DAYS) {
     throw Object.assign(new Error("the close-out waits for the fourteen days of tracking"), { code: "TRACKING_TOO_SHORT" });
   }
+  /** @type {AppraisalRequestRow | null} */
   const request = await env.DB.prepare("SELECT * FROM appraisal_requests WHERE id = ?1").bind(engagement.request_id).first();
   if (!request) throw Object.assign(new Error("appraisal request not found"), { code: "NOT_FOUND" });
+  /** @type {{ id: string } | null} */
   const receipt = await env.DB.prepare(
     "SELECT id FROM proof_receipts WHERE request_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 1"
   )
@@ -172,6 +185,7 @@ export async function closeOutEngagement(env, input, reviewer, at) {
     .first();
   let closeOutId;
   let referralCode;
+  /** @type {{ id: string, referral_code: string } | null} */
   const existing = await env.DB.prepare("SELECT id, referral_code FROM close_outs WHERE engagement_id = ?1")
     .bind(engagement.id)
     .first();
@@ -191,9 +205,11 @@ export async function closeOutEngagement(env, input, reviewer, at) {
       await env.DB.prepare("DELETE FROM appraisal_referrals WHERE code = ?1 AND used_request_id IS NULL")
         .bind(referralCode)
         .run();
+      /** @type {{ id: string, referral_code: string } | null} */
       const raced = await env.DB.prepare("SELECT id, referral_code FROM close_outs WHERE engagement_id = ?1")
         .bind(engagement.id)
         .first();
+      if (!raced) throw Object.assign(new Error("close-out could not be read back"), { code: "CLOSE_OUT_MISSING" });
       closeOutId = raced.id;
       referralCode = raced.referral_code;
     } else {

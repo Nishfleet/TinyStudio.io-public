@@ -12,18 +12,21 @@ const DODO_HOST_SUFFIX = ".dodopayments.com";
 export const DODO_PAYMENT_SUCCESS_EVENTS = new Set(["payment.succeeded", "payment.completed", "payment.paid"]);
 export const DODO_PAYMENT_FAILURE_EVENTS = new Set(["payment.failed", "payment.cancelled", "payment.canceled"]);
 
-function dodoEnvironment(env = {}) {
+/** @param {Env} env */
+function dodoEnvironment(env) {
   const mode = String(env.DODO_TINYSTUDIO_MODE || "").trim().toLowerCase();
   if (["live", "production", "prod"].includes(mode)) return "live";
   if (["test", "sandbox"].includes(mode)) return "test";
   return "";
 }
 
-function dodoBaseUrl(env = {}) {
+/** @param {Env} env */
+function dodoBaseUrl(env) {
   return dodoEnvironment(env) === "test" ? DODO_TEST_URL : DODO_LIVE_URL;
 }
 
-export function dodoConfigStatus(env = {}) {
+/** @param {Env} env */
+export function dodoConfigStatus(env) {
   return {
     mode: dodoEnvironment(env) || "live",
     productId: Boolean(String(env.DODO_TINYSTUDIO_PRODUCT_ID || "").trim()),
@@ -33,8 +36,10 @@ export function dodoConfigStatus(env = {}) {
   };
 }
 
+/** @param {Env} env */
 export const dodoWebhookReady = (env) => dodoConfigStatus(env).webhookSecret;
 
+/** @param {string} value */
 function checkoutHostAllowed(value) {
   try {
     const parsed = new URL(value);
@@ -46,12 +51,15 @@ function checkoutHostAllowed(value) {
   }
 }
 
+/** @param {unknown} value */
 export function safeDodoCheckoutUrl(value) {
   const text = String(value || "").trim();
   return checkoutHostAllowed(text) ? text : "";
 }
 
+/** @param {string | undefined} secret */
 export function webhookSecretUsable(secret) {
+  if (!secret) return false;
   try {
     new Webhook(secret);
     return true;
@@ -60,6 +68,7 @@ export function webhookSecretUsable(secret) {
   }
 }
 
+/** @param {{ payload: string, webhookId: string, webhookTimestamp: string, webhookSignature: string, secret: string }} input */
 export function verifyDodoWebhookSignature({ payload, webhookId, webhookTimestamp, webhookSignature, secret }) {
   if (!payload || !webhookId || !webhookSignature) return false;
   try {
@@ -74,8 +83,10 @@ export function verifyDodoWebhookSignature({ payload, webhookId, webhookTimestam
   }
 }
 
+/** @param {Headers | Record<string, string>} headers */
 export function parseWebhookHeaders(headers) {
-  const read = (name) => String(headers.get?.(name) ?? headers[name] ?? "").trim();
+  /** @param {string} name */
+  const read = (name) => String((headers instanceof Headers ? headers.get(name) : headers[name]) ?? "").trim();
   return {
     webhookId: read("webhook-id"),
     webhookTimestamp: read("webhook-timestamp"),
@@ -83,12 +94,16 @@ export function parseWebhookHeaders(headers) {
   };
 }
 
+/** @param {DodoEvent | null | undefined} event */
 export function dodoEventType(event) {
   return String(event?.type || event?.event_type || "").trim().toLowerCase();
 }
 
+/** @param {DodoEvent | null | undefined} event */
 export function extractDodoPayment(event) {
+  /** @type {DodoPaymentData} */
   const data = event?.data && typeof event.data === "object" ? event.data : {};
+  /** @type {Record<string, unknown>} */
   const metadata = data.metadata && typeof data.metadata === "object" ? data.metadata : {};
   const items = Array.isArray(data.product_cart) ? data.product_cart : [];
   return {
@@ -105,6 +120,7 @@ export function extractDodoPayment(event) {
   };
 }
 
+/** @param {ReturnType<typeof extractDodoPayment>} payment @param {Pick<Env, "DODO_TINYSTUDIO_PRODUCT_ID">} env */
 export function paymentMatchesOffer(payment, env) {
   const expected = String(env.DODO_TINYSTUDIO_PRODUCT_ID || "").trim();
   if (!payment.paymentId) return false;
@@ -115,7 +131,9 @@ export function paymentMatchesOffer(payment, env) {
   return true;
 }
 
+/** @param {Env} env @param {string} webhookId */
 export async function webhookProcessed(env, webhookId) {
+  /** @type {{ status: string } | null} */
   const row = await env.DB.prepare(
     "SELECT status FROM dodo_webhook_events WHERE webhook_id = ?1 AND status = 'processed'"
   )
@@ -124,6 +142,7 @@ export async function webhookProcessed(env, webhookId) {
   return row ?? null;
 }
 
+/** @param {DodoEvent | null} event */
 function webhookAuditPayload(event) {
   if (!event) return null;
   const payment = extractDodoPayment(event);
@@ -137,6 +156,7 @@ function webhookAuditPayload(event) {
   };
 }
 
+/** @param {Env} env @param {{ webhookId: string, eventType: string, status: string, reason: string | null, payload: DodoEvent | null, at: string }} entry */
 async function logWebhook(env, { webhookId, eventType, status, reason, payload, at }) {
   await env.DB.prepare(
     `INSERT INTO dodo_webhook_events (webhook_id, event_type, status, reason, payload, created_at)
@@ -148,6 +168,7 @@ async function logWebhook(env, { webhookId, eventType, status, reason, payload, 
     .run();
 }
 
+/** @param {Env} env @param {{ payment: ReturnType<typeof extractDodoPayment>, engagement: EngagementRef, webhookId: string, at: string }} entry */
 async function recordPaymentRow(env, { payment, engagement, webhookId, at }) {
   await env.DB.prepare(
     `INSERT INTO engagement_payments (payment_id, engagement_id, webhook_id, product_id, amount_cents, currency, status, role, payload, created_at)
@@ -169,6 +190,7 @@ async function recordPaymentRow(env, { payment, engagement, webhookId, at }) {
     .run();
 }
 
+/** @param {Env} env @param {{ payment: ReturnType<typeof extractDodoPayment>, at: string }} input */
 export async function openEngagementFromPayment(env, { payment, at }) {
   const engagementRow = payment.engagementId ? await engagementById(env, payment.engagementId) : null;
   if (!engagementRow) throw Object.assign(new Error("paid event for an engagement this worker cannot match"), { code: "engagement_unknown" });
@@ -193,11 +215,13 @@ export async function openEngagementFromPayment(env, { payment, at }) {
   return { engagement, duplicate: settled };
 }
 
+/** @param {Env} env @param {{ rawBody: string, headers: Headers | Record<string, string> }} input */
 export async function handleDodoWebhook(env, { rawBody, headers }, at = new Date().toISOString()) {
-  if (!dodoWebhookReady(env)) {
+  const secret = env.DODO_TINYSTUDIO_WEBHOOK_SECRET;
+  if (!secret || !dodoWebhookReady(env)) {
     return { ok: false, status: 503, body: { error: "webhook_secret_missing" } };
   }
-  if (!webhookSecretUsable(env.DODO_TINYSTUDIO_WEBHOOK_SECRET)) {
+  if (!webhookSecretUsable(secret)) {
     return { ok: false, status: 503, body: { error: "webhook_secret_invalid" } };
   }
   const { webhookId, webhookTimestamp, webhookSignature } = parseWebhookHeaders(headers);
@@ -205,7 +229,7 @@ export async function handleDodoWebhook(env, { rawBody, headers }, at = new Date
     return { ok: false, status: 400, body: { error: "webhook_headers_missing" } };
   }
 
-  if (!verifyDodoWebhookSignature({ payload: rawBody, webhookId, webhookTimestamp, webhookSignature, secret: env.DODO_TINYSTUDIO_WEBHOOK_SECRET })) {
+  if (!verifyDodoWebhookSignature({ payload: rawBody, webhookId, webhookTimestamp, webhookSignature, secret })) {
     return { ok: false, status: 401, body: { error: "signature_invalid" } };
   }
 
@@ -262,13 +286,15 @@ export async function handleDodoWebhook(env, { rawBody, headers }, at = new Date
         : { received: true, engagementId: engagement.id, engagementStatus: engagement.status }
     };
   } catch (error) {
-    const code = String(error?.code || "engagement_open_failed");
+    const failure = error instanceof Error ? error : new Error(String(error));
+    const code = String(("code" in failure && failure.code) || "engagement_open_failed");
     const known = ["engagement_unknown", "engagement_state"].includes(code);
-    await logWebhook(env, { webhookId, eventType, status: "failed", reason: String(error?.message || code), payload: event, at });
+    await logWebhook(env, { webhookId, eventType, status: "failed", reason: String(failure.message || code), payload: event, at });
     return { ok: false, status: known ? 409 : 500, body: known ? { error: code } : { error: "engagement_open_failed" } };
   }
 }
 
+/** @param {Env} env @param {{ recordId?: string, requestId?: string, engagementId?: string, customerEmail?: string }} input @param {typeof fetch} fetchImpl */
 export async function createDodoCheckout(env, { recordId, requestId, engagementId, customerEmail }, fetchImpl = fetch) {
   const status = dodoConfigStatus(env);
   if (!status.productId || !status.apiKey) {
@@ -295,9 +321,10 @@ export async function createDodoCheckout(env, { recordId, requestId, engagementI
     }),
     signal: AbortSignal.timeout(DODO_TIMEOUT_MS)
   });
+  /** @type {{ message?: unknown, code?: unknown, checkout_url?: unknown, payment_link?: unknown, session_id?: unknown, id?: unknown }} */
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw Object.assign(new Error(payload?.message || "Dodo checkout could not be created"), {
+    throw Object.assign(new Error(String(payload?.message || "Dodo checkout could not be created")), {
       code: payload?.code || `dodo_checkout_rejected_${response.status}`,
       status: response.status
     });
@@ -310,7 +337,9 @@ export async function createDodoCheckout(env, { recordId, requestId, engagementI
   return { checkoutUrl, sessionId };
 }
 
+/** @param {Env} env @param {{ recordId: string }} input */
 export async function startCheckoutForRequest(env, { recordId }, at = new Date().toISOString(), fetchImpl = fetch) {
+  /** @type {{ id: string, request_id: string } | null} */
   const record = await env.DB.prepare("SELECT id, request_id FROM appraisal_records WHERE id = ?1").bind(recordId).first();
   if (!record) throw Object.assign(new Error("record not found"), { code: "record_not_found" });
   const engagement = await engagementForRequest(env, record.request_id);
@@ -318,6 +347,7 @@ export async function startCheckoutForRequest(env, { recordId }, at = new Date()
   if (!engagementAllows(engagement, "send_checkout")) {
     throw Object.assign(new Error("this engagement is not awaiting payment"), { code: "not_awaiting_payment" });
   }
+  /** @type {{ email: string } | null} */
   const request = await env.DB.prepare("SELECT email FROM appraisal_requests WHERE id = ?1").bind(record.request_id).first();
   const checkout = await createDodoCheckout(
     env,

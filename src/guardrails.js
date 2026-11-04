@@ -11,6 +11,7 @@ export const ENGAGEMENT_STATUSES = [
   "closed"
 ];
 
+/** @type {Record<string, string[]>} */
 const ENGAGEMENT_FLOW = {
   requested: ["appraised"],
   appraised: ["proposed"],
@@ -28,6 +29,7 @@ export const CORRECTION_LINE_STATUSES = ["draft", "approved", "recorded", "rejec
 export const APPLIED_LINE_STATES = ["approved", "recorded"];
 export const REVIEWED_LINE_STATES = [...APPLIED_LINE_STATES, "rejected"];
 
+/** @type {Record<string, string[]>} */
 const CORRECTION_FLOW = {
   draft: ["approved", "rejected"],
   approved: ["recorded"],
@@ -54,15 +56,18 @@ export const DENIED_ACTIONS = new Map([
   ]
 ]);
 
+/** @param {string} action */
 export function assertAllowedAction(action) {
   const denied = DENIED_ACTIONS.get(action);
   if (denied) throw new Error(`guardrail blocks ${action}: ${denied}`);
 }
 
+/** @param {string} action */
 export function isAllowedAction(action) {
   return !DENIED_ACTIONS.has(action);
 }
 
+/** @param {string} from @param {string} to */
 export function assertEngagementStatus(from, to) {
   if (!ENGAGEMENT_STATUSES.includes(from) || !ENGAGEMENT_FLOW[from]?.includes(to)) {
     throw new Error(`illegal engagement transition: ${from} -> ${to}`);
@@ -78,18 +83,21 @@ const ENGAGEMENT_ACTIONS = new Map([
   ["closed", ["set_specimen_consent"]]
 ]);
 
+/** @param {Pick<EngagementRow, "status"> | null | undefined} engagement @param {string} action */
 export function engagementAllows(engagement, action) {
   const denied = DENIED_ACTIONS.get(action);
   if (denied) throw new Error(`guardrail blocks ${action}: ${denied}`);
-  return ENGAGEMENT_ACTIONS.get(engagement?.status)?.includes(action) ?? false;
+  return ENGAGEMENT_ACTIONS.get(engagement?.status ?? "")?.includes(action) ?? false;
 }
 
+/** @param {string} from @param {string} to */
 export function assertCorrectionLineStatus(from, to) {
   if (!CORRECTION_LINE_STATUSES.includes(from) || !CORRECTION_FLOW[from]?.includes(to)) {
     throw new Error(`illegal correction line transition: ${from} -> ${to}`);
   }
 }
 
+/** @param {Pick<CorrectionLineRow, "id" | "status">[]} lines */
 export function assertPublishableLines(lines) {
   for (const line of lines) {
     if (line.status !== "approved" && line.status !== "recorded") {
@@ -98,6 +106,7 @@ export function assertPublishableLines(lines) {
   }
 }
 
+/** @param {{ legalCopy?: unknown, consentReceived?: unknown } | null | undefined} line */
 export function assertLegalCopyConsent(line) {
   if (Number(line?.legalCopy) === 1 && !line?.consentReceived) {
     throw new Error("legal copy change needs the customer's written consent on file");

@@ -5,14 +5,21 @@ import { APPLIED_LINE_STATES, assertPublishableLines, ENGAGEMENT_SETTLED_STATUSE
 
 const ROWS = new Map(costing.rows.map((row) => [row.faultType, row]));
 
+/** @typedef {{ dealValue: number, monthlyLeads: number }} CostInputs */
+
+/** @param {Fault} fault */
+const costingRow = (fault) => (fault.type === undefined ? undefined : ROWS.get(fault.type));
+
+/** @param {Fault} fault @param {CostInputs} inputs */
 export function costFault(fault, inputs) {
   if (!(inputs.dealValue > 0) || !(inputs.monthlyLeads > 0)) throw new Error("deal value and monthly leads must be above zero");
-  const row = ROWS.get(fault.type);
+  const row = costingRow(fault);
   if (!row) return { fault, row: null, monthlyCost: null };
   const monthlyCost = Math.round(inputs.monthlyLeads * (row.deltaPct / 100) * inputs.dealValue);
   return { fault, row, monthlyCost };
 }
 
+/** @param {Fault[]} faults @param {{ summary?: unknown, keep?: unknown } | null | undefined} review */
 export function reviewFaults(faults, review) {
   if (!review || typeof review.summary !== "string" || !review.summary.trim()) {
     throw new Error("reviewer summary missing");
@@ -22,16 +29,23 @@ export function reviewFaults(faults, review) {
   return { faults: faults.filter((fault) => kept.has(fault.id)), summary: review.summary.trim() };
 }
 
+/** @type {Record<string, string>} */
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+/** @param {unknown} value */
 function esc(value) {
-  return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  return String(value).replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
 }
 
+/** @param {number} n */
 const money = (n) => `$${n.toLocaleString("en-US")}`;
 
+/** @param {Fault} fault */
 export function faultKey(fault) {
   return `${fault.type ?? ""}\u0000${fault.url ?? ""}`;
 }
 
+/** @param {string} text @param {string} cite */
 function cited(text, cite) {
   return `<span class="fig" data-cite="${esc(cite)}">${esc(text)}</span>`;
 }
@@ -40,6 +54,7 @@ const offerPrice = () => cited(money(offer.priceCents / 100), "offer:priceCents"
 const offerWorkingDays = () => cited(String(offer.workingDays), "offer:workingDays");
 const offerSlots = () => cited(String(offer.slotsPerMonth), "offer:slotsPerMonth");
 
+/** @param {string} renderedAt */
 function proposalStartDate(renderedAt) {
   const parsed = new Date(renderedAt);
   if (Number.isNaN(parsed.getTime())) return "";
@@ -48,17 +63,19 @@ function proposalStartDate(renderedAt) {
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+/** @param {string} iso */
 function longDate(iso) {
   const parsed = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return "";
   return `${parsed.getUTCDate()} ${MONTHS[parsed.getUTCMonth()]} ${parsed.getUTCFullYear()}`;
 }
 
+/** @param {{ recordId?: string, engagementStatus?: string, renderedAt: string }} input */
 function proposalBlock({ recordId, engagementStatus, renderedAt }) {
   const startDate = proposalStartDate(renderedAt);
   const startHtml = startDate ? cited(longDate(startDate), "offer:startDate") : "the next open slot";
   const awaitingPayment = engagementStatus === "proposed";
-  const settled = ENGAGEMENT_SETTLED_STATUSES.includes(engagementStatus);
+  const settled = engagementStatus !== undefined && ENGAGEMENT_SETTLED_STATUSES.includes(engagementStatus);
   return `<section class="proposal">
 <h2>The proposal</h2>
 <p>We will fix the faults listed above for ${offerPrice()}. Work starts on ${startHtml}. From the day you pay and give us access, the correction takes ${offerWorkingDays()} working days.</p>
@@ -75,6 +92,7 @@ ${awaitingPayment
 </section>`;
 }
 
+/** @param {{ engagementId?: string, kickoffNote?: string | null, lines: CorrectionLineRow[] }} input */
 function correctionBlock({ engagementId, kickoffNote, lines }) {
   if (!lines.length) return "";
   const applied = lines.filter((line) => APPLIED_LINE_STATES.includes(line.status));
@@ -108,12 +126,14 @@ ${refusedItems}
 </section>`;
 }
 
+/** @param {{ request: AppraisalRequestRow, faults: Fault[], summary: string, version: number, renderedAt: string, recordId?: string, receiptId?: string | null, engagementId?: string, engagementStatus?: string, kickoffNote?: string | null, correctionLines?: CorrectionLineRow[] }} input */
 export function renderRecord({ request, faults, summary, version, renderedAt, recordId, receiptId, engagementId, engagementStatus, kickoffNote, correctionLines: lines = [] }) {
   const inputs = { dealValue: request.avg_deal_value, monthlyLeads: request.monthly_leads };
   const costed = faults.map((fault) => costFault(fault, inputs));
   const total = costed.reduce((sum, item) => sum + (item.monthlyCost || 0), 0);
-  const totalCite = costed.filter((i) => i.row).map((i) => `row:${i.row.id}`).concat("input:dealValue", "input:monthlyLeads").join(" ");
-  const sources = [...new Map(costed.filter((i) => i.row).map((i) => [i.row.id, i.row])).values()];
+  const costedRows = costed.flatMap((i) => (i.row ? [i.row] : []));
+  const totalCite = costedRows.map((row) => `row:${row.id}`).concat("input:dealValue", "input:monthlyLeads").join(" ");
+  const sources = [...new Map(costedRows.map((row) => [row.id, row])).values()];
 
   const faultHtml = costed
     .map(({ fault, row, monthlyCost }) => `<li class="fault">
@@ -171,6 +191,7 @@ ${correctionBlock({ engagementId, kickoffNote, lines })}
 `;
 }
 
+/** @param {{ env: Env, request: AppraisalRequestRow, recordId: string, origin: string }} input */
 export function recordEmail({ env, request, recordId, origin }) {
   const link = `${origin}/records/${recordId}`;
   return {
@@ -182,23 +203,27 @@ export function recordEmail({ env, request, recordId, origin }) {
 }
 
 export const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+/** @param {string} id */
 export const recordKey = (id) => `records/${id}.html`;
 
+/** @param {Partial<AppraisalRecordRow> | null | undefined} existing @returns {AppraisalRun | null} */
 export function runFromRow(existing) {
   if (!existing || typeof existing.rendered_at !== "string") return null;
   try {
     const reviewed = reviewFaults(JSON.parse(existing.faults_json ?? "null"), JSON.parse(existing.review_json ?? "null"));
-    return { version: existing.version, renderedAt: existing.rendered_at, summary: reviewed.summary, faults: reviewed.faults };
+    return { version: Number(existing.version), renderedAt: existing.rendered_at, summary: reviewed.summary, faults: reviewed.faults };
   } catch {
     return null;
   }
 }
 
+/** @param {Fault[]} faults */
 function rowCite(faults) {
-  const rows = new Set(faults.map((fault) => ROWS.get(fault.type)).filter((row) => row && row.deltaPct > 0).map((row) => row.id));
+  const rows = new Set(faults.flatMap((fault) => costingRow(fault) ?? []).filter((row) => row.deltaPct > 0).map((row) => row.id));
   return [...rows].map((id) => `row:${id}`).concat("input:dealValue", "input:monthlyLeads").join(" ");
 }
 
+/** @param {ReturnType<typeof costFault>} costed @param {string} verdict */
 function faultLine(costed, verdict) {
   const { fault, row, monthlyCost } = costed;
   return `<li class="fault">
@@ -211,21 +236,25 @@ function faultLine(costed, verdict) {
 </li>`;
 }
 
+/** @param {{ request: AppraisalRequestRow, before: AppraisalRun, after: AppraisalRun, renderedAt: string }} input */
 export function renderProofReceipt({ request, before, after, renderedAt }) {
   const inputs = { dealValue: request.avg_deal_value, monthlyLeads: request.monthly_leads };
+  /** @param {Fault[]} faults */
   const cost = (faults) => faults.map((fault) => costFault(fault, inputs));
   const afterKeys = new Set(after.faults.map(faultKey));
   const beforeKeys = new Set(before.faults.map(faultKey));
   const closed = cost(before.faults.filter((fault) => !afterKeys.has(faultKey(fault))));
   const kept = cost(after.faults.filter((fault) => beforeKeys.has(faultKey(fault))));
   const added = cost(after.faults.filter((fault) => !beforeKeys.has(faultKey(fault))));
+  /** @param {ReturnType<typeof costFault>[]} items */
   const total = (items) => items.reduce((sum, item) => sum + (item.monthlyCost || 0), 0);
   const sources = [...new Map(
-    [...closed, ...kept, ...added].filter((item) => item.row && item.row.deltaPct > 0).map((item) => [item.row.id, item.row])
+    [...closed, ...kept, ...added].flatMap((item) => (item.row && item.row.deltaPct > 0 ? [[item.row.id, item.row]] : []))
   ).values()];
   const sourceHtml = sources
     .map((row) => `<li id="row-${esc(row.id)}">${esc(row.label)}: <a href="${esc(row.source.url)}">${esc(row.source.title)}</a>. ${esc(row.basis)}</li>`)
     .join("\n");
+  /** @param {string} title @param {ReturnType<typeof costFault>[]} items @param {string} verdict @param {string} emptyLine */
   const section = (title, items, verdict, emptyLine) => `<h2>${title}</h2>
 ${items.length
     ? `<ol>\n${items.map((item) => faultLine(item, verdict)).join("\n")}\n</ol>`
@@ -266,6 +295,7 @@ ${sourceHtml}
 `;
 }
 
+/** @param {{ env: Env, request: AppraisalRequestRow, recordId: string, receiptId: string, origin: string }} input */
 export function driftEmail({ env, request, recordId, receiptId, origin }) {
   const link = `${origin}/records/${recordId}`;
   const receipt = `${origin}/records/${receiptId}`;
@@ -284,6 +314,7 @@ export function driftEmail({ env, request, recordId, receiptId, origin }) {
   };
 }
 
+/** @param {Env} env @param {AppraisalRequestRow} request @param {string} recordId @param {string} receiptId @param {AppraisalRun} before @param {AppraisalRun} after @param {string} at */
 async function publishProofReceipt(env, request, recordId, receiptId, before, after, at) {
   const html = renderProofReceipt({ request, before, after, renderedAt: at });
   await env.RECORDS.put(recordKey(receiptId), html, { httpMetadata: { contentType: "text/html; charset=utf-8" } });
@@ -293,11 +324,13 @@ async function publishProofReceipt(env, request, recordId, receiptId, before, af
   await writeEvent(env, request.id, "proof_receipt_rendered", `${receiptId} v${before.version}->v${after.version}`, at);
 }
 
+/** @param {Env} env @param {string} requestId @param {string} type @param {string} detail @param {string} at */
 async function writeEvent(env, requestId, type, detail, at) {
   await env.DB.prepare("INSERT INTO appraisal_events (request_id, type, detail, created_at) VALUES (?1, ?2, ?3, ?4)")
     .bind(requestId, type, detail, at).run();
 }
 
+/** @param {Env} env @param {{ id: string, requestId: string, version: number, html: string, at: string, faults: Fault[], review: unknown }} input */
 async function storeRecord(env, { id, requestId, version, html, at, faults, review }) {
   await env.RECORDS.put(recordKey(id), html, { httpMetadata: { contentType: "text/html; charset=utf-8" } });
   await env.DB.prepare(
@@ -313,10 +346,13 @@ async function storeRecord(env, { id, requestId, version, html, at, faults, revi
     .run();
 }
 
+/** @param {Env} env @param {string} requestId @param {{ faults: Fault[], review: { summary?: unknown, keep?: unknown } }} input @param {string | undefined} origin @param {string} at @param {{ kind?: "publish" | "rerun" | "drift" }} [options] */
 export async function publishRecord(env, requestId, { faults, review }, origin, at, { kind = "publish" } = {}) {
+  /** @type {AppraisalRequestRow | null} */
   const request = await env.DB.prepare("SELECT * FROM appraisal_requests WHERE id = ?1").bind(requestId).first();
   if (!request) throw new Error("appraisal request not found");
   const reviewed = reviewFaults(faults, review);
+  /** @type {Pick<AppraisalRecordRow, "id" | "version" | "rendered_at" | "faults_json" | "review_json"> | null} */
   const existing = await env.DB.prepare(
     "SELECT id, version, rendered_at, faults_json, review_json FROM appraisal_records WHERE request_id = ?1"
   ).bind(requestId).first();
@@ -341,6 +377,7 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
   const receiptId = before && rerun ? crypto.randomUUID() : null;
   let linkedReceiptId = receiptId;
   if (!linkedReceiptId && version > 1) {
+    /** @type {{ id: string } | null} */
     const last = await env.DB.prepare(
       "SELECT id FROM proof_receipts WHERE record_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 1"
     )
@@ -361,7 +398,7 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
     kickoffNote: engagement.kickoff_note,
     correctionLines: (await correctionLines(env, engagement.id)).filter((line) => REVIEWED_LINE_STATES.includes(line.status))
   });
-  if (receiptId) {
+  if (receiptId && before) {
     await publishProofReceipt(env, request, id, receiptId, before, run, at);
   }
   try {
@@ -376,13 +413,17 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
     throw error;
   }
   if (version === 1) {
-    await env.EMAIL.send(recordEmail({ env, request, recordId: id, origin }));
+    if (origin) {
+      await env.EMAIL.send(recordEmail({ env, request, recordId: id, origin }));
+    } else {
+      await writeEvent(env, requestId, "record_email_skipped", `${id} no origin`, at);
+    }
     return { id, version };
   }
   if (!rerun) {
     return { id, version };
   }
-  if (!before) {
+  if (!before || !receiptId) {
     await writeEvent(env, requestId, "drift_baseline_missing", `${id} v${version}`, at);
     return { id, version };
   }
@@ -408,7 +449,9 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
   return { id, version };
 }
 
+/** @param {Env} env @param {string} requestId @param {string} at @param {string} [origin] */
 export async function republishRecord(env, requestId, at, origin) {
+  /** @type {Pick<AppraisalRecordRow, "faults_json" | "review_json"> | null} */
   const row = await env.DB.prepare(
     "SELECT faults_json, review_json FROM appraisal_records WHERE request_id = ?1"
   )
@@ -423,6 +466,7 @@ export async function republishRecord(env, requestId, at, origin) {
   return publishRecord(env, requestId, { faults, review }, origin, at);
 }
 
+/** @param {{ request: AppraisalRequestRow, notes: TrackingNoteRow[], recordId: string | null, receiptId: string | null, referralCode: string, specimenConsent: boolean, renderedAt: string }} input */
 export function renderCloseOut({ request, notes, recordId, receiptId, referralCode, specimenConsent, renderedAt }) {
   const noteHtml = notes
     .map((note) => `<li class="tracking-note" data-note-day="${Number(note.day)}"><p>Day ${Number(note.day)}: ${esc(note.note)}</p></li>`)
