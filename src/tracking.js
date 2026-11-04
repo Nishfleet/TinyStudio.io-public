@@ -3,12 +3,15 @@ import { journalEngagementEvent } from "./engagement.js";
 
 export const TRACKING_DAYS = 14;
 
+/** @param {string} nowIso @param {string} startedAtIso */
 export function trackingDay(nowIso, startedAtIso) {
   const days = Math.floor((Date.parse(nowIso) - Date.parse(startedAtIso)) / 86400000) + 1;
   return Math.min(TRACKING_DAYS, Math.max(1, days));
 }
 
+/** @param {Env} env @param {string} engagementId @returns {Promise<string | null>} */
 export async function trackingStartedAt(env, engagementId) {
+  /** @type {{ started_at: string | null } | null} */
   const row = await env.DB.prepare(
     `SELECT MIN(created_at) AS started_at
        FROM engagement_events
@@ -19,14 +22,18 @@ export async function trackingStartedAt(env, engagementId) {
   return row?.started_at ?? null;
 }
 
+/** @param {Env} env @param {string} engagementId @returns {Promise<TrackingNoteRow[]>} */
 export async function trackingNotes(env, engagementId) {
+  /** @type {D1Result<TrackingNoteRow>} */
   const result = await env.DB.prepare("SELECT * FROM tracking_notes WHERE engagement_id = ?1 ORDER BY day ASC")
     .bind(engagementId)
     .all();
   return result.results ?? [];
 }
 
+/** @param {Env} env @param {Date} now */
 export async function queueTrackingChecks(env, now) {
+  /** @type {D1Result<{ id: string, request_id: string, started_at: string | null }>} */
   const engagements = await env.DB.prepare(
     `SELECT e.id, e.request_id,
             (SELECT MIN(created_at) FROM engagement_events ev
@@ -58,6 +65,7 @@ export async function queueTrackingChecks(env, now) {
   return queued;
 }
 
+/** @param {Env} env @param {EngagementRow} engagement @param {{ day?: unknown, note?: unknown }} input @param {unknown} reviewer @param {string} at */
 export async function addTrackingNote(env, engagement, input, reviewer, at) {
   if (!engagementAllows(engagement, "add_tracking_note")) {
     throw Object.assign(new Error("a tracking note is written while the engagement is in tracking"), { code: "NOT_TRACKING" });

@@ -15,6 +15,10 @@ import { deskQueuePage } from "./desk-page.js";
 import { ENGAGEMENT_ID } from "./engagement.js";
 import { queueTrackingChecks } from "./tracking.js";
 
+/** @typedef {ReturnType<typeof appraisalInput>["input"]} AppraisalInput */
+/** @typedef {ReturnType<typeof agentInput>} AgentInput */
+/** @typedef {Record<string, string>} AgentSections */
+
 const SECURITY_HEADERS = {
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
   "X-Content-Type-Options": "nosniff",
@@ -123,10 +127,25 @@ const WEEKLY_METRIC_LABELS = [
   "Cash collected"
 ];
 
+/** @type {Record<string, string>} */
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+/** @param {unknown} value */
 function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  return String(value).replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
 }
 
+/** @param {unknown} error */
+function errorMessage(error) {
+  return error instanceof Error ? error.message : "";
+}
+
+/** @param {unknown} error */
+function errorCode(error) {
+  return error instanceof Error && "code" in error && typeof error.code === "string" ? error.code : "";
+}
+
+/** @param {Response} response @param {string} [contentSecurityPolicy] */
 function withSecurityHeaders(response, contentSecurityPolicy) {
   const headers = new Headers(response.headers);
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
@@ -139,6 +158,7 @@ function withSecurityHeaders(response, contentSecurityPolicy) {
   });
 }
 
+/** @param {unknown} body @param {ResponseInit & { headers?: Record<string, string> }} [init] */
 function jsonResponse(body, init = {}) {
   return withSecurityHeaders(
     Response.json(body, {
@@ -151,10 +171,12 @@ function jsonResponse(body, init = {}) {
   );
 }
 
+/** @param {string | null} value */
 function cleanHeader(value, limit = 320) {
   return value ? value.slice(0, limit) : "";
 }
 
+/** @param {unknown} value */
 function cleanField(value, limit = MAX_FIELD_LENGTH) {
   return String(value ?? "")
     .replace(/\s+/g, " ")
@@ -162,14 +184,17 @@ function cleanField(value, limit = MAX_FIELD_LENGTH) {
     .slice(0, limit);
 }
 
+/** @param {unknown} email */
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
 
+/** @param {string} email */
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
 }
 
+/** @param {Request} request @returns {Promise<Record<string, unknown>>} */
 async function readRequestBody(request) {
   const contentType = request.headers.get("Content-Type") || "";
 
@@ -177,7 +202,7 @@ async function readRequestBody(request) {
     try {
       return await readJsonBody(request);
     } catch (error) {
-      if (error.message === "request_too_large") throw error;
+      if (errorMessage(error) === "request_too_large") throw error;
       return {};
     }
   }
@@ -190,6 +215,7 @@ async function readRequestBody(request) {
   const formData = await request.formData().catch(() => null);
   if (!formData) return {};
 
+  /** @type {Record<string, unknown>} */
   const body = {};
   for (const [key, value] of formData.entries()) {
     body[key] = value;
@@ -197,6 +223,7 @@ async function readRequestBody(request) {
   return body;
 }
 
+/** @param {Request} request */
 async function readTextBodyWithLimit(request) {
   if (!request.body) return "";
 
@@ -224,28 +251,35 @@ async function readTextBodyWithLimit(request) {
   return new TextDecoder().decode(bytes);
 }
 
+/** @param {Request} request @returns {Promise<Record<string, unknown>>} */
 async function readJsonBody(request) {
   const text = await readTextBodyWithLimit(request);
-  return text ? JSON.parse(text) : {};
+  const parsed = text ? JSON.parse(text) : {};
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
 }
 
+/** @param {Request} request */
 function requestTooLarge(request) {
   const contentLength = Number(request.headers.get("Content-Length") || 0);
   return Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES;
 }
 
+/** @param {string} hostname */
 function isLoopbackHostname(hostname) {
   return hostname === "127.0.0.1" || hostname === "localhost";
 }
 
+/** @param {Request} request */
 function hostHeaderHostname(request) {
   return String(request.headers.get("Host") || "").split(":")[0].toLowerCase();
 }
 
+/** @param {Request} request @param {URL} requestUrl */
 function isLocalPreviewRequest(request, requestUrl) {
   return isLoopbackHostname(requestUrl.hostname) || isLoopbackHostname(hostHeaderHostname(request));
 }
 
+/** @param {string | null} origin @param {Request} request @param {URL} requestUrl */
 function isAllowedOrigin(origin, request, requestUrl) {
   if (!origin) return false;
   if (ALLOWED_ORIGINS.has(origin)) return true;
@@ -253,6 +287,7 @@ function isAllowedOrigin(origin, request, requestUrl) {
   return isLocalPreviewRequest(request, requestUrl) && /^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(origin);
 }
 
+/** @param {Request} request */
 function validateAgentRequest(request) {
   const contentType = request.headers.get("Content-Type") || "";
   const origin = request.headers.get("Origin");
@@ -280,12 +315,14 @@ function validateAgentRequest(request) {
   return jsonResponse({ ok: false, error: "unsupported_media_type" }, { status: 415 });
 }
 
+/** @param {Request} request */
 function wantsHtmlRedirect(request) {
   const accept = request.headers.get("Accept") || "";
   const contentType = request.headers.get("Content-Type") || "";
   return accept.includes("text/html") && !contentType.includes("application/json");
 }
 
+/** @param {unknown} value */
 function normalizeWebsite(value) {
   if (typeof value !== "string") return null;
   const raw = value.trim().slice(0, 300);
@@ -301,6 +338,7 @@ function normalizeWebsite(value) {
   }
 }
 
+/** @param {URL} url @param {string} signal */
 function htmlRedirect(url, signal) {
   const nextUrl = new URL(url);
   if (signal === "saved") {
@@ -349,6 +387,7 @@ function closedIntakeResponse() {
   );
 }
 
+/** @param {Request} request @param {string} fallback */
 function signupPagePath(request, fallback) {
   const referer = request.headers.get("Referer");
 
@@ -362,6 +401,7 @@ function signupPagePath(request, fallback) {
   }
 }
 
+/** @param {Request} request @param {Env} env @param {URL} url @param {string} email @param {string} source @param {string | null} [website] */
 async function saveEmailSignup(request, env, url, email, source, website = null) {
   const now = new Date().toISOString();
 
@@ -389,8 +429,10 @@ async function saveEmailSignup(request, env, url, email, source, website = null)
     .run();
 }
 
+/** @param {Request} request @param {URL} url */
 function isSameOriginPost(request, url) {
   if (request.headers.get("Sec-Fetch-Site") === "cross-site") return false;
+  /** @param {string} value */
   const allowed = (value) => value === url.origin || isAllowedOrigin(value, request, url);
   const origin = request.headers.get("Origin");
   if (origin) return allowed(origin);
@@ -403,11 +445,13 @@ function isSameOriginPost(request, url) {
   }
 }
 
+/** @param {string} text */
 async function sha256Hex(text) {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** @param {Env} env @param {string} email @param {string} month */
 async function signupAlreadyAccepted(env, email, month) {
   const row = await env.DB.prepare(
     "SELECT 1 AS accepted FROM email_signups WHERE email = ?1 AND source = ?2 AND substr(updated_at, 1, 7) = ?3"
@@ -417,6 +461,7 @@ async function signupAlreadyAccepted(env, email, month) {
   return row?.accepted === 1;
 }
 
+/** @param {Env} env @param {string} bucketKey */
 async function currentUsageCount(env, bucketKey) {
   const row = await env.DB.prepare("SELECT count FROM agent_usage_limits WHERE bucket_key = ?1")
     .bind(bucketKey)
@@ -424,6 +469,7 @@ async function currentUsageCount(env, bucketKey) {
   return Number(row?.count || 0);
 }
 
+/** @param {Env} env @param {string} email */
 async function signupMonthCount(env, email) {
   const month = new Date().toISOString().slice(0, 7);
   const monthBucket = `signup:${month}`;
@@ -433,6 +479,7 @@ async function signupMonthCount(env, email) {
   return currentUsageCount(env, monthBucket);
 }
 
+/** @param {Request} request @param {Env} env @param {URL} url */
 async function signupResponse(request, env, url) {
   if (request.method === "OPTIONS") {
     return jsonResponse({ ok: true });
@@ -454,7 +501,7 @@ async function signupResponse(request, env, url) {
   try {
     body = await readRequestBody(request);
   } catch (error) {
-    if (error.message === "request_too_large") {
+    if (errorMessage(error) === "request_too_large") {
       return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
     }
     body = {};
@@ -473,7 +520,7 @@ async function signupResponse(request, env, url) {
   try {
     monthCount = await signupMonthCount(env, email);
   } catch (error) {
-    console.warn("tinystudio_signup_storage_failed", error.message || "storage failed");
+    console.warn("tinystudio_signup_storage_failed", errorMessage(error) || "storage failed");
     return jsonResponse({ ok: false, error: "storage_unavailable" }, { status: 503 });
   }
 
@@ -490,7 +537,7 @@ async function signupResponse(request, env, url) {
   try {
     await saveEmailSignup(request, env, url, email, APPRAISAL_SURFACE, website);
   } catch (error) {
-    console.warn("tinystudio_signup_storage_failed", error.message || "storage failed");
+    console.warn("tinystudio_signup_storage_failed", errorMessage(error) || "storage failed");
     return jsonResponse({ ok: false, error: "storage_unavailable" }, { status: 503 });
   }
 
@@ -501,18 +548,22 @@ async function signupResponse(request, env, url) {
   return jsonResponse({ ok: true, message: "signal_saved" }, { status: 201 });
 }
 
+/** @param {Env} env @param {number} [fallback] */
 function appraisalNow(env, fallback) {
   return new Date(env.APPRAISAL_NOW || fallback || Date.now());
 }
 
+/** @param {Date} now */
 function appraisalMonth(now) {
   return now.toISOString().slice(0, 7);
 }
 
+/** @param {Date} now */
 function nextSlotDate(now) {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
 }
 
+/** @param {Env} env @param {Date} now */
 async function appraisalSlots(env, now) {
   const month = appraisalMonth(now);
   const row = await env.DB.prepare("SELECT COUNT(*) AS taken FROM appraisal_requests WHERE month = ?1")
@@ -530,6 +581,7 @@ async function appraisalSlots(env, now) {
   };
 }
 
+/** @param {Request} request @param {Env} env */
 async function appraisalSlotsResponse(request, env) {
   if (request.method !== "GET") {
     return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
@@ -537,11 +589,12 @@ async function appraisalSlotsResponse(request, env) {
   try {
     return jsonResponse({ ok: true, ...(await appraisalSlots(env, appraisalNow(env))) });
   } catch (error) {
-    console.warn("tinystudio_appraisal_storage_failed", error.message || "storage failed");
+    console.warn("tinystudio_appraisal_storage_failed", errorMessage(error) || "storage failed");
     return jsonResponse({ ok: false, error: "storage_unavailable" }, { status: 503 });
   }
 }
 
+/** @param {unknown} value @param {number} max */
 function wholeNumber(value, max) {
   const text = String(value ?? "").replace(/[,\s$]/g, "");
   if (!/^\d+$/.test(text)) return null;
@@ -549,6 +602,7 @@ function wholeNumber(value, max) {
   return number <= max ? number : null;
 }
 
+/** @param {Record<string, unknown>} body */
 function appraisalInput(body) {
   const input = {
     website: normalizeWebsite(body.website),
@@ -569,6 +623,7 @@ function appraisalInput(body) {
   return { input, invalid };
 }
 
+/** @param {Env} env @param {string} requestId @param {string} type @param {string} detail @param {string} at */
 async function recordAppraisalEvent(env, requestId, type, detail, at) {
   await env.DB.prepare(
     "INSERT INTO appraisal_events (request_id, type, detail, created_at) VALUES (?1, ?2, ?3, ?4)"
@@ -577,6 +632,7 @@ async function recordAppraisalEvent(env, requestId, type, detail, at) {
     .run();
 }
 
+/** @param {Env} env @param {AppraisalInput} input @param {string} kind @param {string | null} slotDate */
 function confirmationMessage(env, input, kind, slotDate) {
   const accepted = kind === "accepted";
   return {
@@ -597,6 +653,7 @@ function confirmationMessage(env, input, kind, slotDate) {
   };
 }
 
+/** @param {Env} env @param {string} table @param {string} id @param {AppraisalInput} input @param {string} kind @param {string | null} slotDate @param {string} at */
 async function sendConfirmationOnce(env, table, id, input, kind, slotDate, at) {
   const claim = await env.DB.prepare(
     `UPDATE ${table} SET confirmation_sent_at = ?1 WHERE id = ?2 AND confirmation_sent_at IS NULL`
@@ -610,22 +667,26 @@ async function sendConfirmationOnce(env, table, id, input, kind, slotDate, at) {
     await env.EMAIL.send(confirmationMessage(env, input, kind, slotDate));
   } catch (error) {
     await env.DB.prepare(`UPDATE ${table} SET confirmation_sent_at = NULL WHERE id = ?1`).bind(id).run();
-    await recordAppraisalEvent(env, id, "confirmation_failed", error.name || "Error", at);
-    console.warn("tinystudio_appraisal_confirmation_failed", error.name || "Error");
+    const errorName = (error instanceof Error && error.name) || "Error";
+    await recordAppraisalEvent(env, id, "confirmation_failed", errorName, at);
+    console.warn("tinystudio_appraisal_confirmation_failed", errorName);
     return "failed";
   }
   await recordAppraisalEvent(env, id, "confirmation_sent", kind, at);
   return "sent";
 }
 
+/** @param {Env} env @param {AppraisalInput} input @param {string} month @returns {Promise<{ table: string, id: string, kind: string, slotDate: string | null } | null>} */
 async function existingAppraisal(env, input, month) {
   const key = [input.email, input.website, month];
+  /** @type {{ id: string } | null} */
   const request = await env.DB.prepare(
     "SELECT id FROM appraisal_requests WHERE email = ?1 AND site_url = ?2 AND month = ?3"
   )
     .bind(...key)
     .first();
   if (request) return { table: "appraisal_requests", id: request.id, kind: "accepted", slotDate: null };
+  /** @type {{ id: string, slot_date: string } | null} */
   const waitlisted = await env.DB.prepare(
     "SELECT id, slot_date FROM appraisal_waitlist WHERE email = ?1 AND site_url = ?2 AND month = ?3"
   )
@@ -637,6 +698,7 @@ async function existingAppraisal(env, input, month) {
   return null;
 }
 
+/** @param {Env} env @param {string} requestId @param {string} at */
 async function queueAppraisalAudit(env, requestId, at) {
   const queued = await env.DB.prepare(
     "INSERT OR IGNORE INTO appraisal_audit_jobs (id, request_id, status, created_at) VALUES (?1, ?2, 'queued', ?3)"
@@ -649,12 +711,15 @@ async function queueAppraisalAudit(env, requestId, at) {
 const DRIFT_RERUN_AFTER_DAYS = 90;
 const DRIFT_RERUN_BATCH = 50;
 
+/** @param {Date} now */
 function driftCutoff(now) {
   return new Date(now.getTime() - DRIFT_RERUN_AFTER_DAYS * 86400000).toISOString();
 }
 
+/** @param {Env} env @param {Date} now */
 async function queueDriftReruns(env, now) {
   const cutoff = driftCutoff(now);
+  /** @type {D1Result<{ request_id: string }>} */
   const due = await env.DB.prepare(
     `SELECT r.id AS request_id
      FROM appraisal_requests r
@@ -684,6 +749,7 @@ async function queueDriftReruns(env, now) {
   return queued;
 }
 
+/** @param {Env} env @param {AppraisalInput} input @param {Date} now */
 async function placeAppraisalRequest(env, input, now) {
   const at = now.toISOString();
   const month = appraisalMonth(now);
@@ -752,6 +818,7 @@ async function placeAppraisalRequest(env, input, now) {
   return { table: "appraisal_waitlist", id, kind: "waitlisted", slotDate, duplicate: false, at };
 }
 
+/** @param {Request} request @param {Env} env @param {AppraisalInput} input @param {Date} now */
 async function appraisalAbuseGuard(request, env, input, now) {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
   for (const key of [`ip:${ip}`, `email:${input.email}`]) {
@@ -766,6 +833,7 @@ async function appraisalAbuseGuard(request, env, input, now) {
   return Number(waitlist?.n || 0) >= MAX_WAITLIST_PER_MONTH ? "waitlist_full" : null;
 }
 
+/** @param {string | null} slotDate @param {string} confirmation */
 function waitlistedPageResponse(slotDate, confirmation) {
   return withSecurityHeaders(
     new Response(
@@ -789,6 +857,7 @@ function waitlistedPageResponse(slotDate, confirmation) {
   );
 }
 
+/** @param {Request} request @param {Env} env @param {URL} url */
 async function appraisalRequestResponse(request, env, url) {
   if (request.method !== "POST") {
     return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
@@ -801,7 +870,7 @@ async function appraisalRequestResponse(request, env, url) {
   try {
     body = await readRequestBody(request);
   } catch (error) {
-    if (error.message === "request_too_large") {
+    if (errorMessage(error) === "request_too_large") {
       return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
     }
     body = {};
@@ -842,7 +911,7 @@ async function appraisalRequestResponse(request, env, url) {
       env, placed.table, placed.id, input, placed.kind, placed.slotDate, placed.at
     );
   } catch (error) {
-    console.warn("tinystudio_appraisal_storage_failed", error.message || "storage failed");
+    console.warn("tinystudio_appraisal_storage_failed", errorMessage(error) || "storage failed");
     return jsonResponse({ ok: false, error: "storage_unavailable" }, { status: 503 });
   }
 
@@ -861,6 +930,7 @@ async function appraisalRequestResponse(request, env, url) {
   );
 }
 
+/** @param {Request} request @param {string} bucket */
 async function hashIp(request, bucket) {
   const ip = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "";
   if (!ip) return "";
@@ -869,6 +939,7 @@ async function hashIp(request, bucket) {
   return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** @param {Env} env @param {string} bucketKey */
 async function incrementUsageCounter(env, bucketKey) {
   const now = new Date().toISOString();
   const result = await env.DB.prepare(
@@ -885,6 +956,7 @@ async function incrementUsageCounter(env, bucketKey) {
   return Number(result?.count || 0);
 }
 
+/** @param {Request} request @param {Env} env @param {string} email @param {URL} url @returns {Promise<{ ok: true } | { ok: false, response: Response }>} */
 async function enforceAgentLimits(request, env, email, url) {
   try {
     const bucket = new Date(env.AGENT_LIMITS_NOW || Date.now()).toISOString().slice(0, 10);
@@ -925,23 +997,26 @@ async function enforceAgentLimits(request, env, email, url) {
       )
       .run();
   } catch (error) {
-    console.warn("tinystudio_agent_storage_failed", error.message || "storage failed");
+    console.warn("tinystudio_agent_storage_failed", errorMessage(error) || "storage failed");
     return { ok: false, response: jsonResponse({ ok: false, error: "storage_unavailable" }, { status: 503 }) };
   }
 
   return { ok: true };
 }
 
+/** @param {Request} request @param {string} recordId */
 async function checkoutSessionBucket(request, recordId) {
   const bucket = new Date().toISOString().slice(0, 10);
   return `checkout:${bucket}:${await hashIp(request, bucket) || `record:${recordId}`}`;
 }
 
+/** @param {Request} request @param {string} recordId */
 async function checkoutAttemptBucket(request, recordId) {
   const bucket = new Date().toISOString().slice(0, 10);
   return `checkout-attempt:${bucket}:${await hashIp(request, bucket) || `record:${recordId}`}`;
 }
 
+/** @param {Env} env @param {string} bucketKey @param {number} cap @returns {Promise<{ ok: true, key: string } | { ok: false, response: Response }>} */
 async function claimCheckoutSlot(env, bucketKey, cap) {
   if (!bucketKey) return { ok: true, key: bucketKey };
   const now = new Date().toISOString();
@@ -963,6 +1038,7 @@ async function claimCheckoutSlot(env, bucketKey, cap) {
   return { ok: true, key: bucketKey };
 }
 
+/** @param {Env} env @param {string} bucketKey */
 async function releaseCheckoutSlot(env, bucketKey) {
   if (!bucketKey) return;
   const now = new Date().toISOString();
@@ -973,6 +1049,7 @@ async function releaseCheckoutSlot(env, bucketKey) {
     .run();
 }
 
+/** @param {Record<string, unknown>} body */
 function agentInput(body) {
   return {
     email: normalizeEmail(body.email),
@@ -995,6 +1072,7 @@ function agentInput(body) {
   };
 }
 
+/** @param {AgentInput} input @returns {AgentInput} */
 function agentInputWithInferredWeeklyMetrics(input) {
   const inferredMetrics = inferWeeklyMetricsFromBusiness(input.business);
 
@@ -1010,6 +1088,7 @@ function agentInputWithInferredWeeklyMetrics(input) {
   };
 }
 
+/** @param {string} business */
 function inferWeeklyMetricsFromBusiness(business) {
   const text = String(business || "");
   const numberPattern = String.raw`\d[\d,.]*`;
@@ -1049,6 +1128,7 @@ function inferWeeklyMetricsFromBusiness(business) {
   };
 }
 
+/** @param {string} text @param {string[]} patterns */
 function firstMetricCapture(text, patterns) {
   for (const pattern of patterns) {
     const match = new RegExp(pattern, "i").exec(text);
@@ -1058,16 +1138,19 @@ function firstMetricCapture(text, patterns) {
   return "";
 }
 
+/** @param {AgentInput} input */
 function validateAgentInput(input) {
   if (!isValidEmail(input.email)) return "Add a valid email first.";
   if (!input.business) return "Add a business snapshot first.";
   return "";
 }
 
+/** @param {AgentInput} input */
 function weeklyMetricValues(input) {
   return weeklyMetricEntries(input).map((entry) => entry.value);
 }
 
+/** @param {AgentInput} input @returns {{ label: string, value: string }[]} */
 function weeklyMetricEntries(input) {
   return [
     ["Spend", input.weeklySpend],
@@ -1082,10 +1165,12 @@ function weeklyMetricEntries(input) {
     .map(([label, value]) => ({ label, value }));
 }
 
+/** @param {string} label */
 function metricLabelPattern(label) {
   return label.replace(/\s+/g, String.raw`\s+`);
 }
 
+/** @param {AgentInput} input */
 function weeklySnapshotEntries(input) {
   const entries = weeklyMetricEntries(input);
   if (input.bottleneck) {
@@ -1094,10 +1179,12 @@ function weeklySnapshotEntries(input) {
   return entries;
 }
 
+/** @param {AgentInput} input */
 function hasWeeklyMetrics(input) {
   return weeklyMetricValues(input).length > 0;
 }
 
+/** @param {AgentInput} input */
 function buildMetricSnapshot(input) {
   const entries = weeklySnapshotEntries(input);
   if (!entries.length) return "";
@@ -1108,18 +1195,21 @@ function buildMetricSnapshot(input) {
   ].join("\n");
 }
 
+/** @param {string | undefined} report */
 function stripModelMetricSnapshot(report) {
   return String(report || "")
     .replace(/(?:^|\n+)#{1,6}\s+Current Metric Snapshot\s*[\s\S]*?(?=\n#{1,6}\s+|$)/i, "\n")
     .trim();
 }
 
+/** @param {string | undefined} report */
 function reportInventsMetrics(report) {
   return String(report || "")
     .split("\n")
     .some((line) => metricLabelsWithValuesInLine(line).length > 0);
 }
 
+/** @param {string | undefined} report @param {AgentInput} input */
 function stripUnsupportedMetricValues(report, input) {
   const suppliedValues = new Map(weeklyMetricEntries(input).map((entry) => [entry.label.toLowerCase(), entry.value]));
 
@@ -1139,6 +1229,7 @@ function stripUnsupportedMetricValues(report, input) {
     .trim();
 }
 
+/** @param {AgentSections} sections @param {AgentInput} input @returns {AgentSections} */
 function stripUnsupportedMetricsFromArtifactSections(sections, input) {
   return {
     ...sections,
@@ -1147,6 +1238,7 @@ function stripUnsupportedMetricsFromArtifactSections(sections, input) {
   };
 }
 
+/** @param {string} line */
 function metricLabelsWithValuesInLine(line) {
   const labels = new Set();
 
@@ -1163,6 +1255,7 @@ function metricLabelsWithValuesInLine(line) {
   return [...labels];
 }
 
+/** @param {string} line */
 function currentMetricPhraseLabels(line) {
   const source = String(line || "");
   const patterns = [
@@ -1216,6 +1309,7 @@ function currentMetricPhraseLabels(line) {
     .map(({ label }) => label);
 }
 
+/** @param {string} line @param {string} label */
 function metricLabelHasValueInClause(line, label) {
   const source = String(line || "");
   const labelPattern = metricLabelPattern(label);
@@ -1230,6 +1324,7 @@ function metricLabelHasValueInClause(line, label) {
   return [...labelThenValuePatterns, ...valueThenLabelPatterns].some((pattern) => new RegExp(pattern, "i").test(source));
 }
 
+/** @param {string} value */
 function normalizeMetricValueForCompare(value) {
   return String(value || "")
     .toLowerCase()
@@ -1237,6 +1332,7 @@ function normalizeMetricValueForCompare(value) {
     .replace(/,/g, "");
 }
 
+/** @param {string} line @param {string} suppliedValue */
 function metricLineContainsSuppliedValue(line, suppliedValue) {
   const lineTokens = metricComparableTokens(line);
   const suppliedTokens = metricComparableTokens(suppliedValue);
@@ -1244,6 +1340,7 @@ function metricLineContainsSuppliedValue(line, suppliedValue) {
   return [...suppliedTokens].some((token) => lineTokens.has(token));
 }
 
+/** @param {string} value */
 function metricComparableTokens(value) {
   const source = String(value || "");
   const tokens = new Set();
@@ -1274,6 +1371,7 @@ function metricsToCollectBlock() {
   ].join("\n");
 }
 
+/** @param {string | undefined} report */
 function appendMetricsToCollect(report) {
   const cleanReport = String(report || "").trim();
   if (!cleanReport || cleanReport.length < 40) {
@@ -1309,6 +1407,7 @@ function buildWeeklyTrackerReport() {
   ].join("\n");
 }
 
+/** @param {AgentSections} sections @param {AgentInput} input @returns {AgentSections} */
 function ensureWeeklyMetricSnapshot(sections, input) {
   if (!hasWeeklyMetrics(input)) {
     return sections;
@@ -1329,6 +1428,7 @@ function ensureWeeklyMetricSnapshot(sections, input) {
   };
 }
 
+/** @param {AgentSections} sections @param {AgentInput} input @returns {AgentSections} */
 function ensureWeeklyReportContract(sections, input) {
   if (!hasWeeklyMetrics(input)) {
     if (reportInventsMetrics(sections.weeklyFixReport)) {
@@ -1353,6 +1453,7 @@ function ensureWeeklyReportContract(sections, input) {
   );
 }
 
+/** @param {AgentSections} sections */
 function composeAgentBrief(sections) {
   return ["pipelineBrief", "implementationChecklist", "weeklyFixReport"]
     .map((key) => sections[key])
@@ -1385,6 +1486,7 @@ function agentSystemPrompt() {
   ].join("\n");
 }
 
+/** @param {AgentInput} input */
 function agentUserPrompt(input) {
   const metricsMode = hasWeeklyMetrics(input) ? "metrics provided" : "no metrics provided";
 
@@ -1429,6 +1531,7 @@ function agentUserPrompt(input) {
   ].join("\n");
 }
 
+/** @param {string} markdown @returns {AgentSections} */
 function splitAgentSections(markdown) {
   const text = String(markdown || "").replace(/\r\n/g, "\n").trim();
   const sections = Object.fromEntries(Object.keys(AGENT_SECTION_HEADINGS).map((key) => [key, ""]));
@@ -1457,12 +1560,14 @@ function splitAgentSections(markdown) {
   return sections;
 }
 
+/** @param {AgentSections} sections */
 function missingAgentSections(sections) {
   return Object.entries(AGENT_SECTION_HEADINGS)
     .filter(([key]) => !sections[key] || sections[key].length < 40)
     .map(([, heading]) => heading);
 }
 
+/** @param {string} markdown */
 function unknownTopLevelHeadings(markdown) {
   const allowedHeadings = new Set(Object.values(AGENT_SECTION_HEADINGS).map((heading) => heading.toLowerCase()));
 
@@ -1471,6 +1576,9 @@ function unknownTopLevelHeadings(markdown) {
     .filter((heading) => heading && !allowedHeadings.has(heading.toLowerCase()));
 }
 
+/** @typedef {{ response?: unknown, result?: { response?: unknown } | null, text?: unknown, choices?: { message?: { content?: unknown } | null }[] | null, usage?: { completion_tokens?: number } | null }} AiTextResult */
+
+/** @param {string | AiTextResult | null | undefined} result */
 function extractAiText(result) {
   if (!result) return "";
   if (typeof result === "string") return result;
@@ -1485,6 +1593,7 @@ function extractAiText(result) {
   return "";
 }
 
+/** @param {string} text */
 function scrubUnsafeOutput(text) {
   return String(text || "")
     .replace(/guaranteed\s+(revenue|roas|booked calls?|sales|profit)/gi, "projected $1")
@@ -1503,6 +1612,7 @@ function scrubUnsafeOutput(text) {
     .slice(0, 12000);
 }
 
+/** @param {AgentInput} input */
 function hasProvidedOfferPrice(input) {
   if (new RegExp(CURRENCY_AMOUNT_PATTERN, "i").test(input.offer || "")) return true;
 
@@ -1514,11 +1624,13 @@ function hasProvidedOfferPrice(input) {
   return contextualPricePattern.test(input.business || "");
 }
 
+/** @param {AgentInput} input */
 function hasProvidedAgeRange(input) {
   const agePattern = /\b(age|aged|years?\s+old|yo)\b[^.\n]{0,30}\d{2}/i;
   return agePattern.test(`${input.audience || ""} ${input.business || ""}`);
 }
 
+/** @param {string} text @param {AgentInput} input */
 function scrubUnsupportedPrecision(text, input) {
   let output = String(text || "");
 
@@ -1552,6 +1664,7 @@ function scrubUnsupportedPrecision(text, input) {
   return output;
 }
 
+/** @param {string} text */
 function unsafeOutputReasons(text) {
   const value = String(text || "");
   const checks = [
@@ -1583,6 +1696,7 @@ function unsafeOutputReasons(text) {
     .map(({ reason }) => reason);
 }
 
+/** @param {string} text @param {RegExp} pattern @param {{ allowApprovalGate?: boolean }} [options] */
 function hasUnsafeMatch(text, pattern, options = {}) {
   const globalPattern = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
 
@@ -1605,6 +1719,7 @@ function hasUnsafeMatch(text, pattern, options = {}) {
   return false;
 }
 
+/** @param {string} clausePrefix @param {string} clauseSuffix */
 function hasApprovalGate(clausePrefix, clauseSuffix) {
   const clause = `${clausePrefix} ${clauseSuffix}`.toLowerCase();
   if (/\bwithout\s+approval\b/.test(clause)) return false;
@@ -1612,10 +1727,12 @@ function hasApprovalGate(clausePrefix, clauseSuffix) {
   return /\b(approval|approved|human-approved|approval-gated)\b/.test(clause);
 }
 
+/** @param {Env} env */
 function agentAuditDisabled(env) {
   return ["1", "true", "yes"].includes(String(env.AGENT_AUDIT_DISABLED || "").trim().toLowerCase());
 }
 
+/** @param {Request} request @param {Env} env @param {URL} url */
 async function agentAuditResponse(request, env, url) {
   if (request.method === "OPTIONS") {
     return jsonResponse({ ok: true });
@@ -1644,7 +1761,7 @@ async function agentAuditResponse(request, env, url) {
   try {
     body = await readRequestBody(request);
   } catch (error) {
-    if (error.message === "request_too_large") {
+    if (errorMessage(error) === "request_too_large") {
       return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
     }
     body = {};
@@ -1662,7 +1779,7 @@ async function agentAuditResponse(request, env, url) {
   try {
     await saveEmailSignup(request, env, url, input.email, "agent-self-serve");
   } catch (error) {
-    console.warn("tinystudio_agent_signup_storage_failed", error.message || "storage failed");
+    console.warn("tinystudio_agent_signup_storage_failed", errorMessage(error) || "storage failed");
     return jsonResponse({ ok: false, error: "storage_unavailable" }, { status: 503 });
   }
 
@@ -1678,19 +1795,21 @@ async function agentAuditResponse(request, env, url) {
   const modelAttempts = [];
 
   for (const [modelIndex, candidateModel] of AGENT_MODELS.entries()) {
+    /** @type {{ model: string, completionTokens: number | null }} */
     const attempt = { model: candidateModel, completionTokens: null };
     modelAttempts.push(attempt);
     try {
       const runOptions = {
         messages,
         temperature: 0.35,
-        max_tokens: 2400
+        max_tokens: 2400,
+        ...(candidateModel.startsWith("@cf/qwen/qwen3")
+          ? { chat_template_kwargs: { enable_thinking: false } }
+          : candidateModel.startsWith("@cf/openai/gpt-oss")
+            ? { reasoning_effort: "low" }
+            : {})
       };
-      if (candidateModel.startsWith("@cf/qwen/qwen3")) {
-        runOptions.chat_template_kwargs = { enable_thinking: false };
-      } else if (candidateModel.startsWith("@cf/openai/gpt-oss")) {
-        runOptions.reasoning_effort = "low";
-      }
+      /** @type {AiTextResult} */
       const aiResult = await env.AI.run(candidateModel, runOptions, { gateway: { id: "default" } });
       attempt.completionTokens = aiResult?.usage?.completion_tokens ?? null;
       const rawBrief = extractAiText(aiResult);
@@ -1739,7 +1858,7 @@ async function agentAuditResponse(request, env, url) {
         }`
       );
     } catch (error) {
-      modelErrors.push(`${candidateModel}: ${error.message || "failed"}`);
+      modelErrors.push(`${candidateModel}: ${errorMessage(error) || "failed"}`);
     }
   }
 
@@ -1767,6 +1886,7 @@ async function agentAuditResponse(request, env, url) {
   });
 }
 
+/** @param {Request} request @param {Env} env @param {URL} url */
 async function checkoutResponse(request, env, url) {
   const browserForm = prefersHtmlDocument(request);
   if (!isSameOriginPost(request, url)) {
@@ -1797,14 +1917,15 @@ async function checkoutResponse(request, env, url) {
       : withSecurityHeaders(jsonResponse({ ok: true, checkoutUrl: checkout.checkoutUrl }));
   } catch (error) {
     await releaseCheckoutSlot(env, sessionSlot.key);
-    const status = error?.code === "record_not_found" || error?.code === "engagement_not_found" ? 404 : 400;
-    const payload = { ok: false, error: error?.code || "checkout_failed" };
+    const status = errorCode(error) === "record_not_found" || errorCode(error) === "engagement_not_found" ? 404 : 400;
+    const payload = { ok: false, error: errorCode(error) || "checkout_failed" };
     return browserForm
       ? redirectResponse(`/records/${recordId}?checkout=failed`)
       : withSecurityHeaders(jsonResponse(payload, { status }));
   }
 }
 
+/** @param {Request} request */
 function prefersHtmlDocument(request) {
   const mode = String(request.headers?.get?.("sec-fetch-mode") || "").toLowerCase();
   if (mode === "navigate") return true;
@@ -1812,10 +1933,12 @@ function prefersHtmlDocument(request) {
   return accept.includes("text/html");
 }
 
+/** @param {string} location */
 function redirectResponse(location, status = 303) {
   return new Response(null, { status, headers: { location: location, "cache-control": "no-store" } });
 }
 
+/** @param {string} message */
 function deskActionPage(message, status = 200) {
   const body = `<!doctype html>
 <html lang="en">
@@ -1847,6 +1970,7 @@ body{font:16px/1.5 Georgia,serif;max-width:34rem;margin:3rem auto;padding:0 1rem
   );
 }
 
+/** @param {Request} request @param {Env} env */
 async function dodoWebhookResponse(request, env) {
   if (requestTooLarge(request)) {
     return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
@@ -1861,6 +1985,7 @@ async function dodoWebhookResponse(request, env) {
   return jsonResponse({ ok: result.ok, ...result.body }, { status: result.status });
 }
 
+/** @param {Request} request @param {Env} env */
 async function deskResponse(request, env) {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
@@ -1877,6 +2002,7 @@ async function deskResponse(request, env) {
   return deskQueuePage(queue, await deskDraftLines(env));
 }
 
+/** @param {Request} request @param {Env} env @param {URL} url @param {string} kind */
 async function deskActionResponse(request, env, url, kind) {
   if (request.method !== "POST") {
     return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
@@ -1900,14 +2026,15 @@ async function deskActionResponse(request, env, url, kind) {
   } catch {
     return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
   }
-  const fail = (error) =>
+  /** @param {string} code */
+  const fail = (code) =>
     browserForm
-      ? deskActionPage(`Not saved: ${error?.code || "desk_action_failed"}`)
-      : withSecurityHeaders(jsonResponse({ ok: false, error: error?.code || "desk_action_failed" }, { status: 400 }));
+      ? deskActionPage(`Not saved: ${code}`)
+      : withSecurityHeaders(jsonResponse({ ok: false, error: code }, { status: 400 }));
   try {
     if (kind === "line") {
       const engagementId = cleanField(form.get("engagementId"), 64);
-      if (!ENGAGEMENT_ID.test(engagementId)) return fail({ code: "bad_engagement" });
+      if (!ENGAGEMENT_ID.test(engagementId)) return fail("bad_engagement");
       const result = await addDeskCorrectionLine(
         env,
         {
@@ -1940,7 +2067,7 @@ async function deskActionResponse(request, env, url, kind) {
         : withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: result.engagement.status, lineStatus: result.line.status }));
     }
     const engagementId = cleanField(form.get("engagementId"), 64);
-    if (!ENGAGEMENT_ID.test(engagementId)) return fail({ code: "bad_engagement" });
+    if (!ENGAGEMENT_ID.test(engagementId)) return fail("bad_engagement");
     if (kind === "tracking-note") {
       const notes = await addDeskTrackingNote(
         env,
@@ -1976,15 +2103,16 @@ async function deskActionResponse(request, env, url, kind) {
       ? deskActionPage(`Kickoff note saved. Engagement ${engagement.status}.`)
       : withSecurityHeaders(jsonResponse({ ok: true, engagementStatus: engagement.status }));
   } catch (error) {
-    const known = ["NOT_FOUND", "NOT_PAID"].includes(error?.code);
+    const known = ["NOT_FOUND", "NOT_PAID"].includes(errorCode(error));
     const status = known ? 404 : 400;
-    if (browserForm) return deskActionPage(`Not saved: ${error?.code || "desk_action_failed"}`, status);
+    if (browserForm) return deskActionPage(`Not saved: ${errorCode(error) || "desk_action_failed"}`, status);
     return withSecurityHeaders(
-      jsonResponse({ ok: false, error: error?.code || "desk_action_failed" }, { status })
+      jsonResponse({ ok: false, error: errorCode(error) || "desk_action_failed" }, { status })
     );
   }
 }
 
+/** @param {Env} env */
 async function healthResponse(env) {
   const checks = {
     db: Boolean(env.DB),
@@ -2008,7 +2136,7 @@ async function healthResponse(env) {
       checks.engagementsTable = tables.has("engagements");
       checks.correctionLinesTable = tables.has("correction_lines");
     } catch (error) {
-      console.warn("tinystudio_health_check_failed", error.message || "health check failed");
+      console.warn("tinystudio_health_check_failed", errorMessage(error) || "health check failed");
     }
   }
 
@@ -2027,10 +2155,12 @@ async function healthResponse(env) {
   );
 }
 
+/** @param {string} error */
 function notFoundResponse(error, status = 404) {
   return jsonResponse({ ok: false, error }, { status });
 }
 
+/** @param {URL} url */
 function rootRedirect(url) {
   return withSecurityHeaders(Response.redirect(new URL("/", url).toString(), 307));
 }
@@ -2090,16 +2220,19 @@ function retiredApiResponse() {
   );
 }
 
+/** @param {URL} url @param {Request} request @param {string} pathname */
 function assetRequest(url, request, pathname) {
   const nextUrl = new URL(url);
   nextUrl.pathname = pathname;
   return new Request(nextUrl, request);
 }
 
+/** @param {string} pathname */
 function isAssetLikePath(pathname) {
   return /\.[a-z0-9]{1,12}$/i.test(pathname);
 }
 
+/** @param {Request} request */
 function isHtmlNavigation(request) {
   const accept = request.headers.get("Accept") || "";
   return (request.method === "GET" || request.method === "HEAD") && accept.includes("text/html");
@@ -2108,6 +2241,7 @@ function isHtmlNavigation(request) {
 const GOOGLE_ADS_ID_PATTERN = /^AW-\d{6,15}$/;
 const GOOGLE_ADS_LABEL_PATTERN = /^[A-Za-z0-9_-]{10,50}$/;
 
+/** @param {Env} env */
 function googleAdsConversion(env) {
   const id = String(env.GOOGLE_ADS_CONVERSION_ID || "").trim();
   const label = String(env.GOOGLE_ADS_CONVERSION_LABEL || "").trim();
@@ -2115,11 +2249,13 @@ function googleAdsConversion(env) {
   return { id, label };
 }
 
+/** @param {{ id: string }} ads */
 function googleAdsLoader({ id }) {
   return `<!-- Google Ads conversion: injected by the worker from env (fires once, on this noindex page only) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=${id}"></script>`;
 }
 
+/** @param {{ id: string, label: string }} ads */
 function googleAdsScript({ id, label }) {
   return `window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
@@ -2131,6 +2267,7 @@ gtag('event', 'conversion', {
 `;
 }
 
+/** @param {Request} request @param {Env} env @param {URL} url */
 async function recordResponse(request, env, url) {
   const id = url.pathname.slice("/records/".length);
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -2151,6 +2288,7 @@ async function recordResponse(request, env, url) {
   );
 }
 
+/** @param {Env} env */
 async function specimenPairsSection(env) {
   const result = await env.DB.prepare(
     `SELECT r.site_url, e.record_id,
@@ -2176,12 +2314,13 @@ async function specimenPairsSection(env) {
   return `<section id="client-proof-pairs"><h2>On the wall, with their say-so</h2><p>These clients said yes to their proof pair sitting here. Each link is the same unguessable page a paying customer gets: the record, and the proof receipt that sets the before and after side by side, fault by fault.</p><ul>\n${items}\n</ul></section>`;
 }
 
+/** @param {Response} assetResponse @param {Env} env */
 async function specimenResponse(assetResponse, env) {
   let section = "";
   try {
     section = await specimenPairsSection(env);
   } catch (error) {
-    console.warn("tinystudio_specimen_wall_failed", error.message || "wall failed");
+    console.warn("tinystudio_specimen_wall_failed", errorMessage(error) || "wall failed");
   }
   if (!section) return assetResponse;
   return new HTMLRewriter()
@@ -2193,7 +2332,8 @@ async function specimenResponse(assetResponse, env) {
     .transform(assetResponse);
 }
 
-export default {
+/** @satisfies {ExportedHandler<Env>} */
+const handler = {
   async fetch(request, env) {
     const url = new URL(request.url);
     const host = url.hostname.toLowerCase();
@@ -2373,12 +2513,14 @@ export default {
     try {
       await queueDriftReruns(env, now);
     } catch (error) {
-      console.error("tinystudio_drift_rerun_queue_failed", error?.message ?? String(error));
+      console.error("tinystudio_drift_rerun_queue_failed", errorMessage(error) || String(error));
     }
     try {
       await queueTrackingChecks(env, now);
     } catch (error) {
-      console.error("tinystudio_tracking_checks_queue_failed", error?.message ?? String(error));
+      console.error("tinystudio_tracking_checks_queue_failed", errorMessage(error) || String(error));
     }
   }
 };
+
+export default handler;

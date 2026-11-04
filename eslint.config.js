@@ -40,8 +40,8 @@ export default [
     plugins: { "no-comments": noComments },
     linterOptions: { noInlineConfig: true, reportUnusedDisableDirectives: "error" },
     rules: {
-      "no-comments/disallowComments": ["error", { allow: ["eslint", "global"] }],
-      "no-inline-comments": "error",
+      "no-comments/disallowComments": ["error", { allow: ["eslint", "global", "\\* @"] }],
+      "no-inline-comments": ["error", { ignorePattern: "@type" }],
       "no-warning-comments": ["error", { terms: WORKAROUND_TERMS, location: "anywhere" }],
     },
   },
