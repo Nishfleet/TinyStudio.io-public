@@ -1,5 +1,6 @@
 node_modules
 .wrangler/
+.cloudflare/
 .dev.vars
 # Stray fleet desk/triage snapshot accidentally written to the repo root
 # (agent-state dump with internal triage/spend/credential-mention content).
