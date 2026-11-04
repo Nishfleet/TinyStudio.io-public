@@ -519,6 +519,9 @@ try {
   failures.push("test/check-render-blocking.mjs must exist (browser font and render-blocking guard).");
 }
 const ciWorkflow = read(".github/workflows/ci.yml");
+if (!/^ {4}secrets:\n {6}APPROVER_TOKEN: \$\{\{ secrets\.APPROVER_TOKEN \}\}$/m.test(read(".github/workflows/review.yml"))) {
+  failures.push("The review caller must pass APPROVER_TOKEN by name, or the bot posts with an empty token.");
+}
 if (!packageJson.includes('"check:render-blocking": "node build-fonts.mjs && node test/check-render-blocking.mjs"')) {
   failures.push("package.json must expose the browser check as check:render-blocking (building the fonts first).");
 }
