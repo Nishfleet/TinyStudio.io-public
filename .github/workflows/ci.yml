@@ -53,6 +53,24 @@ jobs:
           sudo mv /tmp/gitleaks /usr/local/bin/
       - run: gitleaks detect --source . --no-banner --redact
 
+  zizmor:
+    # Unsafe workflow triggers and token placement reached review six times (#60, #87, #89).
+    # zizmor's own action, without Advanced Security so a high finding fails the job
+    # (https://github.com/zizmorcore/zizmor-action#usage-without-github-advanced-security).
+    name: zizmor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          advanced-security: false
+          min-severity: high
+
   preview:
     # Owner decision 2026-11-01 (fleet-ops#10935): a clickable preview is the last gate of every PR.
     # Official action (cloudflare/wrangler-action, "Workers Previews"): one Preview per PR, shown on
@@ -76,7 +94,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: npm
+          # No npm cache in a job that deploys (https://docs.zizmor.sh/audits/#cache-poisoning).
+          package-manager-cache: false
       - run: npm ci
       - uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
         with:
