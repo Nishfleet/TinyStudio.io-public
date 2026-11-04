@@ -3,9 +3,10 @@ name: Dependabot auto-merge
 # https://docs.github.com/en/code-security/dependabot/working-with-dependabot/automating-dependabot-with-github-actions#enabling-auto-merge-on-a-pull-request
 # update-type is the highest semver change in the PR, so a grouped update with
 # any major bump is never armed. Required checks still gate the actual merge.
-on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
+# The recipe's own trigger is pull_request, not pull_request_target: zizmor flags
+# pull_request_target as dangerous-triggers (https://docs.zizmor.sh/audits/#dangerous-triggers),
+# and a Dependabot pull_request run may raise its token with `permissions`.
+on: pull_request
 
 permissions:
   pull-requests: write
@@ -15,8 +16,6 @@ jobs:
   dependabot:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # dependabot[bot] branches only exist on this repo, so this guard also
-    # keeps fork pull_request_target events out of the job.
     if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'Nishfleet/TinyStudio.io-public'
     steps:
       - name: Fetch Dependabot metadata
