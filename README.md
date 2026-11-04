@@ -46,7 +46,7 @@ To switch it off, disable the workflow (`gh workflow disable agent-dispatch` or 
 npm ci
 npm test               # site check, headings, sitemap, worker, UI, contract, viewport
 npm run check          # static site and link check only
-npm run dev            # wrangler dev on 127.0.0.1:8788
+npm run dev            # local D1 migrations, then cf dev on localhost:8787 (no AI binding, no login)
 npm run deploy:dry-run
 npm run deploy         # applies D1 migrations, then wrangler deploy
 ```

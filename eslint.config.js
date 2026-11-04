@@ -20,7 +20,7 @@ const WORKAROUND_TERMS = [
 ];
 
 export default [
-  { ignores: ["node_modules/**", "public/fonts/**", "evidence-fixtures/**", "marketing/**"] },
+  { ignores: ["node_modules/**", "public/fonts/**", "evidence-fixtures/**", "marketing/**", ".cloudflare/**"] },
   js.configs.recommended,
   { rules: { "no-irregular-whitespace": ["error", { skipTemplates: true }] } },
   {

@@ -379,8 +379,9 @@ if (!packageJson.includes("\"test:worker\"") || !packageJson.includes("test/test
   failures.push("Worker agent contract tests must be wired into package scripts.");
 }
 
-if (!packageJson.includes("\"dev\": \"wrangler dev --remote")) {
-  failures.push("Dev script must run the Worker preview, not a static-only server.");
+const devScript = JSON.parse(packageJson).scripts.dev;
+if (!devScript.includes("cf dev") || devScript.includes("--remote")) {
+  failures.push("Dev script must run the Worker locally with cf dev, not a static-only server or remote bindings.");
 }
 
 if (!packageJson.includes("\"deploy\": \"npm run migrate:remote && wrangler deploy\"")) {
