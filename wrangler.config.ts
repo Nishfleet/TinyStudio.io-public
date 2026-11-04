@@ -14,5 +14,8 @@ export default defineWranglerConfig((ctx) => {
 			command: "node build-fonts.mjs",
 		},
 		assetsDirectory: "./public",
+		dev: {
+			port: 8788,
+		},
 	};
 });
