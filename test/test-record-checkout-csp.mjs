@@ -82,11 +82,13 @@ async function submitCheckoutForm(recordHtml, recordCsp) {
   try {
     await page.goto("https://tinystudio.io/records/rec-1", { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.click('button:has-text("Start the correction")', { noWaitAfter: true });
-    await Promise.race([
-      page.waitForResponse((response) => response.url() === CHECKOUT_URL),
-      page.waitForEvent("console", (message) => /Content Security Policy/i.test(message.text())),
-      page.waitForTimeout(10000)
-    ]);
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      const checkoutReached = responses.some((line) => line.includes(CHECKOUT_URL));
+      const refused = consoleErrors.some((line) => /Content Security Policy/i.test(line));
+      if (checkoutReached || refused) break;
+      await page.waitForTimeout(50);
+    }
   } finally {
     await browser.close();
   }
