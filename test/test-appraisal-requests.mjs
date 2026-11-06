@@ -87,6 +87,32 @@ async function slots(env) {
   return res.json();
 }
 
+function submitFromLocalBrowser(env, overrides = {}, headers = {}) {
+  nextIp += 1;
+  const body = {
+    website: "local.example",
+    businessType: "Private dental clinic",
+    dealValue: "8000",
+    monthlyLeads: "40",
+    name: "Dana Reyes",
+    email: "dana@local.example",
+    ...overrides
+  };
+  return worker.fetch(
+    new Request("http://localhost:8788/api/appraisal-requests", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Origin: "http://localhost:8788",
+        "CF-Connecting-IP": `192.0.2.${nextIp % 250}`,
+        ...headers
+      },
+      body: new URLSearchParams(body).toString()
+    }),
+    env
+  );
+}
+
 test("requests 1 to 6 are accepted and request 7 goes to the waitlist with the next slot date", async () => {
   const { sqlite, env } = freshEnv();
   assert.deepEqual(
@@ -254,6 +280,24 @@ test("a cross-site post is refused and stores nothing", async () => {
   const { sqlite, env, sent } = freshEnv();
   const res = await submit(env, {}, { Origin: "https://evil.example" });
   assert.equal(res.status, 403);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM appraisal_requests").get().n, 0);
+  assert.equal(sent.length, 0);
+});
+
+test("a browser on the local dev server submits the form and gets 201", async () => {
+  const { sqlite, env, sent } = freshEnv();
+  const res = await submitFromLocalBrowser(env);
+  assert.equal(res.status, 201, "the local dev server must accept the browser's own origin");
+  assert.equal((await res.json()).status, "accepted");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM appraisal_requests").get().n, 1);
+  assert.equal(sent.length, 1);
+});
+
+test("the local dev server still refuses a cross-site post and stores nothing", async () => {
+  const { sqlite, env, sent } = freshEnv();
+  const res = await submitFromLocalBrowser(env, {}, { Origin: "https://evil.example" });
+  assert.equal(res.status, 403);
+  assert.equal((await res.json()).error, "cross_site_blocked");
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM appraisal_requests").get().n, 0);
   assert.equal(sent.length, 0);
 });
