@@ -9,6 +9,10 @@ interface Env {
   DODO_TINYSTUDIO_MODE?: string;
   DODO_TINYSTUDIO_PRODUCT_ID?: string;
   DODO_TINYSTUDIO_WEBHOOK_SECRET?: string;
+  GITHUB_APP_ID?: string;
+  GITHUB_APP_PRIVATE_KEY?: string;
+  GITHUB_API_BASE?: string;
+  GITHUB_FETCH?: typeof fetch;
   GOOGLE_ADS_CONVERSION_ID?: string;
   GOOGLE_ADS_CONVERSION_LABEL?: string;
 }
@@ -41,6 +45,7 @@ interface CorrectionLineRow {
   before_text: string;
   after_text: string;
   legal_copy: number;
+  file_path?: string | null;
   status: string;
   reviewer: string | null;
   review_note: string | null;
@@ -71,6 +76,30 @@ interface AppraisalRecordRow {
   rendered_at: string;
   faults_json: string | null;
   review_json: string | null;
+}
+
+interface CodeLaneConnectionRow {
+  request_id: string;
+  repo_owner: string;
+  repo_name: string;
+  installation_id: string;
+  site_folder: string;
+  connected_by: string;
+  created_at: string;
+  changed_at: string;
+}
+
+interface CodeLanePullRow {
+  id: string;
+  engagement_id: string;
+  request_id: string;
+  branch: string;
+  pr_number: number | null;
+  pr_url: string | null;
+  lines_json: string;
+  status: string;
+  created_at: string;
+  changed_at: string;
 }
 
 interface TrackingNoteRow {
