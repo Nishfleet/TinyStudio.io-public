@@ -20,7 +20,7 @@ final class Tinystudio_Connector_Rank_Math_Test extends Tinystudio_Connector_Tes
 	 *
 	 * @return void
 	 */
-	protected function set_up(): void {
+	public function set_up(): void {
 		parent::set_up();
 		$this->assert_detected_seo_plugin( 'rank-math' );
 	}
@@ -55,7 +55,12 @@ final class Tinystudio_Connector_Rank_Math_Test extends Tinystudio_Connector_Tes
 	 */
 	public function test_rank_math_writes_a_pages_seo_fields_through_its_own_route(): void {
 		list( , $authorization ) = $this->editor_with_application_password();
-		$page_id = self::factory()->post->create( array( 'post_type' => 'page', 'post_status' => 'publish' ) );
+		$page_id                 = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
 
 		$response = $this->authenticated_rest_request(
 			'POST',
@@ -90,7 +95,12 @@ final class Tinystudio_Connector_Rank_Math_Test extends Tinystudio_Connector_Tes
 	 */
 	public function test_subscriber_is_refused(): void {
 		list( , $authorization ) = $this->subscriber_with_application_password();
-		$page_id = self::factory()->post->create( array( 'post_type' => 'page', 'post_status' => 'publish' ) );
+		$page_id                 = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
 
 		$response = $this->authenticated_rest_request(
 			'POST',

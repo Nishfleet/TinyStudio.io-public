@@ -63,7 +63,9 @@ function tinystudio_connector_supported_post_types() {
  * Returns the names of the fields the connector registered for a post type.
  *
  * The tests use this to prove the connector covers only the gap the active SEO
- * plugin leaves open and registers nothing it does not need to.
+ * plugin leaves open and registers nothing it does not need to. The connector's
+ * fields are recognized by their auth callback, so a field the SEO plugin
+ * registered itself is never counted as one of the connector's.
  *
  * @param string $post_type Post type name.
  * @return string[] Meta keys, empty when the connector registered nothing.
@@ -71,14 +73,17 @@ function tinystudio_connector_supported_post_types() {
 function tinystudio_connector_registered_fields( $post_type ) {
 	$args = get_registered_meta_keys( 'post', $post_type );
 
-	return array_values(
-		array_filter(
-			array_keys( $args ),
-			static function ( $meta_key ) {
-				return 0 === strpos( $meta_key, '_yoast_wpseo_' );
-			}
-		)
-	);
+	$own = array();
+	foreach ( $args as $meta_key => $field_args ) {
+		if (
+			0 === strpos( $meta_key, '_yoast_wpseo_' )
+			&& ( $field_args['auth_callback'] ?? null ) === 'tinystudio_connector_can_edit_post'
+		) {
+			$own[] = $meta_key;
+		}
+	}
+
+	return $own;
 }
 
 /**
@@ -216,23 +221,24 @@ function tinystudio_connector_can_edit_post( $allowed, $meta_key, $object_id ) {
 }
 
 /**
- * Sanitizes a search description the way Yoast's own sanitizer does.
+ * Sanitizes a search description the way the meta description field reads
+ * afterwards: tags are stripped while the text inside them stays, so a script
+ * tag cannot survive, but its text is not silently dropped.
  *
- * Tags and scripts are stripped rather than stored. Registered as the
- * sanitize_callback of the search description field.
+ * Registered as the sanitize_callback of the search description field.
  *
- * @param mixed  $meta_value     Incoming value.
- * @param string $meta_key       The meta key.
- * @param string $object_type    Object type.
- * @param string $object_subtype Object subtype.
+ * @param mixed $meta_value Incoming value.
  * @return string The sanitized description.
  */
-function tinystudio_connector_sanitize_meta_description( $meta_value, $meta_key, $object_type, $object_subtype ) {
+function tinystudio_connector_sanitize_meta_description( $meta_value ) {
 	if ( ! is_string( $meta_value ) ) {
 		return '';
 	}
 
-	return sanitize_text_field( $meta_value );
+	// strip_tags() is intentional: wp_strip_all_tags() also removes the
+	// inner text of <script>/<style>, while this sanitizer keeps it.
+	// phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags
+	return trim( preg_replace( '/[\r\n\t ]+/', ' ', strip_tags( $meta_value ) ) );
 }
 
 /**
@@ -242,14 +248,24 @@ function tinystudio_connector_sanitize_meta_description( $meta_value, $meta_key,
  * string, so a bad value never reaches the page's head. Registered as the
  * sanitize_callback of the preferred address field.
  *
- * @param mixed  $meta_value     Incoming value.
- * @param string $meta_key       The meta key.
- * @param string $object_type    Object type.
- * @param string $object_subtype Object subtype.
+ * @param mixed $meta_value Incoming value.
  * @return string The sanitized address, or an empty string when invalid.
  */
-function tinystudio_connector_sanitize_canonical( $meta_value, $meta_key, $object_type, $object_subtype ) {
-	if ( ! is_string( $meta_value ) || false === wp_http_validate_url( $meta_value ) ) {
+function tinystudio_connector_sanitize_canonical( $meta_value ) {
+	if ( ! is_string( $meta_value ) ) {
+		return '';
+	}
+
+	// The shape of the address is checked here rather than through
+	// wp_http_validate_url, which resolves the host name and fails in
+	// environments without working DNS, such as build and test containers.
+	// Rejection over the REST API comes from the field's schema instead.
+	$parsed = wp_parse_url( $meta_value );
+	if (
+		empty( $parsed['host'] )
+		|| ! isset( $parsed['scheme'] )
+		|| ! in_array( $parsed['scheme'], array( 'http', 'https' ), true )
+	) {
 		return '';
 	}
 
@@ -262,13 +278,10 @@ function tinystudio_connector_sanitize_canonical( $meta_value, $meta_key, $objec
  * Anything else is dropped to an empty string. Registered as the
  * sanitize_callback of the hide-from-search field.
  *
- * @param mixed  $meta_value     Incoming value.
- * @param string $meta_key       The meta key.
- * @param string $object_type    Object type.
- * @param string $object_subtype Object subtype.
+ * @param mixed $meta_value Incoming value.
  * @return string The known value, or an empty string when unknown.
  */
-function tinystudio_connector_sanitize_noindex( $meta_value, $meta_key, $object_type, $object_subtype ) {
+function tinystudio_connector_sanitize_noindex( $meta_value ) {
 	if ( ! in_array( (string) $meta_value, array( '0', '1', '2' ), true ) ) {
 		return '';
 	}

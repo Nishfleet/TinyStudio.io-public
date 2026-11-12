@@ -7,6 +7,13 @@
 
 	<rule ref="WordPress"/>
 
+	<!-- PHPUnit 10 discovers test classes by file name, so the test files are
+	     named after their classes instead of the hyphenated style; the file
+	     name sniffs are suspended for the tests directory for that reason. -->
+	<rule ref="WordPress.Files.FileName">
+		<exclude-pattern>/tests/</exclude-pattern>
+	</rule>
+
 	<config name="testVersion" value="7.4-"/>
 	<rule ref="PHPCompatibilityWP"/>
 

@@ -19,7 +19,7 @@ final class Tinystudio_Connector_Yoast_Test extends Tinystudio_Connector_TestCas
 	 *
 	 * @return void
 	 */
-	protected function set_up(): void {
+	public function set_up(): void {
 		parent::set_up();
 		$this->assert_detected_seo_plugin( 'yoast' );
 	}
@@ -33,7 +33,12 @@ final class Tinystudio_Connector_Yoast_Test extends Tinystudio_Connector_TestCas
 	 */
 	public function test_editor_writes_a_pages_seo_fields_through_the_core_rest_api(): void {
 		list( , $authorization ) = $this->editor_with_application_password();
-		$page_id = self::factory()->post->create( array( 'post_type' => 'page', 'post_status' => 'publish' ) );
+		$page_id                 = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
 
 		$response = $this->authenticated_rest_request(
 			'PUT',
@@ -66,7 +71,12 @@ final class Tinystudio_Connector_Yoast_Test extends Tinystudio_Connector_TestCas
 	 */
 	public function test_subscriber_is_refused(): void {
 		list( , $authorization ) = $this->subscriber_with_application_password();
-		$page_id = self::factory()->post->create( array( 'post_type' => 'page', 'post_status' => 'publish' ) );
+		$page_id                 = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
 
 		$response = $this->authenticated_rest_request(
 			'PUT',
@@ -90,7 +100,12 @@ final class Tinystudio_Connector_Yoast_Test extends Tinystudio_Connector_TestCas
 	 */
 	public function test_script_tag_in_a_description_is_stripped(): void {
 		list( , $authorization ) = $this->editor_with_application_password();
-		$page_id = self::factory()->post->create( array( 'post_type' => 'page', 'post_status' => 'publish' ) );
+		$page_id                 = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
 
 		$response = $this->authenticated_rest_request(
 			'PUT',
@@ -118,7 +133,12 @@ final class Tinystudio_Connector_Yoast_Test extends Tinystudio_Connector_TestCas
 	 */
 	public function test_non_url_canonical_is_rejected(): void {
 		list( , $authorization ) = $this->editor_with_application_password();
-		$page_id = self::factory()->post->create( array( 'post_type' => 'page', 'post_status' => 'publish' ) );
+		$page_id                 = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
 
 		$response = $this->authenticated_rest_request(
 			'PUT',
@@ -142,7 +162,12 @@ final class Tinystudio_Connector_Yoast_Test extends Tinystudio_Connector_TestCas
 	 */
 	public function test_unknown_noindex_value_is_rejected(): void {
 		list( , $authorization ) = $this->editor_with_application_password();
-		$page_id = self::factory()->post->create( array( 'post_type' => 'page', 'post_status' => 'publish' ) );
+		$page_id                 = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
 
 		$response = $this->authenticated_rest_request(
 			'PUT',
@@ -166,7 +191,12 @@ final class Tinystudio_Connector_Yoast_Test extends Tinystudio_Connector_TestCas
 	 */
 	public function test_unknown_meta_key_is_ignored(): void {
 		list( , $authorization ) = $this->editor_with_application_password();
-		$page_id = self::factory()->post->create( array( 'post_type' => 'page', 'post_status' => 'publish' ) );
+		$page_id                 = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
 
 		$response = $this->authenticated_rest_request(
 			'PUT',
@@ -214,7 +244,7 @@ final class Tinystudio_Connector_Yoast_Test extends Tinystudio_Connector_TestCas
 	 */
 	public function test_yoast_writes_the_description_for_posts_through_its_own_registration(): void {
 		list( , $authorization ) = $this->editor_with_application_password();
-		$post_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );
+		$post_id                 = self::factory()->post->create( array( 'post_status' => 'publish' ) );
 
 		$response = $this->authenticated_rest_request(
 			'PUT',

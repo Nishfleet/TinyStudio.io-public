@@ -20,7 +20,7 @@ final class Tinystudio_Connector_All_In_One_Seo_Test extends Tinystudio_Connecto
 	 *
 	 * @return void
 	 */
-	protected function set_up(): void {
+	public function set_up(): void {
 		parent::set_up();
 		$this->assert_detected_seo_plugin( 'all-in-one-seo' );
 	}
@@ -57,7 +57,12 @@ final class Tinystudio_Connector_All_In_One_Seo_Test extends Tinystudio_Connecto
 	 */
 	public function test_all_in_one_seo_writes_a_pages_seo_fields_through_the_core_rest_api(): void {
 		list( , $authorization ) = $this->editor_with_application_password();
-		$page_id = self::factory()->post->create( array( 'post_type' => 'page', 'post_status' => 'publish' ) );
+		$page_id                 = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
 
 		$response = $this->authenticated_rest_request(
 			'PUT',
@@ -67,10 +72,10 @@ final class Tinystudio_Connector_All_In_One_Seo_Test extends Tinystudio_Connecto
 					'title'         => 'TinyStudio repaired this page title',
 					'description'   => 'TinyStudio repaired this page description.',
 					'canonical_url' => 'https://tinystudio.example/repaired-page',
-					'robots'        => array(
-						'default' => false,
-						'noindex' => true,
-					),
+					// All in One SEO's save path maps these robots keys flat into its
+					// post model columns (robots_default / robots_noindex).
+					'default'       => false,
+					'noindex'       => true,
 				),
 			),
 			$authorization
@@ -93,7 +98,12 @@ final class Tinystudio_Connector_All_In_One_Seo_Test extends Tinystudio_Connecto
 	 */
 	public function test_subscriber_is_refused(): void {
 		list( , $authorization ) = $this->subscriber_with_application_password();
-		$page_id = self::factory()->post->create( array( 'post_type' => 'page', 'post_status' => 'publish' ) );
+		$page_id                 = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
 
 		$response = $this->authenticated_rest_request(
 			'PUT',
