@@ -14,6 +14,7 @@ import { handleDodoWebhook, startCheckoutForRequest } from "./payments.js";
 import { deskQueuePage } from "./desk-page.js";
 import { ENGAGEMENT_ID } from "./engagement.js";
 import { queueTrackingChecks } from "./tracking.js";
+import { wordpressApi } from "./wordpress.js";
 
 /** @typedef {ReturnType<typeof appraisalInput>["input"]} AppraisalInput */
 /** @typedef {ReturnType<typeof agentInput>} AgentInput */
@@ -2414,6 +2415,10 @@ const handler = {
 
     if (url.pathname === "/api/desk/specimen-consent") {
       return deskActionResponse(request, env, url, "specimen-consent");
+    }
+
+    if (url.pathname.startsWith("/api/wordpress/")) {
+      return wordpressApi(request, env, url);
     }
 
     if (url.pathname.startsWith("/records/")) {

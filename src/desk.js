@@ -12,6 +12,7 @@ import {
 } from "./engagement.js";
 import { addTrackingNote, TRACKING_DAYS, trackingDay, trackingNotes, trackingStartedAt } from "./tracking.js";
 import { renderCloseOut, republishRecord } from "./record.js";
+import { purgeEngagementKey } from "./wordpress.js";
 
 /** @param {Env} env @returns {Promise<DeskQueueRow[]>} */
 export async function deskQueue(env) {
@@ -231,5 +232,10 @@ export async function closeOutEngagement(env, input, reviewer, at) {
     detail: `close-out by ${reviewer}`,
     at
   });
+  try {
+    await purgeEngagementKey(env, closed.id, at);
+  } catch {
+    console.warn("tinystudio_wordpress_key_purge_failed", closed.id);
+  }
   return { engagement: closed, closeOutId, referralCode, receiptId: receipt?.id ?? null };
 }

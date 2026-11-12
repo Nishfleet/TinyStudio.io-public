@@ -11,6 +11,7 @@ interface Env {
   DODO_TINYSTUDIO_WEBHOOK_SECRET?: string;
   GOOGLE_ADS_CONVERSION_ID?: string;
   GOOGLE_ADS_CONVERSION_LABEL?: string;
+  WORDPRESS_KEY_ENC_KEY?: string;
 }
 
 interface CodedError extends Error {
@@ -124,6 +125,37 @@ interface DodoEvent {
   type?: unknown;
   event_type?: unknown;
   data?: DodoPaymentData | null;
+}
+
+interface WordPressConnectionRow {
+  id: string;
+  engagement_id: string;
+  request_id: string;
+  site_url: string;
+  wp_user_login: string | null;
+  password_ciphertext: string | null;
+  status: string;
+  connect_token: string;
+  connected_at: string | null;
+  created_at: string;
+  changed_at: string;
+}
+
+interface WordPressLineWriteRow {
+  id: string;
+  engagement_id: string;
+  request_id: string;
+  line_id: string;
+  post_type: string;
+  post_id: number;
+  field: string;
+  old_value: string | null;
+  had_old: number;
+  status: string;
+  charged: number;
+  detail: string | null;
+  created_at: string;
+  changed_at: string;
 }
 
 interface DeskQueueRow extends EngagementRow {
