@@ -21,8 +21,8 @@ const EXPECTED_OUTLINES = {
   "public/specimen.html": [1, 2, 2, 2, 2, 2, 3, 2, 2],
   "public/waitlist.html": [1, 2, 2, 2, 2],
   "public/brief-requested.html": [1, 2, 2, 2],
-  "public/privacy.html": [1, 2, 2, 2],
-  "public/terms.html": [1, 2, 2, 2],
+  "public/privacy.html": [1, 2, 2, 2, 2, 2],
+  "public/terms.html": [1, 2, 2, 2, 2, 2, 2, 2],
   "public/contact.html": [1, 2, 2, 2]
 };
 
