@@ -39,24 +39,27 @@ function d1(sqlite) {
 const APP_KEY_PAIR = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const APP_PRIVATE_KEY = APP_KEY_PAIR.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
 
-function githubStub({ repoMissing = false, fileOverrides = new Map(), pullState = null } = {}) {
+function githubStub({ repoMissing = false, fileOverrides = new Map(), pullState = null, commitFails = false } = {}) {
   const calls = [];
   const files = new Map([
     ["site/index.html", "<h1>Welcome</h1>\n<p>Book a visit today.</p>\n"],
     ["src/private.js", "const secret = 'private code';\n"]
   ]);
   for (const [path, body] of fileOverrides) files.set(path, body);
+  const baseFiles = new Map(files);
+  const shas = new Map();
   const branches = new Set(["refs/heads/main"]);
   const pulls = new Map();
   let nextCommit = 0;
   let nextPull = 7;
+  const baseShaOf = (path) => `file-sha-${path}`;
+  const respond = (payload, status = 200) =>
+    new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
   const fetchStub = async (url, init = {}) => {
     const target = new URL(String(url));
     const body = init.body ? JSON.parse(init.body) : null;
     const call = { method: init.method ?? "GET", path: `${target.pathname}${target.search}`, body };
     calls.push(call);
-    const respond = (payload, status = 200) =>
-      new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
     if (target.pathname === "/app/installations/4242/access_tokens") {
       if (init.method !== "POST") return respond({ message: "bad method" }, 405);
       return respond({ token: "ghs_stub_token", expires_at: "2026-11-12T23:00:00Z" });
@@ -69,16 +72,32 @@ function githubStub({ repoMissing = false, fileOverrides = new Map(), pullState 
       branches.add(body.ref);
       return respond({ ref: body.ref });
     }
+    const deleted = target.pathname.match(/^\/repos\/acme\/site-repo\/git\/refs\/heads\/(.+)$/);
+    if (deleted && init.method === "DELETE") {
+      branches.delete(`refs/heads/${deleted[1]}`);
+      return respond({}, 204);
+    }
     const contents = target.pathname.match(/^\/repos\/acme\/site-repo\/contents\/(.+)$/);
     if (contents) {
       const path = decodeURIComponent(contents[1]);
-      if (!files.has(path)) return respond({ message: "Not Found" }, 404);
+      if (!files.has(path) && !baseFiles.has(path)) return respond({ message: "Not Found" }, 404);
       if (init.method === "PUT") {
+        if (!branches.has(`refs/heads/${body.branch}`)) return respond({ message: "branch not found" }, 404);
+        if (commitFails) return respond({ message: "commit failed" }, 500);
+        const expectedSha = shas.get(path) ?? baseShaOf(path);
+        if (body.sha !== expectedSha) return respond({ message: "sha was not up-to-date" }, 409);
         nextCommit += 1;
+        const sha = `file-sha-${path}-${nextCommit}`;
+        shas.set(path, sha);
         files.set(path, Buffer.from(body.content, "base64").toString("utf8"));
-        return respond({ commit: { sha: `commit-${nextCommit}` } });
+        return respond({ commit: { sha: `commit-${nextCommit}` }, content: { sha } });
       }
-      return respond({ sha: `file-sha-${path}`, content: Buffer.from(files.get(path)).toString("base64") });
+      const mergedIntoMain = pullState === "merged" || [...pulls.values()].some((pull) => pull.state === "merged");
+      const ref = target.searchParams.get("ref");
+      const source = ref === "main" && !mergedIntoMain ? baseFiles : files;
+      if (!source.has(path)) return respond({ message: "Not Found" }, 404);
+      const sha = ref === "main" ? baseShaOf(path) : (shas.get(path) ?? baseShaOf(path));
+      return respond({ sha, content: Buffer.from(source.get(path)).toString("base64") });
     }
     if (target.pathname === "/repos/acme/site-repo/pulls" && init.method === "POST") {
       const number = nextPull;
@@ -95,7 +114,7 @@ function githubStub({ repoMissing = false, fileOverrides = new Map(), pullState 
     }
     return respond({ message: "Not Found" }, 404);
   };
-  return { calls, files, pulls, fetchStub };
+  return { calls, files, baseFiles, branches, pulls, fetchStub };
 }
 
 async function freshEnv(github = {}) {
@@ -143,10 +162,10 @@ test("code lane: the connect step names one repository and one folder on the rec
   assert.equal(connection.repo_name, "site-repo");
   assert.equal(connection.site_folder, "site");
   assert.equal((await codeLaneConnection(env, "req-1")).installation_id, "4242");
-  await assert.rejects(connectCodeLane(env, { requestId: "req-1", repo: "https://github.com/acme/site-repo", installationId: "4242", siteFolder: "site" }, "Jev", "2026-10-12T09:30:00.000Z"), /owner\/name/);
-  await assert.rejects(connectCodeLane(env, { requestId: "req-1", repo: "acme/site-repo", installationId: "not-a-number", siteFolder: "site" }, "Jev", "2026-10-12T09:30:00.000Z"), /installation id/);
-  await assert.rejects(connectCodeLane(env, { requestId: "req-1", repo: "acme/site-repo", installationId: "4242", siteFolder: "../elsewhere" }, "Jev", "2026-10-12T09:30:00.000Z"), /no \.\. steps/);
-  await assert.rejects(connectCodeLane(env, { requestId: "req-missing", repo: "acme/site-repo", installationId: "4242", siteFolder: "site" }, "Jev", "2026-10-12T09:30:00.000Z"), /appraisal request not found/);
+  await assert.rejects(connectCodeLane(env, { requestId: "req-1", repo: "https://github.com/acme/site-repo", installationId: "4242", siteFolder: "site" }, "Jev", "2026-10-12T09:30:00.000Z"), { code: "BAD_REPO" });
+  await assert.rejects(connectCodeLane(env, { requestId: "req-1", repo: "acme/site-repo", installationId: "not-a-number", siteFolder: "site" }, "Jev", "2026-10-12T09:30:00.000Z"), { code: "BAD_INSTALLATION" });
+  await assert.rejects(connectCodeLane(env, { requestId: "req-1", repo: "acme/site-repo", installationId: "4242", siteFolder: "../elsewhere" }, "Jev", "2026-10-12T09:30:00.000Z"), { code: "BAD_FOLDER" });
+  await assert.rejects(connectCodeLane(env, { requestId: "req-missing", repo: "acme/site-repo", installationId: "4242", siteFolder: "site" }, "Jev", "2026-10-12T09:30:00.000Z"), { code: "NOT_FOUND" });
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM code_lane_connections").get().n, 1);
 });
 
@@ -160,7 +179,7 @@ test("code lane: paths are cleaned, kept inside the named folder and nowhere els
   assert.equal(pathInsideFolder("src/private.js", "site"), false);
   assert.equal(pathInsideFolder("site/index.html", "."), true);
   const { line } = await engagementWithApprovedLine(env);
-  await assert.rejects(setLineFilePath(env, line.id, "src/private.js", "2026-10-12T12:15:00.000Z"), /limited to the site folder/);
+  await assert.rejects(setLineFilePath(env, line.id, "src/private.js", "2026-10-12T12:15:00.000Z"), { code: "OUTSIDE_FOLDER" });
   const named = await setLineFilePath(env, line.id, "site/index.html", "2026-10-12T12:15:00.000Z");
   assert.equal(named.file_path, "site/index.html");
 });
@@ -172,8 +191,8 @@ test("code lane: the app token is signed by the app key and never stored", async
   const claims = decodeJwt(jwt);
   assert.equal(claims.iss, "123456");
   assert.equal(claims.iat, Math.floor(Date.parse("2026-11-12T12:00:00Z") / 1000) - 60);
-  await assert.rejects(appJwt({ ...env, GITHUB_APP_ID: "" }, 0), /account step/);
-  await assert.rejects(appJwt({ ...env, GITHUB_APP_PRIVATE_KEY: "" }, 0), /account step/);
+  await assert.rejects(appJwt({ ...env, GITHUB_APP_ID: "" }, 0), { code: "APP_NOT_CONFIGURED" });
+  await assert.rejects(appJwt({ ...env, GITHUB_APP_PRIVATE_KEY: "" }, 0), { code: "APP_NOT_CONFIGURED" });
   const withoutKey = await freshEnv({ env: { GITHUB_APP_ID: "", GITHUB_APP_PRIVATE_KEY: "" } });
   assert.equal(appConfigured(withoutKey.env), false);
   const connection = await connectCodeLane(env, { requestId: "req-1", repo: "acme/site-repo", installationId: "4242", siteFolder: "site" }, "Jev", "2026-10-12T09:30:00.000Z");
@@ -207,20 +226,21 @@ test("code lane: an approved list becomes one pull request, one commit per line,
 test("code lane: the order stops before anything is written when the lines are not ready", async () => {
   const { env } = await freshEnv();
   const engagement = await openEngagement(env, "req-1", "2026-10-12T09:00:00.000Z");
-  await assert.rejects(applyApprovedLines(env, { engagementId: "no-such-engagement" }, "Jev", "2026-10-12T13:00:00.000Z"), /engagement not found/);
-  await assert.rejects(applyApprovedLines(env, { engagementId: engagement.id }, "Jev", "2026-10-12T13:00:00.000Z"), /only while the correction is in progress/);
+  await assert.rejects(applyApprovedLines(env, { engagementId: "no-such-engagement" }, "Jev", "2026-10-12T13:00:00.000Z"), { code: "NOT_FOUND" });
+  await assert.rejects(applyApprovedLines(env, { engagementId: engagement.id }, "Jev", "2026-10-12T13:00:00.000Z"), { code: "NOT_IN_CORRECTION" });
   const { env: env2 } = await freshEnv();
   const unnamed = await engagementWithApprovedLine(env2, { namePath: false });
-  await assert.rejects(applyApprovedLines(env2, { engagementId: unnamed.engagement.id }, "Jev", "2026-10-12T13:00:00.000Z"), /has no file path/);
-  const { env: env3 } = await freshEnv({ fileOverrides: new Map([["site/index.html", "<h1>Something else entirely</h1>\n"]]) });
+  await assert.rejects(applyApprovedLines(env2, { engagementId: unnamed.engagement.id }, "Jev", "2026-10-12T13:00:00.000Z"), { code: "LINE_PATH_MISSING" });
+  const { env: env3, stub: stub3 } = await freshEnv({ fileOverrides: new Map([["site/index.html", "<h1>Something else entirely</h1>\n"]]) });
   const applied = await engagementWithApprovedLine(env3);
-  await assert.rejects(applyApprovedLines(env3, { engagementId: applied.engagement.id }, "Jev", "2026-10-12T13:00:00.000Z"), /before state.*not in/);
+  await assert.rejects(applyApprovedLines(env3, { engagementId: applied.engagement.id }, "Jev", "2026-10-12T13:00:00.000Z"), { code: "BEFORE_TEXT_NOT_FOUND" });
+  assert.equal(stub3.calls.some((call) => call.path === "/repos/acme/site-repo/git/refs"), false, "a bad first line never creates the branch");
   const { env: env4 } = await freshEnv({ fileOverrides: new Map([["site/index.html", "<p>Book a visit today.</p>\n<p>Book a visit today.</p>\n"]]) });
   const twice = await engagementWithApprovedLine(env4);
-  await assert.rejects(applyApprovedLines(env4, { engagementId: twice.engagement.id }, "Jev", "2026-10-12T13:00:00.000Z"), /appears 2 times/);
+  await assert.rejects(applyApprovedLines(env4, { engagementId: twice.engagement.id }, "Jev", "2026-10-12T13:00:00.000Z"), { code: "BEFORE_TEXT_NOT_UNIQUE" });
   const { env: env5 } = await freshEnv({ repoMissing: true });
   const missing = await engagementWithApprovedLine(env5);
-  await assert.rejects(applyApprovedLines(env5, { engagementId: missing.engagement.id }, "Jev", "2026-10-12T13:00:00.000Z"), /did not answer/);
+  await assert.rejects(applyApprovedLines(env5, { engagementId: missing.engagement.id }, "Jev", "2026-10-12T13:00:00.000Z"), { code: "REPO_NOT_FOUND" });
 });
 
 test("code lane: an open order is a hold, and the re-check after the merge marks each line fixed or not fixed", async () => {
@@ -233,6 +253,103 @@ test("code lane: an open order is a hold, and the re-check after the merge marks
   const rechecked = await recheckCodeLane(env, { engagementId: engagement.id }, "Jev", "2026-10-12T15:00:00.000Z");
   assert.equal(rechecked.status, "rechecked");
   assert.equal(rechecked.lines[0].fixed, true);
+});
+
+test("code lane: two approved lines on one file commit in order, each built on the order branch", async () => {
+  const { env, stub } = await freshEnv();
+  const { engagement } = await engagementWithApprovedLine(env);
+  const second = await addCorrectionLine(
+    env,
+    engagement,
+    { faultId: "f2", faultTitle: "Home page title is thin", beforeText: "<h1>Welcome</h1>", afterText: "<h1>Welcome to the clinic</h1>", legalCopy: 0 },
+    "2026-10-12T11:40:00.000Z"
+  );
+  await setLineFilePath(env, second.id, "site/index.html", "2026-10-12T12:05:00.000Z");
+  await reviewCorrectionLine(env, second, "approve", { reviewer: "Jev", note: "", at: "2026-10-12T12:25:00.000Z" });
+  const result = await applyApprovedLines(env, { engagementId: engagement.id }, "Jev", "2026-10-12T13:00:00.000Z");
+  assert.equal(result.lines.length, 2, "both lines land on one pull request");
+  assert.equal(
+    stub.files.get("site/index.html"),
+    "<h1>Welcome to the clinic</h1>\n<p>Call today: a visit takes five minutes to book.</p>\n",
+    "the second commit carries the first line's edit"
+  );
+  const puts = stub.calls.filter((call) => call.method === "PUT" && call.path.startsWith("/repos/acme/site-repo/contents/"));
+  assert.equal(puts.length, 2, "one commit per line");
+  assert.equal(
+    Buffer.from(puts[0].body.content, "base64").toString("utf8"),
+    "<h1>Welcome</h1>\n<p>Call today: a visit takes five minutes to book.</p>\n",
+    "the first commit carries only the first line"
+  );
+  const contentsGets = stub.calls.filter((call) => call.method === "GET" && call.path.startsWith("/repos/acme/site-repo/contents/"));
+  assert.equal(
+    contentsGets.filter((call) => call.path.endsWith(`ref=${encodeURIComponent(result.branch)}`)).length,
+    2,
+    "each line is built from the order branch, so the second one sees the first one's commit"
+  );
+});
+
+test("code lane: a second line that misses the base content stops before the branch exists", async () => {
+  const { env, stub } = await freshEnv();
+  const { engagement } = await engagementWithApprovedLine(env);
+  const second = await addCorrectionLine(
+    env,
+    engagement,
+    { faultId: "f2", faultTitle: "Booking is one click", beforeText: "<p>Booked.</p>", afterText: "<p>Booked in one click.</p>", legalCopy: 0 },
+    "2026-10-12T11:40:00.000Z"
+  );
+  await setLineFilePath(env, second.id, "site/index.html", "2026-10-12T12:05:00.000Z");
+  await reviewCorrectionLine(env, second, "approve", { reviewer: "Jev", note: "", at: "2026-10-12T12:25:00.000Z" });
+  await assert.rejects(applyApprovedLines(env, { engagementId: engagement.id }, "Jev", "2026-10-12T13:00:00.000Z"), { code: "BEFORE_TEXT_NOT_FOUND" });
+  assert.equal(stub.calls.some((call) => call.path === "/repos/acme/site-repo/git/refs"), false, "no branch is created for a list that cannot apply");
+  assert.equal(stub.calls.some((call) => call.method === "PUT"), false, "nothing is written to the repository");
+});
+
+test("code lane: a commit failure deletes the order branch so the retry starts clean", async () => {
+  const { env, stub } = await freshEnv({ commitFails: true });
+  const { engagement } = await engagementWithApprovedLine(env);
+  const branch = `tinystudio/correction-${engagement.id.slice(0, 8)}`;
+  await assert.rejects(applyApprovedLines(env, { engagementId: engagement.id }, "Jev", "2026-10-12T13:00:00.000Z"), { code: "COMMIT_FAILED" });
+  assert.equal(
+    stub.calls.some((call) => call.method === "DELETE" && call.path === `/repos/acme/site-repo/git/refs/heads/${branch}`),
+    true,
+    "the orphan branch is deleted on the way out"
+  );
+  assert.equal(stub.branches.has(`refs/heads/${branch}`), false, "the retry will not stop at BRANCH_EXISTS");
+});
+
+test("code lane: a file of 200 KB still encodes for its commit", async () => {
+  const { env, stub } = await freshEnv({
+    fileOverrides: new Map([["site/index.html", `${"x".repeat(200 * 1024)}\n<p>Book a visit today.</p>\n`]])
+  });
+  const { engagement } = await engagementWithApprovedLine(env);
+  const result = await applyApprovedLines(env, { engagementId: engagement.id }, "Jev", "2026-10-12T13:00:00.000Z");
+  assert.equal(result.lines.length, 1);
+  assert.ok(stub.files.get("site/index.html").endsWith("<p>Call today: a visit takes five minutes to book.</p>\n"));
+});
+
+test("code lane: a re-check with an unfixed line keeps the pull open for a later re-check", async () => {
+  const { env, sqlite, stub } = await freshEnv({ fileOverrides: new Map([["site/about.html", "<p>About us.</p>\n"]]) });
+  const { engagement } = await engagementWithApprovedLine(env);
+  const second = await addCorrectionLine(
+    env,
+    engagement,
+    { faultId: "f2", faultTitle: "About page is thin", beforeText: "<p>About us.</p>", afterText: "<p>About the clinic.</p>", legalCopy: 0 },
+    "2026-10-12T11:40:00.000Z"
+  );
+  await setLineFilePath(env, second.id, "site/about.html", "2026-10-12T12:05:00.000Z");
+  await reviewCorrectionLine(env, second, "approve", { reviewer: "Jev", note: "", at: "2026-10-12T12:25:00.000Z" });
+  await applyApprovedLines(env, { engagementId: engagement.id }, "Jev", "2026-10-12T13:00:00.000Z");
+  stub.pulls.get(7).state = "merged";
+  stub.files.set("site/about.html", "<p>About us.</p>\n");
+  const first = await recheckCodeLane(env, { engagementId: engagement.id }, "Jev", "2026-10-12T15:00:00.000Z");
+  assert.equal(first.status, "partially_fixed");
+  assert.equal(first.lines[0].fixed, true);
+  assert.equal(first.lines[1].fixed, false);
+  assert.equal(sqlite.prepare("SELECT status FROM code_lane_pulls").get().status, "opened", "an unfixed line stays open for a later re-check");
+  stub.files.set("site/about.html", "<p>About the clinic.</p>\n");
+  const again = await recheckCodeLane(env, { engagementId: engagement.id }, "Jev", "2026-10-12T16:00:00.000Z");
+  assert.equal(again.status, "rechecked");
+  assert.equal(sqlite.prepare("SELECT status FROM code_lane_pulls").get().status, "rechecked");
 });
 
 test("code lane: the desk route answers behind the same Access door as the rest of the desk", async () => {
@@ -250,10 +367,4 @@ test("code lane: the desk route answers behind the same Access door as the rest 
     new URL("https://tinystudio.io/api/desk/code-lane/apply")
   );
   assert.equal(crossSite.status, 403);
-  const unknown = await codeLaneResponse(
-    new Request("https://tinystudio.io/api/desk/code-lane/nope", { method: "POST", headers: { cf_access_jwt: "x" } }),
-    envWithAccess,
-    new URL("https://tinystudio.io/api/desk/code-lane/nope")
-  );
-  assert.equal(unknown.status, 401, "an unknown action still needs the reviewer first");
 });

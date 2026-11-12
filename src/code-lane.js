@@ -141,7 +141,6 @@ export async function installationToken(env, connection) {
 
 /** @param {Env} env @param {string} method @param {string} path @param {string | null} bearer @param {string | null} body */
 async function githubFetch(env, method, path, bearer, body) {
-  const base = clean(env.GITHUB_API_BASE, 200) || GITHUB_API_BASE;
   const send = env.GITHUB_FETCH || fetch;
   /** @type {Record<string, string>} */
   const headers = {
@@ -151,7 +150,7 @@ async function githubFetch(env, method, path, bearer, body) {
   };
   if (bearer) headers.authorization = `Bearer ${bearer}`;
   if (body !== null) headers["content-type"] = "application/json";
-  return send(`${base}${path}`, { method, headers, body });
+  return send(`${GITHUB_API_BASE}${path}`, { method, headers, body });
 }
 
 /** @param {Response} response @param {string} code @param {string} message */
@@ -162,7 +161,13 @@ async function assertOk(response, code, message) {
 
 /** @param {string} text */
 function base64(text) {
-  return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+  const bytes = new TextEncoder().encode(text);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
 }
 
 /** @param {string} text */
@@ -233,83 +238,108 @@ export async function applyApprovedLines(env, input, reviewer, at) {
   const refData = await assertOk(await githubFetch(env, "GET", `${repo}/git/ref/heads/${defaultBranch}`, token, null), "REPO_NOT_FOUND", "the default branch did not answer");
   const baseSha = String(refData?.object?.sha ?? "");
   const branch = `${BRANCH_PREFIX}${engagement.id.slice(0, 8)}`;
-  await assertOk(
-    await githubFetch(env, "POST", `${repo}/git/refs`, token, JSON.stringify({ ref: `refs/heads/${branch}`, sha: baseSha })),
-    "BRANCH_EXISTS",
-    "an order for this engagement is already open on the repository"
-  );
-  /** @type {{ line: CorrectionLineRow, commit: string }[]} */
-  const applied = [];
+  /** @type {Map<string, string>} */
+  const fileState = new Map();
+  /** @type {{ line: CorrectionLineRow, path: string, content: string }[]} */
+  const staged = [];
   for (const line of approved) {
     const filePath = cleanFilePath(line.file_path);
-    const fileData = await assertOk(
-      await githubFetch(env, "GET", `${repo}/contents/${filePath}?ref=${encodeURIComponent(defaultBranch)}`, token, null),
-      "FILE_NOT_FOUND",
-      `${filePath} did not answer on ${defaultBranch}`
-    );
-    const current = decodeBase64(String(fileData.content ?? ""));
+    let current = fileState.get(filePath);
+    if (current === undefined) {
+      const fileData = await assertOk(
+        await githubFetch(env, "GET", `${repo}/contents/${filePath}?ref=${encodeURIComponent(defaultBranch)}`, token, null),
+        "FILE_NOT_FOUND",
+        `${filePath} did not answer on ${defaultBranch}`
+      );
+      current = decodeBase64(String(fileData.content ?? ""));
+    }
     const matches = current.split(line.before_text).length - 1;
     if (matches === 0) throw fail("BEFORE_TEXT_NOT_FOUND", `the before state of line ${line.id.slice(0, 8)} is not in ${filePath}`);
     if (matches > 1) throw fail("BEFORE_TEXT_NOT_UNIQUE", `the before state of line ${line.id.slice(0, 8)} appears ${matches} times in ${filePath}`);
-    const updated = current.replace(line.before_text, line.after_text);
-    const commitData = await assertOk(
+    current = current.replace(line.before_text, line.after_text);
+    fileState.set(filePath, current);
+    staged.push({ line, path: filePath, content: current });
+  }
+  try {
+    await assertOk(
+      await githubFetch(env, "POST", `${repo}/git/refs`, token, JSON.stringify({ ref: `refs/heads/${branch}`, sha: baseSha })),
+      "BRANCH_EXISTS",
+      "an order for this engagement is already open on the repository"
+    );
+    /** @type {{ line: CorrectionLineRow, commit: string }[]} */
+    const applied = [];
+    for (const { line, path, content } of staged) {
+      const fileData = await assertOk(
+        await githubFetch(env, "GET", `${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`, token, null),
+        "COMMIT_FAILED",
+        `${path} did not answer on ${branch}`
+      );
+      const commitData = await assertOk(
+        await githubFetch(
+          env,
+          "PUT",
+          `${repo}/contents/${path}`,
+          token,
+          JSON.stringify({ message: lineCommitMessage(line), content: base64(content), branch, sha: String(fileData.sha ?? "") })
+        ),
+        "COMMIT_FAILED",
+        `the commit for line ${line.id.slice(0, 8)} failed`
+      );
+      applied.push({ line, commit: String(commitData?.commit?.sha ?? "") });
+    }
+    const pullData = await assertOk(
       await githubFetch(
         env,
-        "PUT",
-        `${repo}/contents/${filePath}`,
+        "POST",
+        `${repo}/pulls`,
         token,
-        JSON.stringify({ message: lineCommitMessage(line), content: base64(updated), branch, sha: fileData.sha })
+        JSON.stringify({
+          title: `TinyStudio correction: ${engagement.id.slice(0, 8)}`,
+          head: branch,
+          base: defaultBranch,
+          body: pullRequestBody(connection, { defaultBranch, branch, lines: applied })
+        })
       ),
-      "COMMIT_FAILED",
-      `the commit for line ${line.id.slice(0, 8)} failed`
+      "PR_FAILED",
+      "the pull request failed"
     );
-    applied.push({ line, commit: String(commitData?.commit?.sha ?? "") });
-  }
-  const pullData = await assertOk(
-    await githubFetch(
-      env,
-      "POST",
-      `${repo}/pulls`,
-      token,
-      JSON.stringify({
-        title: `TinyStudio correction: ${engagement.id.slice(0, 8)}`,
-        head: branch,
-        base: defaultBranch,
-        body: pullRequestBody(connection, { defaultBranch, branch, lines: applied })
-      })
-    ),
-    "PR_FAILED",
-    "the pull request failed"
-  );
-  const pullId = crypto.randomUUID();
-  await env.DB.prepare(
-    `INSERT INTO code_lane_pulls
-       (id, engagement_id, request_id, branch, pr_number, pr_url, lines_json, status, created_at, changed_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'opened', ?8, ?8)`
-  )
-    .bind(
-      pullId,
-      engagement.id,
-      engagement.request_id,
-      branch,
-      Number(pullData.number) || null,
-      String(pullData.html_url ?? ""),
-      JSON.stringify(applied.map(({ line, commit }) => ({ lineId: line.id, path: line.file_path, commit }))),
-      at
+    const pullId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO code_lane_pulls
+         (id, engagement_id, request_id, branch, pr_number, pr_url, lines_json, status, created_at, changed_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'opened', ?8, ?8)`
     )
-    .run();
-  await journalEngagementEvent(env, engagement, {
-    type: "code_lane_order_applied",
-    detail: `${applied.length} lines as ${pullData.html_url} by ${reviewer}`,
-    at
-  });
-  return {
-    connection,
-    branch,
-    prUrl: String(pullData.html_url ?? ""),
-    prNumber: Number(pullData.number) || null,
-    lines: applied.map(({ line, commit }) => ({ lineId: line.id, title: line.fault_title, path: line.file_path, commit }))
-  };
+      .bind(
+        pullId,
+        engagement.id,
+        engagement.request_id,
+        branch,
+        Number(pullData.number) || null,
+        String(pullData.html_url ?? ""),
+        JSON.stringify(applied.map(({ line, commit }) => ({ lineId: line.id, path: line.file_path, commit }))),
+        at
+      )
+      .run();
+    await journalEngagementEvent(env, engagement, {
+      type: "code_lane_order_applied",
+      detail: `${applied.length} lines as ${pullData.html_url} by ${reviewer}`,
+      at
+    });
+    return {
+      connection,
+      branch,
+      prUrl: String(pullData.html_url ?? ""),
+      prNumber: Number(pullData.number) || null,
+      lines: applied.map(({ line, commit }) => ({ lineId: line.id, title: line.fault_title, path: line.file_path, commit }))
+    };
+  } catch (error) {
+    try {
+      await githubFetch(env, "DELETE", `${repo}/git/refs/heads/${branch}`, token, null);
+    } catch (cleanup) {
+      void cleanup;
+    }
+    throw error;
+  }
 }
 
 /** @param {Env} env @param {CorrectionLineRow} line @param {number} version @param {string} at */
@@ -363,13 +393,17 @@ export async function recheckCodeLane(env, input, reviewer, at) {
     if (fixed) await markLineRecorded(env, line, Number(pull.pr_number) || 0, at);
     checked.push({ lineId: entry.lineId, path: entry.path, commit: entry.commit, fixed });
   }
-  await env.DB.prepare("UPDATE code_lane_pulls SET status = 'rechecked', changed_at = ?1 WHERE id = ?2").bind(at, pull.id).run();
+  const fixedCount = checked.filter((entry) => entry.fixed).length;
+  const allFixed = checked.length > 0 ? fixedCount === checked.length : true;
+  if (allFixed) {
+    await env.DB.prepare("UPDATE code_lane_pulls SET status = 'rechecked', changed_at = ?1 WHERE id = ?2").bind(at, pull.id).run();
+  }
   await journalEngagementEvent(env, engagement, {
     type: "code_lane_order_rechecked",
-    detail: `${checked.filter((entry) => entry.fixed).length}/${checked.length} lines fixed on ${pull.pr_url} by ${reviewer}`,
+    detail: `${fixedCount}/${checked.length} lines fixed on ${pull.pr_url} by ${reviewer}`,
     at
   });
-  return { status: "rechecked", prUrl: pull.pr_url, lines: checked };
+  return { status: allFixed ? "rechecked" : "partially_fixed", prUrl: pull.pr_url, lines: checked };
 }
 
 /** @param {Request} request @param {Env} env @param {URL} url */

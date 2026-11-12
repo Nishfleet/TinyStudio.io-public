@@ -11,7 +11,6 @@ interface Env {
   DODO_TINYSTUDIO_WEBHOOK_SECRET?: string;
   GITHUB_APP_ID?: string;
   GITHUB_APP_PRIVATE_KEY?: string;
-  GITHUB_API_BASE?: string;
   GITHUB_FETCH?: typeof fetch;
   GOOGLE_ADS_CONVERSION_ID?: string;
   GOOGLE_ADS_CONVERSION_LABEL?: string;
