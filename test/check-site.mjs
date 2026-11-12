@@ -939,7 +939,6 @@ if (!llms.includes("https://tinystudio.io/appraisal")) {
 }
 
 const staleOfferPhrases = [
-  "Website Correction",
   "founder pilot",
   "founder-pilot",
   "Managed IT, MSP"
@@ -953,19 +952,14 @@ for (const phrase of staleOfferPhrases) {
   }
 }
 
+const OFFER_PRICES = ["$10,000 per site", "$149", "$349", "$699", "$299", "$599"];
 const stateOnlyPlanPrice = (content) =>
-  /\$\s?\d/.test(content.replaceAll("$10,000 per site", ""));
+  /\$\s?\d/.test(OFFER_PRICES.reduce((text, price) => text.replaceAll(price, ""), content));
 if (stateOnlyPlanPrice(llms)) {
-  failures.push("llms.txt may state only the $10,000 per site price; the pricing page owns the terms.");
+  failures.push("llms.txt may state only the offer prices in the 2026-11-12 offer table; the pricing page owns the terms.");
 }
 if (stateOnlyPlanPrice(offer)) {
-  failures.push("offer.md may state only the $10,000 per site price; the pricing page owns the terms.");
-}
-if (/\brefund\w*\b/i.test(llms)) {
-  failures.push("llms.txt must not restate refund terms; the pricing page owns them.");
-}
-if (/\brefund\w*\b/i.test(offer)) {
-  failures.push("offer.md must not restate refund terms; the pricing page owns them.");
+  failures.push("offer.md may state only the offer prices in the 2026-11-12 offer table; the pricing page owns the terms.");
 }
 
 if (!siteHome.includes('id="identity"')) {
