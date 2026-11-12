@@ -1,5 +1,6 @@
 import { RECORD_ID, recordKey } from "./record.js";
 import { deskAccessConfigured, deskIdentity, deskUnauthorized } from "./desk-access.js";
+import { codeLaneResponse } from "./code-lane.js";
 import {
   addDeskCorrectionLine,
   addDeskKickoffNote,
@@ -2414,6 +2415,10 @@ const handler = {
 
     if (url.pathname === "/api/desk/specimen-consent") {
       return deskActionResponse(request, env, url, "specimen-consent");
+    }
+
+    if (url.pathname.startsWith("/api/desk/code-lane/")) {
+      return codeLaneResponse(request, env, url);
     }
 
     if (url.pathname.startsWith("/records/")) {
