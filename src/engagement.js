@@ -55,7 +55,24 @@ export async function advanceEngagement(env, engagement, to, { type, detail, at 
   return { ...engagement, status: to };
 }
 
-/** @param {Env} env @param {EngagementRow} engagement @param {string} checkoutSessionId @param {string} at */
+/** @param {Env} env @param {EngagementRow} engagement @param {{ productKey?: string | null, planStatus?: string | null, subscriptionId?: string | null, periodEndsAt?: string | null, type: string, detail?: string | null, journal?: boolean }} update @param {string} at */
+export async function setPlanState(env, engagement, update, at) {
+  const productKey = update.productKey !== undefined ? update.productKey : engagement.product_key ?? null;
+  const subscriptionId = update.subscriptionId !== undefined ? update.subscriptionId : engagement.subscription_id ?? null;
+  const planStatus = update.planStatus !== undefined ? update.planStatus : engagement.plan_status ?? null;
+  const periodEndsAt = update.periodEndsAt !== undefined ? update.periodEndsAt : engagement.period_ends_at ?? null;
+  await env.DB.prepare(
+    "UPDATE engagements SET product_key = ?1, subscription_id = ?2, plan_status = ?3, period_ends_at = ?4, changed_at = ?5 WHERE id = ?6"
+  )
+    .bind(productKey, subscriptionId, planStatus, periodEndsAt, at, engagement.id)
+    .run();
+  if (update.journal !== false) {
+    await journalEngagementEvent(env, engagement, { type: update.type, detail: update.detail ?? null, at });
+  }
+  return { ...engagement, product_key: productKey, subscription_id: subscriptionId, plan_status: planStatus, period_ends_at: periodEndsAt };
+}
+
+/** @param {Env} env @param {Pick<EngagementRow, "id" | "request_id" | "status">} engagement @param {string} checkoutSessionId @param {string} at */
 export async function attachCheckoutSession(env, engagement, checkoutSessionId, at) {
   if (!checkoutSessionId) throw new Error("checkout session id missing");
   await env.DB.prepare("UPDATE engagements SET checkout_session_id = ?1, changed_at = ?2 WHERE id = ?3")

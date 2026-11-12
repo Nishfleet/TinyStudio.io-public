@@ -11,6 +11,7 @@ import {
   setDeskSpecimenConsent
 } from "./desk.js";
 import { handleDodoWebhook, startCheckoutForRequest } from "./payments.js";
+import { closeDuePlans } from "./plans.js";
 import { deskQueuePage } from "./desk-page.js";
 import { ENGAGEMENT_ID } from "./engagement.js";
 import { queueTrackingChecks } from "./tracking.js";
@@ -2519,6 +2520,11 @@ const handler = {
       await queueTrackingChecks(env, now);
     } catch (error) {
       console.error("tinystudio_tracking_checks_queue_failed", errorMessage(error) || String(error));
+    }
+    try {
+      await closeDuePlans(env, now);
+    } catch (error) {
+      console.error("tinystudio_plans_close_failed", errorMessage(error) || String(error));
     }
   }
 };
