@@ -98,13 +98,10 @@ async function readRawBody(request) {
   return new TextDecoder().decode(bytes);
 }
 
-/** @param {Env} env @param {string} ip @param {string} email @returns {Promise<boolean>} */
-async function rateLimited(env, ip, email) {
-  for (const key of [`seofixkit-ip:${ip}`, `seofixkit-email:${email}`]) {
-    const { success } = await env.APPRAISAL_LIMITER.limit({ key });
-    if (!success) return true;
-  }
-  return false;
+/** @param {Env} env @param {string} email @returns {Promise<boolean>} */
+async function rateLimited(env, email) {
+  const { success } = await env.APPRAISAL_LIMITER.limit({ key: `seofixkit-email:${email}` });
+  return !success;
 }
 
 /** @param {Request} request @param {Env} env @returns {Promise<Response>} */
@@ -164,9 +161,8 @@ export async function seofixkitRequestResponse(request, env) {
     return jsonResponse({ ok: false, error: "invalid_request", fields }, 400);
   }
 
-  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
   try {
-    if (await rateLimited(env, ip, input.email)) {
+    if (await rateLimited(env, input.email)) {
       return jsonResponse({ ok: false, error: "rate_limited" }, 429);
     }
 

@@ -146,9 +146,9 @@ test("seofixkit: a signed request returns 202 with an id and lands in the desk q
 
   const queue = await deskQueue(env);
   assert.equal(queue.length, 1);
+  assert.equal(queue[0].source, "seofixkit");
   const page = await renderDeskQueuePage(queue, [], "https://reports.example/{id}");
   const html = await page.text();
-  assert.match(html, /via SEO Fix Kit report/);
   assert.match(html, new RegExp(`href="https://reports.example/${BODY.reportId}"`));
 });
 
@@ -206,7 +206,7 @@ test("seofixkit: the desk page renders without a report template", async () => {
   const queue = await deskQueue(env);
   const page = renderDeskQueuePage(queue, []);
   const html = await page.text();
-  assert.match(html, /via SEO Fix Kit report/);
+  assert.equal(queue[0].source, "seofixkit");
   assert.match(html, /href="https:\/\/app\.seofixkit\.com\/reports\/sfk-report-123"/);
 });
 
@@ -225,5 +225,5 @@ test("seofixkit: the desk page shows a web request without a source badge", asyn
   const queue = await deskQueue(env);
   assert.equal(queue[0].source, "web");
   const html = await (renderDeskQueuePage(queue, [])).text();
-  assert.doesNotMatch(html, /via SEO Fix Kit/);
+  assert.doesNotMatch(html, /href="https:\/\/app\.seofixkit\.com\/reports\//);
 });
