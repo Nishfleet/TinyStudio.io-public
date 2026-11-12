@@ -11,6 +11,8 @@ interface Env {
   DODO_TINYSTUDIO_WEBHOOK_SECRET?: string;
   GOOGLE_ADS_CONVERSION_ID?: string;
   GOOGLE_ADS_CONVERSION_LABEL?: string;
+  SEOFIXKIT_REPORT_URL?: string;
+  SEOFIXKIT_REQUEST_SECRET?: string;
 }
 
 interface CodedError extends Error {
@@ -129,6 +131,8 @@ interface DodoEvent {
 interface DeskQueueRow extends EngagementRow {
   site_url: string;
   email: string;
+  source: string;
+  report_id: string | null;
   open_lines: number;
   payment_rows: number;
 }

@@ -49,8 +49,20 @@ ${Number(line.legal_copy) === 1 ? '<p class="muted">Legal copy: it publishes onl
 </div>`;
 }
 
-/** @param {DeskQueueRow[]} rows @param {CorrectionLineRow[]} lines */
-export function deskQueuePage(rows, lines) {
+/** @param {DeskQueueRow} row @param {string | undefined} reportUrlTemplate */
+function sourceCell(row, reportUrlTemplate) {
+  if (row.source !== "seofixkit" || !row.report_id) return "";
+  const template = String(reportUrlTemplate || "");
+  const href = template.includes("{id}")
+    ? template.replace("{id}", encodeURIComponent(row.report_id))
+    : "";
+  return `<span class="muted">via SEO Fix Kit report${
+    href ? ` <a href="${esc(href)}" rel="noopener">${esc(row.report_id)}</a>` : ` ${esc(row.report_id)}`
+  }</span><br>`;
+}
+
+/** @param {DeskQueueRow[]} rows @param {CorrectionLineRow[]} lines @param {string | undefined} [reportUrlTemplate] */
+export function deskQueuePage(rows, lines, reportUrlTemplate = "https://app.seofixkit.com/reports/{id}") {
   /** @type {Map<string, CorrectionLineRow[]>} */
   const byEngagement = new Map();
   for (const line of lines) {
@@ -64,7 +76,7 @@ export function deskQueuePage(rows, lines) {
 ${rows
   .map(
     (row) => `<tr>
-<td><strong>${esc(row.site_url)}</strong><br><span class="muted">${esc(row.email)}</span></td>
+<td><strong>${esc(row.site_url)}</strong><br><span class="muted">${esc(row.email)}</span><br>${sourceCell(row, reportUrlTemplate)}</td>
 <td>${esc(row.status)}</td>
 <td>${esc(row.created_at)}</td>
 <td>${byEngagement.get(row.id)?.map(lineCell).join("<hr>") || '<span class="muted">nothing awaiting review</span>'}</td>

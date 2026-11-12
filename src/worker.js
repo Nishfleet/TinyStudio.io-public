@@ -12,6 +12,7 @@ import {
 } from "./desk.js";
 import { handleDodoWebhook, startCheckoutForRequest } from "./payments.js";
 import { deskQueuePage } from "./desk-page.js";
+import { seofixkitRequestResponse } from "./seofixkit.js";
 import { ENGAGEMENT_ID } from "./engagement.js";
 import { queueTrackingChecks } from "./tracking.js";
 
@@ -1999,7 +2000,7 @@ async function deskResponse(request, env) {
   const identity = await deskIdentity(env, request);
   if (!identity.authenticated) return deskUnauthorized(identity.reason);
   const queue = await deskQueue(env);
-  return deskQueuePage(queue, await deskDraftLines(env));
+  return deskQueuePage(queue, await deskDraftLines(env), env.SEOFIXKIT_REPORT_URL);
 }
 
 /** @param {Request} request @param {Env} env @param {URL} url @param {string} kind */
@@ -2366,6 +2367,10 @@ const handler = {
       const target = new URL("/appraisal", url);
       target.search = url.search;
       return withSecurityHeaders(Response.redirect(target.toString(), 301));
+    }
+
+    if (url.pathname === "/api/requests/from-seofixkit") {
+      return seofixkitRequestResponse(request, env);
     }
 
     if (url.pathname === "/api/signups") {
