@@ -1,0 +1,22 @@
+{
+	"name": "tinystudio/tinystudio-connector",
+	"description": "Development tools for the TinyStudio Connector WordPress plugin. Nothing here ships in the plugin.",
+	"type": "project",
+	"license": "GPL-2.0-or-later",
+	"require-dev": {
+		"squizlabs/php_codesniffer": "^3.13",
+		"wp-coding-standards/wpcs": "^3.2",
+		"phpcompatibility/phpcompatibility-wp": "^2.1"
+	},
+	"config": {
+		"platform": {
+			"php": "7.4"
+		},
+		"allow-plugins": {
+			"dealerdirect/phpcodesniffer-composer-installer": true
+		}
+	},
+	"scripts": {
+		"lint": "phpcs"
+	}
+}

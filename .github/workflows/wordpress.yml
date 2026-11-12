@@ -1,0 +1,106 @@
+# The WordPress lane: the TinyStudio Connector plugin's own checks, run on a
+# GitHub-hosted runner only when files under wordpress-plugin/ change (issue #168).
+name: WordPress
+
+on:
+  push:
+    branches: [main]
+    paths: ['wordpress-plugin/**']
+  pull_request:
+    paths: ['wordpress-plugin/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLUGIN_DIR: wordpress-plugin/tinystudio-connector
+
+jobs:
+  phpcs:
+    # WordPress Coding Standards through PHPCS, with zero errors.
+    name: PHPCS
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: wordpress-plugin/tinystudio-connector
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: composer install --no-interaction --no-progress
+      - run: vendor/bin/phpcs
+
+  plugin-check:
+    # The official Plugin Check plugin, with zero errors, against a real
+    # WordPress environment (@wordpress/env) with the current WordPress.
+    name: Plugin Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: wordpress-plugin/tinystudio-connector
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Start the WordPress environment
+        run: npx --yes @wordpress/env start
+      - name: Install the Plugin Check plugin
+        run: npx --yes @wordpress/env run tests-cli wp plugin install plugin-check --activate
+      - name: Activate the connector
+        run: npx --yes @wordpress/env run tests-cli wp plugin activate tinystudio-connector
+      - name: Run Plugin Check
+        run: npx --yes @wordpress/env run tests-cli wp plugin check tinystudio-connector
+
+  phpunit:
+    # PHPUnit integration tests, one run per SEO plugin: an Editor with an
+    # application password writes a page's SEO fields through the REST API and
+    # the rendered <head> then shows the new value.
+    name: PHPUnit ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Yoast SEO
+            seo_plugin: wordpress-seo/wp-seo.php
+            other_seo_plugins: seo-by-rank-math all-in-one-seo-pack
+          - label: Rank Math
+            seo_plugin: seo-by-rank-math/rank-math.php
+            other_seo_plugins: wordpress-seo all-in-one-seo-pack
+          - label: All in One SEO
+            seo_plugin: all-in-one-seo-pack/all_in_one_seo_pack.php
+            other_seo_plugins: wordpress-seo seo-by-rank-math
+    defaults:
+      run:
+        working-directory: wordpress-plugin/tinystudio-connector
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Start the WordPress environment
+        run: npx --yes @wordpress/env start
+      - name: Deactivate the other SEO plugins
+        # wp-env activates everything it installs; the tests must run against
+        # exactly one SEO plugin, so the other two are switched off first.
+        run: npx --yes @wordpress/env run tests-cli wp plugin deactivate "$OTHER_SEO_PLUGINS"
+        env:
+          OTHER_SEO_PLUGINS: ${{ matrix.other_seo_plugins }}
+      - name: Run the PHPUnit integration tests
+        run: npx --yes @wordpress/env run tests-cli --env-cwd=/var/www/html/wp-content/plugins/tinystudio-connector env TINYSTUDIO_TEST_SEO_PLUGIN="$SEO_PLUGIN" phpunit
+        env:
+          SEO_PLUGIN: ${{ matrix.seo_plugin }}

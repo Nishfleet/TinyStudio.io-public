@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<ruleset name="TinyStudio Connector">
+	<description>WordPress Coding Standards for the TinyStudio Connector plugin.</description>
+
+	<file>.</file>
+	<exclude-pattern>/vendor/</exclude-pattern>
+
+	<rule ref="WordPress"/>
+
+	<config name="testVersion" value="7.4-"/>
+	<rule ref="PHPCompatibilityWP"/>
+
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+	<arg value="sp"/>
+</ruleset>

@@ -1,0 +1,39 @@
+# Shipping: a versioned zip of the TinyStudio Connector plugin, attached to a
+# GitHub Release, so customers install it with WordPress's own "Upload Plugin".
+# Tag: tinystudio-connector-v1.0.0
+name: WordPress Release
+
+on:
+  push:
+    tags: ['tinystudio-connector-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the versioned zip
+        # Dev-only files (tests, lint and environment configs) never ship in
+        # the zip; what remains is exactly what WordPress installs.
+        run: |
+          mkdir -p dist
+          (cd wordpress-plugin && zip -r "../dist/tinystudio-connector-${GITHUB_REF_NAME#tinystudio-connector-}.zip" tinystudio-connector \
+            -x 'tinystudio-connector/tests/*' \
+            -x 'tinystudio-connector/composer.json' \
+            -x 'tinystudio-connector/composer.lock' \
+            -x 'tinystudio-connector/phpcs.xml.dist' \
+            -x 'tinystudio-connector/phpunit.xml.dist' \
+            -x 'tinystudio-connector/.wp-env.json' \
+            -x 'tinystudio-connector/.gitignore')
+      - name: Attach the zip to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.zip --title "TinyStudio Connector ${GITHUB_REF_NAME#tinystudio-connector-}" --generate-notes
