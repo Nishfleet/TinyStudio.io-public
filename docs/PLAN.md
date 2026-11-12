@@ -102,6 +102,7 @@ Each step names the trigger, the human action, the system action and the artifac
 - **Payments:** Dodo Payments checkout, one product, one price, webhook signed and verified before an engagement opens.
 - **Desk tooling:** internal only, behind Cloudflare Access. A queue view, the review screen for a record, approve or reject per line. Nothing the customer sees.
 - **Guardrails:** `service-contract` rules ported from tinystudio-in as a module with tests: denied actions, state machine (requested, appraised, proposed, paid, in correction, proved, tracking, closed), no-guarantee copy.
+- **Platform lanes:** the Correction applies the approved lines through each platform's official door. The written design per platform, the demand-ordered build order and the free-until-built rule live in [platforms/README.md](platforms/README.md); the Cloudflare edge change is offered only as a labelled bridge.
 - **Observability:** every state change is an event row. Weekly scorecard from those rows, nothing else.
 
 ## 8. Operations
@@ -149,3 +150,4 @@ No customer dashboard. No self-serve plan. No monthly retainer. No white label. 
 - 2026-10-12, Nish: price $10,000 per site, matching the good boutiques.
 - 2026-10-12, Nish: tinystudio-in is wiped. Promptly and Drishti pages are not carried over.
 - 2026-08-07, Nish: both TinyStudio repos are one product. Resolved by keeping one.
+- 2026-11-12, Nish: TinyStudio repairs on Shopify, Webflow, Wix, Ghost and GitHub, built in the order TinyStudio's own requests show demand. The Cloudflare edge change is a labelled bridge, never a lane. Until a platform is built, its customers get the free fix files and steps and are not charged.
