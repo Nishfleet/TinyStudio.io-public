@@ -22,8 +22,8 @@
     {
       "binding": "DB",
       "database_name": "tinystudio_email_signups",
-      "database_id": "ff360a55-14fc-468c-895f-893c89e0db79",
-      "preview_database_id": "478f4a89-8936-4a57-bdd0-5f273090b2e5"
+      "database_id": "40e09689-b092-41af-816f-1b0a58cf7021",
+      "preview_database_id": "dd76b0bd-dbd5-4fb9-bf86-aa682275a3df"
     }
   ],
   "r2_buckets": [{ "binding": "RECORDS", "bucket_name": "tinystudio-records" }],
