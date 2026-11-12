@@ -1,9 +1,8 @@
-import { engagementAllows, APPLIED_LINE_STATES } from "./guardrails.js";
+import { engagementAllows } from "./guardrails.js";
 import {
   addCorrectionLine,
   advanceEngagement,
   correctionLineById,
-  correctionLines,
   engagementById,
   journalEngagementEvent,
   reviewCorrectionLine,
@@ -74,26 +73,16 @@ export async function reviewDeskCorrectionLine(env, input, reviewer, at) {
   const reviewed = alreadyRecorded
     ? line
     : await reviewCorrectionLine(env, line, input.action, { reviewer, note: input.note, at });
-  let current = engagement;
-  if (engagement.status === "in_correction") {
-    const lines = await correctionLines(env, engagement.id);
-    const closed = lines.every((row) => row.status !== "draft");
-    const applied = lines.some((row) => APPLIED_LINE_STATES.includes(row.status));
-    if (closed && applied) {
-      try {
-        await republishRecord(env, engagement.request_id, at);
-      } catch (error) {
-        await revertCorrectionLine(env, reviewed, at);
-        throw error;
-      }
-      current = await advanceEngagement(env, engagement, "proved", {
-        type: "status_changed",
-        detail: `review complete by ${reviewer}`,
-        at
-      });
-    }
+  if (input.action !== "approve" || alreadyRecorded || engagement.status !== "in_correction") {
+    return { engagement, line: reviewed };
   }
-  return { engagement: current, line: reviewed };
+  try {
+    await republishRecord(env, engagement.request_id, at);
+  } catch (error) {
+    await revertCorrectionLine(env, reviewed, at);
+    throw error;
+  }
+  return { engagement, line: reviewed };
 }
 
 /** @param {Env} env @param {{ engagementId: string, note?: string }} input @param {string} reviewer @param {string} at */

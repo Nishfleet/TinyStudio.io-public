@@ -6,6 +6,7 @@ import { recordsMock } from "./records-mock.js";
 import worker from "../src/worker.js";
 import { publishRecord } from "../src/record.js";
 import { addDeskCorrectionLine, addDeskKickoffNote, deskDraftLines, deskQueue, reviewDeskCorrectionLine } from "../src/desk.js";
+import { decideCustomerLine } from "../src/customer-lines.js";
 import { deskQueuePage } from "../src/desk-page.js";
 import { handleDodoWebhook } from "../src/payments.js";
 import { Webhook } from "standardwebhooks";
@@ -200,8 +201,12 @@ test("desk: an engagement whose every line is rejected stays in correction", asy
     "Jev",
     "2026-10-13T12:30:00.000Z"
   );
-  const proved = await reviewDeskCorrectionLine(env, { lineId: again.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T13:00:00.000Z");
-  assert.equal(proved.engagement.status, "proved", "an approved line proves the correction");
+  const proposed = await reviewDeskCorrectionLine(env, { lineId: again.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T13:00:00.000Z");
+  assert.equal(proposed.line.status, "proposed");
+  assert.equal(proposed.engagement.status, "in_correction", "the desk alone no longer proves the correction");
+  const decided = await decideCustomerLine(env, { recordId, lineId: again.line.id, decision: "approve" }, "2026-10-13T14:00:00.000Z");
+  assert.equal(decided.line.status, "recorded", "the approval is recorded when the record republishes");
+  assert.equal(decided.engagement.status, "proved", "the customer's approval proves the correction");
 });
 
 test("desk: a rejected line is not published, and the last approval republishes the record", async () => {
@@ -243,15 +248,31 @@ test("desk: a rejected line is not published, and the last approval republishes 
   assert.equal(stillCorrecting.status, "in_correction", "one open line keeps the engagement in correction");
   assert.equal(sqlite.prepare("SELECT version FROM appraisal_records WHERE id = ?").get(recordId).version, 1, "a rejection republishes nothing");
 
-  const approved = await reviewDeskCorrectionLine(env, { lineId: second.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:30:00.000Z");
-  assert.equal(approved.line.status, "approved");
-  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "proved", "the last approval proves the correction");
+  const proposed = await reviewDeskCorrectionLine(env, { lineId: second.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:30:00.000Z");
+  assert.equal(proposed.line.status, "proposed");
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "in_correction", "the customer still owes a decision");
+
+  const proposedVersion = sqlite.prepare("SELECT version FROM appraisal_records WHERE id = ?").get(recordId);
+  assert.equal(proposedVersion.version, 2, "the desk's pass republishes the record so the line reaches the customer");
+  const proposedHtml = objects.get(`records/${recordId}.html`);
+  assert.ok(proposedHtml.includes("Your decision"), "the line the reviewer passed waits for the customer");
+  assert.ok(proposedHtml.includes("The &lt;title&gt; element names the clinic and the service."), "the proposed line shows its after text");
+  assert.ok(proposedHtml.includes(`action="/api/records/${recordId}/lines/${second.line.id}"`), "the proposed line carries its own decision form");
+  assert.ok(proposedHtml.includes('value="approve"'));
+  assert.ok(proposedHtml.includes('value="edit"'));
+  assert.ok(proposedHtml.includes('value="skip"'));
+  assert.ok(proposedHtml.includes('value="approve-all"'), "approve all is on the page");
+  assert.ok(!proposedHtml.includes("Fault closed"), "nothing is applied before the customer approves");
+
+  const decided = await decideCustomerLine(env, { recordId, lineId: second.line.id, decision: "approve" }, "2026-10-13T13:00:00.000Z");
+  assert.equal(decided.line.status, "recorded", "the approval is recorded when the record republishes");
+  assert.equal(decided.engagement.status, "proved", "the customer's approval proves the correction");
 
   const record = sqlite.prepare("SELECT version FROM appraisal_records WHERE id = ?").get(recordId);
-  assert.equal(record.version, 2, "the record is republished once the correction is proved");
+  assert.equal(record.version, 3, "the customer's approval republishes the record");
   const storedLine = sqlite.prepare("SELECT status, recorded_version FROM correction_lines WHERE id = ?").get(second.line.id);
   assert.equal(storedLine.status, "recorded");
-  assert.equal(storedLine.recorded_version, 2);
+  assert.equal(storedLine.recorded_version, 3);
 
   const html = objects.get(`records/${recordId}.html`);
   assert.ok(html.includes("Correction Record"), "the record carries the correction section");
@@ -262,7 +283,7 @@ test("desk: a rejected line is not published, and the last approval republishes 
   assert.ok(html.includes("Missing page title"), "the fault the correction fixes is named");
   assert.ok(html.includes(`data-cite="engagement:${engagementId}"`), "the correction state cites the engagement");
 
-  const kickoff = await addDeskKickoffNote(env, { engagementId, note: "Tracking starts 1 November 2026. We report every Friday." }, "Jev", "2026-10-13T13:00:00.000Z");
+  const kickoff = await addDeskKickoffNote(env, { engagementId, note: "Tracking starts 1 November 2026. We report every Friday." }, "Jev", "2026-10-13T13:30:00.000Z");
   assert.equal(kickoff.status, "tracking");
   const afterKickoff = objects.get(`records/${recordId}.html`);
   assert.ok(afterKickoff.includes("Tracking starts 1 November 2026."), "the kickoff note is published on the record");
@@ -278,6 +299,7 @@ test("desk: a rejected line is not published, and the last approval republishes 
     "correction_line_added",
     "correction_line_reject",
     "correction_line_approve",
+    "correction_line_customer_approve",
     "correction_line_recorded",
     "status_changed",
     "kickoff_note_added",
@@ -308,14 +330,16 @@ test("desk: a failed republish returns the line to the desk, so the approval can
 
   sqlite.prepare("UPDATE appraisal_records SET faults_json = ? WHERE id = ?").run(JSON.stringify(faults), recordId);
   const retried = await reviewDeskCorrectionLine(env, { lineId: line.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:30:00.000Z");
-  assert.equal(retried.line.status, "approved");
-  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "proved", "the second approval proves the correction");
+  assert.equal(retried.line.status, "proposed");
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "in_correction", "the desk's pass still waits for the customer");
   assert.equal(sqlite.prepare("SELECT version FROM appraisal_records WHERE id = ?").get(recordId).version, 2);
+  const decided = await decideCustomerLine(env, { recordId, lineId: line.line.id, decision: "approve" }, "2026-10-13T13:00:00.000Z");
+  assert.equal(decided.engagement.status, "proved", "the customer's approval proves the correction");
 });
 
 test("desk: no line is added or reviewed once the correction is proved", async () => {
   const { env, sqlite } = freshEnv();
-  const { engagementId } = await paidEngagement(env, sqlite);
+  const { recordId, engagementId } = await paidEngagement(env, sqlite);
   const line = await addDeskCorrectionLine(
     env,
     { engagementId, faultId: "f1", faultTitle: "Home page loads in 6.1 seconds", beforeText: "a", afterText: "b", legalCopy: 0 },
@@ -323,6 +347,7 @@ test("desk: no line is added or reviewed once the correction is proved", async (
     "2026-10-13T11:00:00.000Z"
   );
   await reviewDeskCorrectionLine(env, { lineId: line.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:00:00.000Z");
+  await decideCustomerLine(env, { recordId, lineId: line.line.id, decision: "approve" }, "2026-10-13T12:15:00.000Z");
   await assert.rejects(
     addDeskCorrectionLine(env, { engagementId, faultId: "f2", faultTitle: "Missing page title", beforeText: "a", afterText: "b", legalCopy: 0 }, "Jev", "2026-10-13T12:30:00.000Z"),
     /accepts correction lines only after payment/
@@ -343,6 +368,7 @@ test("desk: a failed republish leaves the kickoff open, so the note can be sent 
     "2026-10-13T11:00:00.000Z"
   );
   await reviewDeskCorrectionLine(env, { lineId: line.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:00:00.000Z");
+  await decideCustomerLine(env, { recordId, lineId: line.line.id, decision: "approve" }, "2026-10-13T12:15:00.000Z");
   assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "proved");
   sqlite.prepare("UPDATE appraisal_records SET review_json = NULL WHERE id = ?").run(recordId);
   await assert.rejects(
@@ -373,18 +399,21 @@ test("desk: a failed advance leaves the record published and the correction comp
     }
     return original(sql);
   };
+  await reviewDeskCorrectionLine(env, { lineId: line.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:00:00.000Z");
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "in_correction");
+  assert.equal(sqlite.prepare("SELECT status FROM correction_lines WHERE id = ?").get(line.line.id).status, "proposed", "the desk's pass waits for the customer");
   await assert.rejects(
-    reviewDeskCorrectionLine(env, { lineId: line.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:00:00.000Z"),
+    decideCustomerLine(env, { recordId, lineId: line.line.id, decision: "approve" }, "2026-10-13T12:15:00.000Z"),
     /d1 write refused/
   );
   env.DB.prepare = original;
-  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "in_correction");
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "in_correction", "a failed advance never proves the correction");
   assert.equal(sqlite.prepare("SELECT status FROM correction_lines WHERE id = ?").get(line.line.id).status, "recorded", "the publish reached the line");
-  assert.equal(sqlite.prepare("SELECT version FROM appraisal_records WHERE id = ?").get(recordId).version, 2);
+  assert.equal(sqlite.prepare("SELECT version FROM appraisal_records WHERE id = ?").get(recordId).version, 3);
 
-  const completed = await reviewDeskCorrectionLine(env, { lineId: line.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:30:00.000Z");
+  const completed = await decideCustomerLine(env, { recordId, lineId: line.line.id, decision: "approve" }, "2026-10-13T12:30:00.000Z");
   assert.equal(completed.engagement.status, "proved", "the desk finishes the correction without a second review");
-  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM correction_reviews WHERE line_id = ?").get(line.line.id).n, 1, "the line is not reviewed twice");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM correction_reviews WHERE line_id = ?").get(line.line.id).n, 2, "one desk review and one customer approval, decided once");
 });
 
 test("desk route: it answers only when Cloudflare Access is configured", async () => {
