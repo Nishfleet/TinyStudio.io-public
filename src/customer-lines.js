@@ -1,12 +1,12 @@
-import { RECORD_ID, republishRecord } from "./record.js";
-import { APPLIED_LINE_STATES, CUSTOMER_PENDING_STATES, engagementAllows } from "./guardrails.js";
+import { RECORD_ID } from "./record.js";
+import { engagementAllows } from "./guardrails.js";
 import {
-  advanceEngagement,
   correctionLineById,
   correctionLines,
   decideCorrectionLine,
   engagementByRecordId
 } from "./engagement.js";
+import { settleCorrectionLines } from "./settle.js";
 
 const RECORD_LINES_ROUTE = /^\/api\/records\/([0-9a-f-]+)\/lines(?:\/([0-9a-f-]+))?$/;
 
@@ -161,20 +161,6 @@ function assertCustomerCanDecide(engagement) {
   }
 }
 
-/** @param {Env} env @param {EngagementRow} engagement @param {string} at @returns {Promise<EngagementRow>} */
-async function settleCustomerDecisions(env, engagement, at) {
-  const lines = await correctionLines(env, engagement.id);
-  const waiting = lines.some((row) => CUSTOMER_PENDING_STATES.includes(row.status) || row.status === "draft");
-  const applied = lines.some((row) => APPLIED_LINE_STATES.includes(row.status));
-  await republishRecord(env, engagement.request_id, at);
-  if (waiting || !applied) return engagement;
-  return advanceEngagement(env, engagement, "proved", {
-    type: "status_changed",
-    detail: "the customer decided every line",
-    at
-  });
-}
-
 /** @param {Env} env @param {{ recordId: string, lineId: string, decision: string, text?: string }} input @param {string} at @returns {Promise<{ engagement: EngagementRow, line: CorrectionLineRow, message: string }>} */
 export async function decideCustomerLine(env, input, at) {
   const engagement = await engagementByRecordId(env, input.recordId);
@@ -194,7 +180,7 @@ export async function decideCustomerLine(env, input, at) {
   } else {
     decided = await decideCorrectionLine(env, line, input.decision, { text: input.text }, at);
   }
-  const current = await settleCustomerDecisions(env, engagement, at);
+  const current = await settleCorrectionLines(env, engagement, at, { republish: true });
   const stored = await correctionLineById(env, input.lineId);
   return { engagement: current, line: stored ?? decided, message };
 }
@@ -214,7 +200,7 @@ export async function approveAllCustomerLines(env, input, at) {
   let line = null;
   for (const row of pending) line = await decideCorrectionLine(env, row, "approve", {}, at);
   if (!line) throw Object.assign(new Error("no correction line waits for the customer"), { code: "NOTHING_PENDING" });
-  const current = await settleCustomerDecisions(env, engagement, at);
+  const current = await settleCorrectionLines(env, engagement, at, { republish: true });
   return {
     engagement: current,
     line,
@@ -253,7 +239,7 @@ export async function customerDecisionResponse(request, env, url) {
     /** @type {Record<string, unknown>} */
     const payload = { ok: true, engagementStatus: result.engagement.status, lineStatus: result.line.status };
     if ("count" in result) payload.count = result.count;
-    return browserForm ? decisionPage(recordId, result.message) : withSecurityHeaders(jsonResponse(payload));
+    return browserForm ? decisionPage(recordId, result.message) : jsonResponse(payload);
   } catch (error) {
     const code = errorCode(error) || "customer_decision_failed";
     const status = code === "NOT_FOUND" ? 404 : 400;

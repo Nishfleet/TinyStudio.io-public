@@ -11,6 +11,7 @@ import {
 } from "./engagement.js";
 import { addTrackingNote, TRACKING_DAYS, trackingDay, trackingNotes, trackingStartedAt } from "./tracking.js";
 import { renderCloseOut, republishRecord } from "./record.js";
+import { settleCorrectionLines } from "./settle.js";
 
 /** @param {Env} env @returns {Promise<DeskQueueRow[]>} */
 export async function deskQueue(env) {
@@ -73,14 +74,18 @@ export async function reviewDeskCorrectionLine(env, input, reviewer, at) {
   const reviewed = alreadyRecorded
     ? line
     : await reviewCorrectionLine(env, line, input.action, { reviewer, note: input.note, at });
-  if (input.action !== "approve" || alreadyRecorded || engagement.status !== "in_correction") {
+  if (input.action === "approve" && !alreadyRecorded && engagement.status === "in_correction") {
+    try {
+      await republishRecord(env, engagement.request_id, at);
+    } catch (error) {
+      await revertCorrectionLine(env, reviewed, at);
+      throw error;
+    }
     return { engagement, line: reviewed };
   }
-  try {
-    await republishRecord(env, engagement.request_id, at);
-  } catch (error) {
-    await revertCorrectionLine(env, reviewed, at);
-    throw error;
+  if (input.action === "reject" && !alreadyRecorded && engagement.status === "in_correction") {
+    const settled = await settleCorrectionLines(env, engagement, at);
+    return { engagement: settled, line: reviewed };
   }
   return { engagement, line: reviewed };
 }

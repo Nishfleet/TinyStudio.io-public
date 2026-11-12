@@ -209,6 +209,55 @@ test("desk: an engagement whose every line is rejected stays in correction", asy
   assert.equal(decided.engagement.status, "proved", "the customer's approval proves the correction");
 });
 
+test("desk: a rejection of the last draft proves a correction the customer already decided", async () => {
+  const { env, sqlite, objects } = freshEnv();
+  const { recordId, engagementId } = await paidEngagement(env, sqlite);
+  const first = await addDeskCorrectionLine(
+    env,
+    {
+      engagementId,
+      faultId: "f1",
+      faultTitle: "Home page loads in 6.1 seconds",
+      beforeText: "The hero image is 2.4 MB and loads last.",
+      afterText: "The hero image is 190 KB and loads first.",
+      legalCopy: 0
+    },
+    "Jev",
+    "2026-10-13T11:00:00.000Z"
+  );
+  const second = await addDeskCorrectionLine(
+    env,
+    {
+      engagementId,
+      faultId: "f2",
+      faultTitle: "Missing page title",
+      beforeText: "The <title> element is empty.",
+      afterText: "The <title> element names the clinic and the service.",
+      legalCopy: 0
+    },
+    "Jev",
+    "2026-10-13T11:05:00.000Z"
+  );
+  await reviewDeskCorrectionLine(env, { lineId: first.line.id, action: "approve", note: "" }, "Jev", "2026-10-13T12:00:00.000Z");
+  const approved = await decideCustomerLine(env, { recordId, lineId: first.line.id, decision: "approve" }, "2026-10-13T12:30:00.000Z");
+  assert.equal(approved.line.status, "recorded");
+  assert.equal(approved.engagement.status, "in_correction", "the untouched draft keeps the correction open");
+
+  const rejected = await reviewDeskCorrectionLine(
+    env,
+    { lineId: second.line.id, action: "reject", note: "the after text names a tool we do not use" },
+    "Jev",
+    "2026-10-13T13:00:00.000Z"
+  );
+  assert.equal(rejected.line.status, "rejected");
+  assert.equal(rejected.engagement.status, "proved", "the rejection closes a correction whose every line is decided");
+  assert.equal(sqlite.prepare("SELECT status FROM engagements WHERE id = ?").get(engagementId).status, "proved");
+  assert.ok(sqlite.prepare("SELECT version FROM appraisal_records WHERE id = ?").get(recordId).version > 3, "the closing rejection republishes the record");
+  const html = objects.get(`records/${recordId}.html`);
+  assert.ok(html.includes("Reviewed and not applied"), "the rejected line is listed as not applied");
+  assert.ok(html.includes("Fault closed: Home page loads in 6.1 seconds"), "the recorded line stays on the record");
+});
+
 test("desk: a rejected line is not published, and the last approval republishes the record", async () => {
   const { env, sqlite, objects } = freshEnv();
   const { recordId, engagementId } = await paidEngagement(env, sqlite);
