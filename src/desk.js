@@ -17,7 +17,7 @@ import { renderCloseOut, republishRecord } from "./record.js";
 export async function deskQueue(env) {
   /** @type {D1Result<DeskQueueRow>} */
   const result = await env.DB.prepare(
-    `SELECT e.*, r.site_url, r.email,
+    `SELECT e.*, r.site_url, r.email, r.source, r.report_id,
             (SELECT COUNT(*) FROM correction_lines cl WHERE cl.engagement_id = e.id AND cl.status = 'draft') AS open_lines,
             (SELECT COUNT(*) FROM engagement_payments p WHERE p.engagement_id = e.id) AS payment_rows
        FROM engagements e

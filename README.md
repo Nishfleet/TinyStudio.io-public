@@ -21,9 +21,9 @@ The plan also lists `/correction`, `/method` and `/records/{id}`; these are buil
 
 ## Endpoints
 
-- `/api/signups` stores an email signup in Cloudflare D1.
-- `/api/appraisal-requests` stores an appraisal request or, when the month is full, a waitlist place in Cloudflare D1.
+- `/api/signups` stores an email signup in Cloudflare D1; `/api/appraisal-requests` stores an appraisal request or, when the month is full, a waitlist place.
 - `/api/appraisal-slots` reports how many of the six appraisals this month are left, and the next open slot.
+- `/api/requests/from-seofixkit` receives the SEO Fix Kit Worker's signed fix-it request (`SEOFIXKIT_REQUEST_SECRET` on both sides; wrong signature or a timestamp older than five minutes answers 401; success is `202` with `{"id": string}`, and the same `reportId` and `email` returns the first `id`). It lands in the same desk queue, marked with its source, and the desk page links the report (`SEOFIXKIT_REPORT_URL` overrides the link template).
 - `/api/agent-audit` is the existing audit generation endpoint. It runs at most 50 times a day across all callers, and setting `AGENT_AUDIT_DISABLED=1` turns it off.
 - `/api/engagements/checkout` starts the Dodo checkout for the record's engagement, and returns the checkout URL the record page sends the customer to.
 - `/api/webhooks/dodo` receives the signed Dodo payment event. The signature is verified before an engagement opens, and a replayed event opens nothing new.
