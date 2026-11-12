@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { recordsMock } from "./records-mock.js";
 import worker from "../src/worker.js";
-import { addDeskCorrectionLine } from "../src/desk.js";
+import { addDeskCorrectionLine, addDeskKickoffNote, addDeskTrackingNote, closeOutEngagement, reviewDeskCorrectionLine } from "../src/desk.js";
 import { reviewCorrectionLine } from "../src/engagement.js";
 import { publishRecord } from "../src/record.js";
 import { handleDodoWebhook } from "../src/payments.js";
@@ -17,7 +17,6 @@ import {
   decryptSecret,
   encryptSecret,
   normalizeSiteUrl,
-  purgeEngagementKey,
   startConnect,
   storeCredentials,
   undoLineWrites
@@ -71,9 +70,9 @@ function wpServer({ connector = false, failRead = false, failWrite = false } = {
   const page = {
     id: 7,
     type: "page",
-    title: { rendered: "Old Title" },
-    content: { rendered: "<p>Old copy</p>" },
-    excerpt: { rendered: "" },
+    title: { raw: "Old Title" },
+    content: { raw: "<p>Old copy</p>" },
+    excerpt: { raw: "" },
     meta: {}
   };
   const state = { page, requests: [] };
@@ -93,8 +92,8 @@ function wpServer({ connector = false, failRead = false, failWrite = false } = {
     }
     if (failWrite) return new Response("write failed", { status: 500 });
     const payload = JSON.parse(init.body || "{}");
-    if (payload.title !== undefined) state.page.title.rendered = payload.title;
-    if (payload.content !== undefined) state.page.content.rendered = payload.content;
+    if (payload.title !== undefined) state.page.title.raw = payload.title;
+    if (payload.content !== undefined) state.page.content.raw = payload.content;
     if (payload.meta) state.page.meta = { ...state.page.meta, ...payload.meta };
     return Response.json(state.page);
   };
@@ -253,12 +252,12 @@ test("apply writes the approved line through the core REST API and saves the old
   );
   assert.equal(result.applied, 1);
   assert.equal(result.ownerSteps, 0);
-  assert.equal(server.state.page.content.rendered, "The hero image is 190 KB and loads first.", "the approved after text is live on the site");
+  assert.equal(server.state.page.content.raw, "The hero image is 190 KB and loads first.", "the approved after text is live on the site");
   const expectedAuth = `Basic ${Buffer.from(`ts-editor:${STRIPPED_PASSWORD}`).toString("base64")}`;
   assert.equal(server.state.requests[0].auth, expectedAuth, "the key travels as Basic application-password auth");
   const writeIndex = server.state.requests.findIndex((r) => r.method === "POST");
-  const readIndex = server.state.requests.findIndex((r) => r.method === "GET" && r.url.endsWith("/wp-json/wp/v2/pages/7"));
-  assert.ok(readIndex > -1 && readIndex < writeIndex, "the old value is read before the write");
+  const readIndex = server.state.requests.findIndex((r) => r.method === "GET" && r.url.endsWith("/wp-json/wp/v2/pages/7?context=edit"));
+  assert.ok(readIndex > -1 && readIndex < writeIndex, "the old value is read with context=edit before the write");
   /** @type {{ old_value: string, had_old: number, status: string, charged: number } | undefined} */
   const write = sqlite.prepare("SELECT old_value, had_old, status, charged FROM wordpress_line_writes WHERE engagement_id = ?").get(engagementId);
   assert.equal(write.old_value, "<p>Old copy</p>");
@@ -369,10 +368,10 @@ test("undo restores the saved old value for the line", async () => {
   const { env, sqlite } = freshEnv();
   const { engagementId, line, server } = await connectedSite(env, sqlite);
   await applyApprovedLines(env, engagementId, [{ lineId: line.id, postType: "page", postId: 7, field: "content" }], { fetchImpl: server.impl }, AT);
-  assert.equal(server.state.page.content.rendered, "The hero image is 190 KB and loads first.");
+  assert.equal(server.state.page.content.raw, "The hero image is 190 KB and loads first.");
   const undone = await undoLineWrites(env, engagementId, line.id, { fetchImpl: server.impl, connector: false }, AT);
   assert.deepEqual(undone.undone, [{ field: "content", status: "undone" }]);
-  assert.equal(server.state.page.content.rendered, "<p>Old copy</p>", "the old value is back on the site");
+  assert.equal(server.state.page.content.raw, "<p>Old copy</p>", "the old value is back on the site");
   /** @type {{ status: string } | undefined} */
   const write = sqlite.prepare("SELECT status FROM wordpress_line_writes WHERE engagement_id = ?").get(engagementId);
   assert.equal(write.status, "undone");
@@ -403,18 +402,22 @@ test("apply and undo refuse an engagement with no connected site", async () => {
 
 test("closing the engagement deletes the key", async () => {
   const { env, sqlite } = freshEnv();
-  const { engagementId } = await connectedSite(env, sqlite);
-  const purged = await purgeEngagementKey(env, engagementId, AT);
-  assert.equal(purged, true);
+  const { engagementId, line, server } = await connectedSite(env, sqlite);
+  await applyApprovedLines(env, engagementId, [{ lineId: line.id, postType: "page", postId: 7, field: "content" }], { fetchImpl: server.impl, connector: false }, AT);
+  await reviewDeskCorrectionLine(env, { lineId: line.id, action: "approve" }, "reviewer@tinystudio.io", "2026-10-14T08:00:00.000Z");
+  await addDeskKickoffNote(env, { engagementId, note: "Brand words stay as written." }, "reviewer@tinystudio.io", "2026-11-01T08:00:00.000Z");
+  await addDeskTrackingNote(env, { engagementId, day: "7", note: "Speed holds and the pages are indexed." }, "reviewer@tinystudio.io", "2026-11-08T08:00:00.000Z");
+  await addDeskTrackingNote(env, { engagementId, day: "14", note: "Four form submissions from search in the second week." }, "reviewer@tinystudio.io", "2026-11-15T08:00:00.000Z");
+  await closeOutEngagement(env, { engagementId }, "reviewer@tinystudio.io", "2026-11-15T09:00:00.000Z");
   const row = await connectionForEngagement(env, engagementId);
   assert.equal(row.status, "removed");
   assert.equal(row.password_ciphertext, null, "the ciphertext is gone");
   assert.equal(row.wp_user_login, null);
   assert.equal(row.connect_token, "");
-  assert.equal(await purgeEngagementKey(env, engagementId, AT), false);
-  const desk = readFileSync(new URL("../src/desk.js", import.meta.url), "utf8");
-  assert.ok(desk.includes("purgeEngagementKey"), "the close-out purges the key");
-  assert.ok(desk.includes("tinystudio_wordpress_key_purge_failed"), "a failed purge is logged, not swallowed");
+  /** @type {{ engagement_id: string } | undefined} */
+  const event = sqlite.prepare("SELECT engagement_id FROM engagement_events WHERE type = 'wordpress_key_deleted'").get();
+  assert.ok(event, "the purge is journalled");
+  assert.equal(event.engagement_id, engagementId, "the purge is journalled against the engagement, not the connection");
 });
 
 test("the connector note tells the customer when the plugin is needed", () => {

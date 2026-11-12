@@ -273,7 +273,14 @@ export async function purgeEngagementKey(env, engagementId, at) {
   )
     .bind(at, row.id)
     .run();
-  await journalEngagementEvent(env, row, { type: "wordpress_key_deleted", detail: "the application password was deleted with the closed engagement", at });
+  const engagement = await engagementById(env, engagementId);
+  if (engagement) {
+    await journalEngagementEvent(env, engagement, {
+      type: "wordpress_key_deleted",
+      detail: "the application password was deleted with the closed engagement",
+      at
+    });
+  }
   return true;
 }
 
@@ -305,9 +312,9 @@ function resourcePath(postType, postId) {
 /** @param {any} resource @param {{ kind: string, metaKey: string }} spec */
 function resourceValue(resource, spec) {
   if (!resource) return null;
-  if (spec.kind === "content") return resource.content?.rendered ?? null;
-  if (spec.kind === "title") return resource.title?.rendered ?? null;
-  if (spec.kind === "excerpt") return resource.excerpt?.rendered ?? null;
+  if (spec.kind === "content") return resource.content?.raw ?? null;
+  if (spec.kind === "title") return resource.title?.raw ?? null;
+  if (spec.kind === "excerpt") return resource.excerpt?.raw ?? null;
   if (spec.kind === "alt_text") return typeof resource.alt_text === "string" ? resource.alt_text : null;
   const meta = resource.meta;
   if (!meta || typeof meta !== "object" || !(spec.metaKey in meta)) return null;
@@ -430,7 +437,7 @@ async function applyOne(env, engagement, connection, appPassword, target, option
     );
     return { lineId, field, status: "owner_step", pluginNeeded: "TinyStudio Connector" };
   }
-  const current = await wpRequest(options.fetchImpl, connection, appPassword, path);
+  const current = await wpRequest(options.fetchImpl, connection, appPassword, `${path}?context=edit`);
   if (!current.ok) {
     await insertWriteRow(
       env,
@@ -534,18 +541,6 @@ export async function undoLineWrites(env, engagementId, lineId, options = {}, at
   return { engagementId, lineId, undone };
 }
 
-/** @param {Env} env @param {string} engagementId @param {string} token @param {unknown} siteUrl @param {unknown} userLogin @param {unknown} appPassword @param {string} at */
-async function storeFromRequest(env, engagementId, token, siteUrl, userLogin, appPassword, at) {
-  const result = await storeCredentials(env, { engagementId, token, siteUrl, userLogin, appPassword }, at);
-  return jsonOk(result);
-}
-
-/** @param {Env} env @param {string} engagementId @param {any[]} targets @param {string} at */
-async function applyFromRequest(env, engagementId, targets, at) {
-  const result = await applyApprovedLines(env, engagementId, targets, {}, at);
-  return jsonOk(result);
-}
-
 /** @param {Request} request @returns {Promise<any>} */
 async function readJsonBody(request) {
   const text = await request.text();
@@ -614,18 +609,19 @@ async function callbackResponse(request, env, url) {
   const params = Object.fromEntries(request.method === "GET" ? url.searchParams : new URLSearchParams(await request.text()));
   const at = new Date().toISOString();
   if (params.error) return declinedPage(clean(params.siteUrl || params.site_url, 300));
-  const result = await storeFromRequest(
+  const result = await storeCredentials(
     env,
-    clean(params.engagementId, 64),
-    clean(params.token, 64),
-    params.siteUrl || params.site_url,
-    params.userLogin || params.user_login,
-    params.appPassword || params.password,
+    {
+      engagementId: clean(params.engagementId, 64),
+      token: clean(params.token, 64),
+      siteUrl: params.siteUrl || params.site_url,
+      userLogin: params.userLogin || params.user_login,
+      appPassword: params.appPassword || params.password
+    },
     at
   );
-  const siteUrl = String((/** @type {any} */ (result)).siteUrl || "");
-  if (prefersHtml(request)) return connectedPage(siteUrl);
-  return result;
+  if (prefersHtml(request)) return connectedPage(result.siteUrl);
+  return jsonOk(result);
 }
 
 /** @param {Request} request @param {Env} env @param {URL} url */
@@ -639,7 +635,7 @@ async function applyResponse(request, env, url) {
   if (!ENGAGEMENT_ID.test(engagementId)) return errorResponse("bad_engagement", "bad engagement id");
   const targets = Array.isArray(body?.targets) ? body.targets.slice(0, MAX_APPLY_TARGETS) : [];
   if (!targets.length) return errorResponse("targets_missing", "the apply call needs the lines and their targets");
-  return applyFromRequest(env, engagementId, targets, new Date().toISOString());
+  return jsonOk(await applyApprovedLines(env, engagementId, targets, {}, new Date().toISOString()));
 }
 
 /** @param {Request} request @param {Env} env @param {URL} url */
