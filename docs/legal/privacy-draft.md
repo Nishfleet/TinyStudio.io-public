@@ -41,7 +41,11 @@ stored when you submit a form:
 - **IP address, hashed.** The IP address is combined with the day's date and
   one-way hashed (SHA-256) before storage, so we cannot see the raw address
   back. Used only to apply the daily request-per-visitor limits; the daily
-  bucket key counter also holds the same daily hash.
+  usage counters store the same hash as part of their key.
+- **Email address in the usage counters.** The daily counter for the
+  self-serve agent desk stores your email address in plain text as part of
+  its key (`email:<date>:<your email address>`), next to the hashed-IP key
+  (`ip:<date>:<hash>`), to apply the daily per-email limit.
 - **User agent** (the browser string your browser sends, truncated).
 - **Referrer** (the page you came from, truncated) for email signups, and the
   page path you were on when you signed up.
@@ -77,7 +81,7 @@ run happened, with the hashed IP and user agent as above.
 Your appraisal is published as a PDF-like web page in an unguessable Cloudflare
 R2 bucket — `records/<random-id>.html` — because it must survive every state
 change without being emailed as an attachment. It is stored as HTML and
-contains what the Visitor sees on `/records/<id>`:
+contains what you see on `/records/<id>`:
 
 - the site URL we appraised and the name you gave;
 - the faults found on your site and the evidence for each;
@@ -113,8 +117,8 @@ consent copy matches the flag exactly.
 | Confirmation, record-ready, drift emails | To let you know where things stand | Legitimate interest / Art. 6(1)(b) |
 
 `NISH:` Confirm the exact named legal basis for each row when the business
-identity (Section 1) is settled. The table above is the reviewer's best-call
-draft, not settled advice.
+identity (Section 1) is settled. The table above is our best-call draft, not
+settled advice.
 
 ## 4. Who we share it with (the processors)
 
@@ -148,18 +152,23 @@ processing locations for Dodo Payments.
 
 ## 6. How long we keep it
 
-`NISH:` This is the reviewer's biggest fill-in. Cuts to set the retention for
-each store; the code currently keeps every row indefinitely:
+What the code does today: every row in every table in the appendix, and every
+object in the R2 records bucket, is kept until someone deletes it by hand.
+Nothing is deleted on a timer, and no retention period runs in the code
+today.
 
-| Store | Data | Suggested default |
+What follows is only what we propose; every period is open for Nish to set,
+and none of it is in force yet:
+
+| Store | Data | Proposed period (open for Nish, not settled) |
 | --- | --- | --- |
 | `email_signups` | email, referrer, user agent, page path, website | until you ask or the address bounces |
-| `appraisal_requests`, `appraisal_waitlist` | your request fields | appraisal year, then delete names and emails from records still on file |
-| `agent_runs`, `agent_usage_limits` | hashed IP, user agent, page path, counters | 90 days |
-| `appraisal_records` (R2) and records HTML | name, website, faults, correction lines, tracking notes, referral code, specimen consent | for the life of the customer's record + `NISH:` |
-| `engagements`, `engagement_payments`, `dodo_webhook_events` | payment identifiers and payload | for the statutory account / invoicing period, typically 6–10 years by jurisdiction |
-| `correction_lines`, `correction_reviews`, `tracking_notes` | my working file and reviewer's notes | for 5 years after the close-out (defect-claim period) |
-| Emails | what we sent you | for the life of the engagement plus `NISH:` |
+| `appraisal_requests`, `appraisal_waitlist` | your request fields | the appraisal year, then we delete names and emails from records still on file |
+| `agent_runs`, `agent_usage_limits` | hashed IP, email-address counter keys, user agent, page path, counters | 90 days |
+| `appraisal_records` (R2) and records HTML | name, website, faults, correction lines, tracking notes, referral code, specimen consent | the life of the customer's record, plus `NISH:` |
+| `engagements`, `engagement_payments`, `dodo_webhook_events` | payment identifiers and payload | the statutory account / invoicing period, typically 6–10 years by jurisdiction |
+| `correction_lines`, `correction_reviews`, `tracking_notes` | our working file with you and the reviewer's notes | 5 years after the close-out (defect-claim period) |
+| Emails | what we sent you | the life of the engagement, plus `NISH:` |
 
 `NISH:` Confirm which store is subject to which retention law (tax, consumer
 protection, etc.) and lock the table.
@@ -192,10 +201,13 @@ form / postal address. Confirm the published contact page agrees.
 
 ## 9. Cookies and tracking
 
-The site sets no cookie of its own. The only third-party tracking is the Google
-Ads conversion tag on `/brief-requested` (see Section 4), which counts a page
-load without reading your form data. `NISH:` Confirm whether the tag needs a
-consent banner in your market; if it does not, this section stands as written.
+What the code shows: the Worker sets no cookie of its own (there is no
+Set-Cookie in it). The only third-party tracking we know of is the Google Ads
+conversion tag on `/brief-requested` (see Section 4), which counts a page
+load without reading your form data; ad tags of this kind typically set
+cookies of their own. `NISH:` Confirm what the tag sets in your market,
+whether it needs a consent banner, and that no other script on the site sets
+a cookie.
 
 ---
 
@@ -208,9 +220,11 @@ R2, so Nish can check the draft against the schema:
   `user_agent`, `created_at`, `updated_at`, `website` (added in 0004).
 - **`agent_runs`** — `id`, `email`, `source`, `page_path`, `ip_hash`,
   `user_agent`, `created_at`.
-- **`agent_usage_limits`** — `bucket_key` (day-scoped, contains the
-  date-prefixed SHA-256 IP hash, the email, or the global counter name),
-  `count`, `first_seen_at`, `updated_at`.
+- **`agent_usage_limits`** — `bucket_key` (day-scoped counter key: either
+  `ip:<date>:<SHA-256 of date and IP>`, `email:<date>:<your email address>`
+  in plain text, a `checkout` or `checkout-attempt` key holding a hashed IP
+  or a record id, or the global `agent-global:<date>`), `count`,
+  `first_seen_at`, `updated_at`.
 - **`appraisal_requests`** — `id`, `site_url`, `business_type`,
   `avg_deal_value`, `monthly_leads`, `name`, `email`, `month`,
   `referral_code`, `confirmation_sent_at`, `created_at`.

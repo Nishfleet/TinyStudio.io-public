@@ -38,12 +38,12 @@ referral code can skip that wait.
   cost of each fault, worked out from the deal value and monthly lead numbers
   you gave us. A named person reviews the output before it is sent.
 - **What you give us.** One website; one email; one name; the business type;
-  a deal value above zero; a rough monthly lead count. No attack of a welcome
-  sequence; the only emails are the confirmation, the record link, and, if the
-  paid correction was bought, the drift alerts you asked for.
+  a deal value above zero; a rough monthly lead count. No welcome sequence:
+  the only emails we send are the confirmation, the record link, and, if you
+  bought the paid correction, the drift alerts you asked for.
 - **What it is not.** The appraisal is an opinion on documents. It is not a
-  contract of employment of a developer, it is not legal advice, it is not a
-  re-execution of your site, and it is not a purchase.
+  developer engagement (the paid correction is), it is not legal advice, it
+  is not a re-execution of your site, and it is not a purchase.
 - **Time limit.** We aim to send the record within five working days of an
   accepted request. `NISH:` Confirm 5 working days is the promise to keep
   (the code's confirmation email currently says five working days).
@@ -130,14 +130,13 @@ the referral-code loop, scraping the specimen wall, etc.).
 
 This is the biggest gaps-to-fill section.
 
-- To the extent it can be limited under the governing law, TinyStudio is not
-  liable for lost revenue, lost leads, lost rankings, lost deals, or lost
-  profits arising from an appraisal, a correction, or a decision you make from
-  them.
-- The total liability of TinyStudio under these terms is capped at
+- To the extent it can be limited under the governing law, we are not liable
+  for lost revenue, lost leads, lost rankings, lost deals, or lost profits
+  arising from an appraisal, a correction, or a decision you make from them.
+- Our total liability under these terms is capped at
   `NISH:` amount (the fee you paid? another sum?), except where the law
-  cannot cap liability (Intent, fraud, death, personal injury, and whatever
-  the governing law refuses to let a contract exclude).
+  does not allow a cap: intent to harm, fraud, death, personal injury, and
+  whatever the governing law refuses to let a contract exclude.
 - The record is an opinion on the state of the pages we looked at, on the day
   we looked. Sites change on their own; a fault we named may come and go.
 
@@ -145,8 +144,8 @@ This is the biggest gaps-to-fill section.
 
 The site and the free appraisal may pause without notice (for example when the
 six slots of a month are taken). We may change these terms; the terms in force
-for a paid correction are the ones published on the day you pay `NISH:`
-confirm, and add how a change is announced.
+for a paid correction are the ones published on the day you pay.
+`NISH:` Confirm that rule, and add how a change of terms is announced.
 
 ## 12. Governing law and disputes
 
