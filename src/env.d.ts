@@ -134,6 +134,7 @@ interface WordPressConnectionRow {
   site_url: string;
   wp_user_login: string | null;
   password_ciphertext: string | null;
+  password_uuid: string | null;
   status: string;
   connect_token: string;
   connected_at: string | null;

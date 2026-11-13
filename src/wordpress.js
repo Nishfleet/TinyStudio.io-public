@@ -3,6 +3,7 @@ import { correctionLineById, engagementById, ENGAGEMENT_ID, journalEngagementEve
 import { assertCorrectionLineStatus } from "./guardrails.js";
 
 export const WORDPRESS_CONNECT_APP_NAME = "TinyStudio";
+export const WORDPRESS_CONNECT_APP_ID = "3b6f2d90-8a54-4e1e-9c7b-52f1d0a3e6c4";
 export const CONNECTOR_NOTE =
   "Rank Math and All in One SEO fields write straight through the core REST API, no plugin needed. Yoast SEO fields need the TinyStudio Connector plugin installed first: Plugins, Add New, Upload, activate. A field that still cannot be written goes on the record as a step for the owner and is not charged.";
 
@@ -141,8 +142,8 @@ export function normalizeSiteUrl(value) {
   } catch {
     throw coded("BAD_SITE_URL", "the site address is not a URL");
   }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw coded("BAD_SITE_URL", "the site address must be http or https");
+  if (parsed.protocol !== "https:") {
+    throw coded("BAD_SITE_URL", "the site address must be https");
   }
   if (parsed.username || parsed.password) {
     throw coded("BAD_SITE_URL", "the site address must not carry a login");
@@ -153,9 +154,16 @@ export function normalizeSiteUrl(value) {
 function aesKeyMaterial(/** @type {Env} */ env) {
   const secret = String(env.WORDPRESS_KEY_ENC_KEY || "").trim();
   if (!secret) return Promise.reject(coded("WORDPRESS_KEY_MISSING", "the key-encryption Worker secret is not set"));
-  return crypto.subtle
-    .digest("SHA-256", new TextEncoder().encode(secret))
-    .then((raw) => crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]));
+  let raw;
+  try {
+    raw = fromB64(secret);
+  } catch {
+    throw coded("WORDPRESS_KEY_BAD", "the key-encryption Worker secret must be base64 of 32 random bytes");
+  }
+  if (raw.length !== 32) {
+    throw coded("WORDPRESS_KEY_BAD", "the key-encryption Worker secret must be base64 of 32 random bytes");
+  }
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
 /** @param {Uint8Array} bytes */
@@ -170,22 +178,29 @@ function fromB64(text) {
   return Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 }
 
-/** @param {Env} env @param {string} plaintext @returns {Promise<string>} */
-export async function encryptSecret(env, plaintext) {
+/** @param {Env} env @param {string} plaintext @param {string} engagementId @returns {Promise<string>} */
+export async function encryptSecret(env, plaintext, engagementId) {
   const key = await aesKeyMaterial(env);
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plaintext));
+  const additionalData = new TextEncoder().encode(engagementId);
+  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData }, key, new TextEncoder().encode(plaintext));
   return `v1:${toB64(iv)}:${toB64(new Uint8Array(cipher))}`;
 }
 
-/** @param {Env} env @param {string} stored @returns {Promise<string>} */
-export async function decryptSecret(env, stored) {
+/** @param {Env} env @param {string} stored @param {string} engagementId @returns {Promise<string>} */
+export async function decryptSecret(env, stored, engagementId) {
   const [version, ivB64, cipherB64] = String(stored).split(":");
   if (version !== "v1" || !ivB64 || !cipherB64) {
     throw coded("WORDPRESS_KEY_CORRUPT", "the stored key is unreadable");
   }
   const key = await aesKeyMaterial(env);
-  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(ivB64) }, key, fromB64(cipherB64));
+  const additionalData = new TextEncoder().encode(engagementId);
+  let plain;
+  try {
+    plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(ivB64), additionalData }, key, fromB64(cipherB64));
+  } catch {
+    throw coded("WORDPRESS_KEY_CORRUPT", "the stored key does not belong to this engagement");
+  }
   return new TextDecoder().decode(plain);
 }
 
@@ -224,19 +239,28 @@ export async function startConnect(env, engagementId, siteUrl, publicOrigin, at)
       .bind(crypto.randomUUID(), engagementId, engagement.request_id, normalized, token, at)
       .run();
   }
-  const successUrl = `${publicOrigin}/api/wordpress/callback?engagementId=${encodeURIComponent(engagementId)}&token=${encodeURIComponent(token)}`;
-  const authorizeUrl = `${normalized}/wp-admin/authorize-application.php?app_name=${encodeURIComponent(WORDPRESS_CONNECT_APP_NAME)}&success_url=${encodeURIComponent(successUrl)}`;
+  const callbackQuery = `engagementId=${encodeURIComponent(engagementId)}&token=${encodeURIComponent(token)}`;
+  const successUrl = `${publicOrigin}/api/wordpress/callback?${callbackQuery}`;
+  const rejectUrl = `${publicOrigin}/api/wordpress/callback?${callbackQuery}`;
+  const authorizeUrl = `${normalized}/wp-admin/authorize-application.php?app_name=${encodeURIComponent(WORDPRESS_CONNECT_APP_NAME)}&app_id=${encodeURIComponent(WORDPRESS_CONNECT_APP_ID)}&success_url=${encodeURIComponent(successUrl)}&reject_url=${encodeURIComponent(rejectUrl)}`;
   return { engagementId, authorizeUrl, token, siteUrl: normalized, manualFallback: true };
 }
 
-/** @param {Env} env @param {{ engagementId: unknown, token: unknown, siteUrl?: unknown, userLogin?: unknown, appPassword?: unknown }} input @param {string} at */
-export async function storeCredentials(env, input, at) {
+/** @param {string} step @param {number} status @returns {Error} */
+function exchangeFailed(step, status) {
+  const why = status === 0 ? "the site did not answer" : `HTTP ${status}`;
+  return coded("KEY_EXCHANGE_FAILED", `the key swap stopped at step ${step} (${why}); nothing was stored`);
+}
+
+/** @param {Env} env @param {{ engagementId: unknown, token: unknown, siteUrl?: unknown, userLogin?: unknown, appPassword?: unknown }} input @param {string} at @param {typeof fetch} [fetchImpl] */
+export async function storeCredentials(env, input, at, fetchImpl = fetch) {
   const engagementId = clean(input.engagementId, 64);
   if (!ENGAGEMENT_ID.test(engagementId)) throw coded("BAD_ENGAGEMENT", "bad engagement id");
   /** @type {WordPressConnectionRow | null} */
   const row = await connectionForEngagement(env, engagementId);
   if (!row) throw coded("NOT_FOUND", "no connect request for this engagement");
   if (row.status === "removed") throw coded("WORDPRESS_CLOSED", "the connection was removed when the engagement closed");
+  if (row.status !== "connecting") throw coded("NOT_CONNECTING", "the connect request is not waiting for a key");
   if (clean(input.token, 64) !== row.connect_token) throw coded("BAD_TOKEN", "the connect token does not match");
   const normalized = normalizeSiteUrl(input.siteUrl || row.site_url);
   if (normalized !== row.site_url) throw coded("SITE_MISMATCH", "the site does not match the connect request");
@@ -246,11 +270,36 @@ export async function storeCredentials(env, input, at) {
   if (appPassword.length < 12 || appPassword.length > 248) {
     throw coded("KEY_INVALID", "that does not look like an application password; never paste the wp-admin password");
   }
-  const ciphertext = await encryptSecret(env, appPassword);
+  const me = await wpRequest(fetchImpl, normalized, login, appPassword, "/wp-json/wp/v2/users/me?context=edit");
+  if (!me.ok) throw exchangeFailed("users_me", me.status);
+  if (Array.isArray(me.resource?.roles) && me.resource.roles.includes("administrator")) {
+    throw coded(
+      "ROLE_REFUSED",
+      "the user holds the administrator role; make a separate user for TinyStudio with the Editor role and connect again"
+    );
+  }
+  const mint = await wpRequest(fetchImpl, normalized, login, appPassword, "/wp-json/wp/v2/users/me/application-passwords", {
+    method: "POST",
+    body: JSON.stringify({ name: WORDPRESS_CONNECT_APP_NAME, app_id: WORDPRESS_CONNECT_APP_ID })
+  });
+  if (!mint.ok) throw exchangeFailed("mint", mint.status);
+  const freshPassword = String(mint.resource?.password ?? "");
+  const freshUuid = String(mint.resource?.uuid ?? "");
+  if (!freshPassword || !freshUuid) {
+    throw coded("KEY_EXCHANGE_FAILED", "the key swap stopped at step mint: the answer named no new key; nothing was stored");
+  }
+  const introspect = await wpRequest(fetchImpl, normalized, login, appPassword, "/wp-json/wp/v2/users/me/application-passwords/introspect");
+  if (!introspect.ok || !introspect.resource?.uuid) throw exchangeFailed("introspect", introspect.status);
+  const arrivedUuid = String(introspect.resource.uuid);
+  const revoke = await wpRequest(fetchImpl, normalized, login, appPassword, `/wp-json/wp/v2/users/me/application-passwords/${encodeURIComponent(arrivedUuid)}`, {
+    method: "DELETE"
+  });
+  if (!revoke.ok) throw exchangeFailed("revoke", revoke.status);
+  const ciphertext = await encryptSecret(env, freshPassword, engagementId);
   await env.DB.prepare(
-    "UPDATE wordpress_connections SET wp_user_login = ?1, password_ciphertext = ?2, status = 'connected', connected_at = ?3, changed_at = ?3 WHERE id = ?4"
+    "UPDATE wordpress_connections SET wp_user_login = ?1, password_ciphertext = ?2, password_uuid = ?3, status = 'connected', connect_token = '', connected_at = ?4, changed_at = ?4 WHERE id = ?5"
   )
-    .bind(login, ciphertext, at, row.id)
+    .bind(login, ciphertext, freshUuid, at, row.id)
     .run();
   const engagement = await engagementById(env, engagementId);
   if (engagement) {
@@ -263,13 +312,30 @@ export async function storeCredentials(env, input, at) {
   return { engagementId, siteUrl: row.site_url, status: "connected" };
 }
 
-/** @param {Env} env @param {string} engagementId @param {string} at */
-export async function purgeEngagementKey(env, engagementId, at) {
+/** @param {Env} env @param {string} engagementId @param {string} at @param {typeof fetch} [fetchImpl] */
+export async function purgeEngagementKey(env, engagementId, at, fetchImpl = fetch) {
   /** @type {WordPressConnectionRow | null} */
   const row = await connectionForEngagement(env, engagementId);
   if (!row || row.status === "removed") return false;
+  let revoked = false;
+  if (row.password_uuid && row.password_ciphertext && row.wp_user_login) {
+    try {
+      const appPassword = await decryptSecret(env, row.password_ciphertext, engagementId);
+      const response = await wpRequest(
+        fetchImpl,
+        row.site_url,
+        row.wp_user_login,
+        appPassword,
+        `/wp-json/wp/v2/users/me/application-passwords/${encodeURIComponent(row.password_uuid)}`,
+        { method: "DELETE" }
+      );
+      revoked = response.ok;
+    } catch {
+      revoked = false;
+    }
+  }
   await env.DB.prepare(
-    "UPDATE wordpress_connections SET status = 'removed', password_ciphertext = NULL, wp_user_login = NULL, connect_token = '', changed_at = ?1 WHERE id = ?2"
+    "UPDATE wordpress_connections SET status = 'removed', password_ciphertext = NULL, password_uuid = NULL, wp_user_login = NULL, connect_token = '', changed_at = ?1 WHERE id = ?2"
   )
     .bind(at, row.id)
     .run();
@@ -277,9 +343,18 @@ export async function purgeEngagementKey(env, engagementId, at) {
   if (engagement) {
     await journalEngagementEvent(env, engagement, {
       type: "wordpress_key_deleted",
-      detail: "the application password was deleted with the closed engagement",
+      detail: revoked
+        ? `the application password was revoked on ${row.site_url} and deleted with the closed engagement`
+        : `our copy of the application password was deleted with the closed engagement; the revoke on ${row.site_url} could not be confirmed`,
       at
     });
+    if (!revoked) {
+      await journalEngagementEvent(env, engagement, {
+        type: "wordpress_owner_step",
+        detail: `revoke the TinyStudio application password yourself under Users, Profile, Application Passwords on ${row.site_url}`,
+        at
+      });
+    }
   }
   return true;
 }
@@ -328,14 +403,14 @@ function writePayload(spec, value) {
   return { [spec.kind]: value };
 }
 
-/** @param {typeof fetch} fetchImpl @param {WordPressConnectionRow} connection @param {string} appPassword @param {string} path @param {RequestInit} [init] */
-async function wpRequest(fetchImpl, connection, appPassword, path, init = {}) {
+/** @param {typeof fetch} fetchImpl @param {string} siteUrl @param {string} login @param {string} appPassword @param {string} path @param {RequestInit} [init] */
+async function wpRequest(fetchImpl, siteUrl, login, appPassword, path, init = {}) {
   const headers = new Headers(init.headers || {});
-  headers.set("Authorization", `Basic ${btoa(`${connection.wp_user_login}:${appPassword}`)}`);
+  headers.set("Authorization", `Basic ${btoa(`${login}:${appPassword}`)}`);
   headers.set("Accept", "application/json");
   if (init.body) headers.set("Content-Type", "application/json");
   try {
-    const response = await fetchImpl(`${connection.site_url}${path}`, { ...init, headers });
+    const response = await fetchImpl(`${siteUrl}${path}`, { ...init, headers });
     /** @type {any} */
     let resource = null;
     try {
@@ -437,7 +512,7 @@ async function applyOne(env, engagement, connection, appPassword, target, option
     );
     return { lineId, field, status: "owner_step", pluginNeeded: "TinyStudio Connector" };
   }
-  const current = await wpRequest(options.fetchImpl, connection, appPassword, `${path}?context=edit`);
+  const current = await wpRequest(options.fetchImpl, connection.site_url, String(connection.wp_user_login), appPassword, `${path}?context=edit`);
   if (!current.ok) {
     await insertWriteRow(
       env,
@@ -455,7 +530,7 @@ async function applyOne(env, engagement, connection, appPassword, target, option
     { lineId, postType, postId, field, oldValue: hadOld ? oldValue : null, hadOld, status: "applied", charged: true, detail: null },
     at
   );
-  const written = await wpRequest(options.fetchImpl, connection, appPassword, path, {
+  const written = await wpRequest(options.fetchImpl, connection.site_url, String(connection.wp_user_login), appPassword, path, {
     method: "POST",
     body: JSON.stringify(writePayload(spec, line.after_text))
   });
@@ -481,7 +556,7 @@ export async function applyApprovedLines(env, engagementId, targets, options = {
   if (!connection || connection.status !== "connected" || !connection.password_ciphertext || !connection.wp_user_login) {
     throw coded("NOT_CONNECTED", "the engagement has no connected WordPress site");
   }
-  const appPassword = await decryptSecret(env, connection.password_ciphertext);
+  const appPassword = await decryptSecret(env, connection.password_ciphertext, engagementId);
   const fetchImpl = options.fetchImpl || fetch;
   const connectorInstalled = options.connector ?? (await probeConnector(connection.site_url, fetchImpl));
   const results = [];
@@ -510,7 +585,7 @@ export async function undoLineWrites(env, engagementId, lineId, options = {}, at
   if (!connection || connection.status !== "connected" || !connection.password_ciphertext || !connection.wp_user_login) {
     throw coded("NOT_CONNECTED", "the engagement has no connected WordPress site");
   }
-  const appPassword = await decryptSecret(env, connection.password_ciphertext);
+  const appPassword = await decryptSecret(env, connection.password_ciphertext, engagementId);
   const fetchImpl = options.fetchImpl || fetch;
   /** @type {D1Result<WordPressLineWriteRow>} */
   const rows = await env.DB.prepare(
@@ -524,7 +599,7 @@ export async function undoLineWrites(env, engagementId, lineId, options = {}, at
     const path = resourcePath(row.post_type, row.post_id);
     if (!spec || !path) continue;
     const restoreValue = Number(row.had_old) === 1 ? (row.old_value ?? "") : "";
-    const written = await wpRequest(fetchImpl, connection, appPassword, path, {
+    const written = await wpRequest(fetchImpl, connection.site_url, connection.wp_user_login, appPassword, path, {
       method: "POST",
       body: JSON.stringify(writePayload(spec, restoreValue))
     });
@@ -568,7 +643,7 @@ function connectPage(connect) {
 <label>Application password, never the wp-admin password<br><input name="appPassword" required autocomplete="off"></label>
 <button type="submit">Save the key</button>
 </form>
-<p class="note">The key is encrypted before it is stored, is read only by the applier, never appears in a log, a record or an email, and is deleted when the engagement closes.</p>`
+<p class="note">The key WordPress sends back in the address is used once to prove the login and mint a fresh application password for TinyStudio, and is deleted on the site right after; only the fresh key is stored, encrypted, read only by the applier, never in a log, a record or an email, and it is deleted when the engagement closes.</p>`
   );
 }
 
@@ -608,7 +683,10 @@ async function callbackResponse(request, env, url) {
   /** @type {Record<string, string>} */
   const params = Object.fromEntries(request.method === "GET" ? url.searchParams : new URLSearchParams(await request.text()));
   const at = new Date().toISOString();
-  if (params.error) return declinedPage(clean(params.siteUrl || params.site_url, 300));
+  const arrivingPassword = String(params.appPassword || params.password || "").replace(/\s+/g, "");
+  if (params.error || (!arrivingPassword && request.method === "GET")) {
+    return declinedPage(clean(params.siteUrl || params.site_url, 300));
+  }
   const result = await storeCredentials(
     env,
     {
@@ -616,10 +694,16 @@ async function callbackResponse(request, env, url) {
       token: clean(params.token, 64),
       siteUrl: params.siteUrl || params.site_url,
       userLogin: params.userLogin || params.user_login,
-      appPassword: params.appPassword || params.password
+      appPassword: arrivingPassword
     },
     at
   );
+  if (request.method === "GET") {
+    return new Response(null, {
+      status: 303,
+      headers: { Location: `${url.origin}/`, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" }
+    });
+  }
   if (prefersHtml(request)) return connectedPage(result.siteUrl);
   return jsonOk(result);
 }

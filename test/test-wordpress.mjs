@@ -12,11 +12,13 @@ import { Webhook } from "standardwebhooks";
 import offer from "../config/offer.json" with { type: "json" };
 import {
   CONNECTOR_NOTE,
+  WORDPRESS_CONNECT_APP_ID,
   applyApprovedLines,
   connectionForEngagement,
   decryptSecret,
   encryptSecret,
   normalizeSiteUrl,
+  purgeEngagementKey,
   startConnect,
   storeCredentials,
   undoLineWrites
@@ -25,8 +27,12 @@ import {
 const WEBHOOK_SECRET = "whsec_" + Buffer.from("tinystudio-test-secret-key").toString("base64");
 const SIGNER = new Webhook(Buffer.from("tinystudio-test-secret-key").toString("base64"));
 const PRODUCT_ID = "prod_tinystudio_correction";
+const ENC_KEY = "nKGWU0YTMUuot7uZWU5jX0OgNSH9pBG+/N5ZDhINOWo=";
 const APP_PASSWORD = "abcd efgh ijkl mnop";
 const STRIPPED_PASSWORD = "abcdefghijklmnop";
+const MINTED_PASSWORD = "fedcba9876543210";
+const ARRIVING_UUID = "aaaaaaaa-1111-4bbb-8ccc-000000000001";
+const MINTED_UUID = "aaaaaaaa-2222-4bbb-8ccc-000000000002";
 const AT = "2026-10-13T12:10:00.000Z";
 
 function d1(sqlite) {
@@ -58,7 +64,7 @@ function freshEnv() {
     DODO_TINYSTUDIO_PRODUCT_ID: PRODUCT_ID,
     DODO_TINYSTUDIO_WEBHOOK_SECRET: WEBHOOK_SECRET,
     DODO_TINYSTUDIO_MODE: "test",
-    WORDPRESS_KEY_ENC_KEY: "test-key-material-for-aes-gcm",
+    WORDPRESS_KEY_ENC_KEY: ENC_KEY,
     DB: d1(sqlite),
     EMAIL: { async send() {} },
     RECORDS: recordsMock(objects)
@@ -66,7 +72,8 @@ function freshEnv() {
   return { sqlite, env };
 }
 
-function wpServer({ connector = false, failRead = false, failWrite = false } = {}) {
+/** @param {{ connector?: boolean, failRead?: boolean, failWrite?: boolean, roles?: string[], failStep?: string }} [options] */
+function wpServer({ connector = false, failRead = false, failWrite = false, roles = ["editor"], failStep = "" } = {}) {
   const page = {
     id: 7,
     type: "page",
@@ -75,18 +82,49 @@ function wpServer({ connector = false, failRead = false, failWrite = false } = {
     excerpt: { raw: "" },
     meta: {}
   };
-  const state = { page, requests: [] };
+  const state = {
+    page,
+    requests: [],
+    passwords: [{ uuid: ARRIVING_UUID, password: STRIPPED_PASSWORD, deleted: false }]
+  };
   const impl = async (input, init = {}) => {
     const url = String(input);
+    const method = (init.method || "GET").toUpperCase();
     const auth = new Headers(init.headers || {}).get("Authorization") || "";
-    state.requests.push({ url, method: init.method || "GET", auth, body: init.body || "" });
-    if (url.endsWith("/wp-json/tinystudio-connector/v1")) {
+    state.requests.push({ url, method, auth, body: init.body || "" });
+    const path = new URL(url).pathname;
+    if (path === "/wp-json/tinystudio-connector/v1") {
       return new Response(connector ? '{"ok":true}' : "not found", { status: connector ? 200 : 404 });
+    }
+    if (path === "/wp-json/wp/v2/users/me") {
+      if (failStep === "users_me") return new Response("refused", { status: 500 });
+      return Response.json({ id: 2, name: "ts-editor", roles });
+    }
+    if (path === "/wp-json/wp/v2/users/me/application-passwords" && method === "POST") {
+      if (failStep === "mint") return new Response("refused", { status: 500 });
+      const body = JSON.parse(init.body || "{}");
+      if (body.app_id !== WORDPRESS_CONNECT_APP_ID) return new Response("bad app_id", { status: 400 });
+      if (!body.name) return new Response("no name", { status: 400 });
+      state.passwords.push({ uuid: MINTED_UUID, password: MINTED_PASSWORD, deleted: false });
+      return Response.json({ name: body.name, app_id: body.app_id, uuid: MINTED_UUID, password: MINTED_PASSWORD });
+    }
+    if (path === "/wp-json/wp/v2/users/me/application-passwords/introspect" && method === "GET") {
+      if (failStep === "introspect") return new Response("refused", { status: 500 });
+      const arriving = state.passwords.find((entry) => entry.password === STRIPPED_PASSWORD && !entry.deleted);
+      return Response.json({ uuid: arriving ? arriving.uuid : MINTED_UUID });
+    }
+    const revokeMatch = path.match(/^\/wp-json\/wp\/v2\/users\/me\/application-passwords\/([^/]+)$/);
+    if (revokeMatch && method === "DELETE") {
+      if (failStep === "revoke") return new Response("refused", { status: 500 });
+      const entry = state.passwords.find((candidate) => candidate.uuid === revokeMatch[1]);
+      if (!entry) return new Response("not found", { status: 404 });
+      entry.deleted = true;
+      return Response.json({ deleted: true, uuid: entry.uuid });
     }
     if (!url.startsWith("https://client.example/wp-json/wp/v2/pages/7")) {
       return new Response("not found", { status: 404 });
     }
-    if ((init.method || "GET") === "GET") {
+    if (method === "GET") {
       if (failRead) return new Response("read failed", { status: 500 });
       return Response.json(state.page);
     }
@@ -151,15 +189,16 @@ async function approvedLine(env, sqlite, afterText = "The hero image is 190 KB a
   return { engagementId, line: approved };
 }
 
-async function connectedSite(env, sqlite, { connector = false } = {}) {
+async function connectedSite(env, sqlite, { connector = false, roles = ["editor"], failStep = "" } = {}) {
   const { engagementId, line } = await approvedLine(env, sqlite);
   const connect = await startConnect(env, engagementId, "https://client.example", "https://tinystudio.io", AT);
+  const server = wpServer({ connector, roles, failStep });
   await storeCredentials(
     env,
     { engagementId, token: connect.token, siteUrl: connect.siteUrl, userLogin: "ts-editor", appPassword: APP_PASSWORD },
-    AT
+    AT,
+    server.impl
   );
-  const server = wpServer({ connector });
   return { engagementId, line, connect, server };
 }
 
@@ -169,61 +208,181 @@ test("connect builds WordPress's own application-password approve screen", async
   const connect = await startConnect(env, engagementId, "https://client.example/", "https://tinystudio.io", AT);
   assert.ok(connect.authorizeUrl.startsWith("https://client.example/wp-admin/authorize-application.php"), "the approve screen is on the customer's WordPress");
   assert.ok(connect.authorizeUrl.includes("app_name=TinyStudio"), "WordPress names the app TinyStudio");
+  assert.ok(connect.authorizeUrl.includes(`app_id=${encodeURIComponent(WORDPRESS_CONNECT_APP_ID)}`), "the authorize link carries the fixed app id");
   const success = new URL(decodeURIComponent(connect.authorizeUrl.split("success_url=")[1]));
   assert.equal(success.origin, "https://tinystudio.io");
   assert.equal(success.pathname, "/api/wordpress/callback");
   assert.equal(success.searchParams.get("engagementId"), engagementId);
   assert.ok(success.searchParams.get("token"), "the callback carries a one-time connect token");
+  const reject = new URL(decodeURIComponent(connect.authorizeUrl.split("reject_url=")[1]));
+  assert.equal(reject.pathname, "/api/wordpress/callback", "the authorize link carries a reject address");
   assert.equal(connect.manualFallback, true, "manual entry of an application password is the fallback");
   const row = await connectionForEngagement(env, engagementId);
   assert.equal(row.status, "connecting");
   assert.equal(row.site_url, "https://client.example");
 });
 
-test("normalizeSiteUrl rejects addresses that are not a plain site", () => {
+test("normalizeSiteUrl refuses addresses that are not an https site", () => {
   assert.throws(() => normalizeSiteUrl("not a url"), /not a URL/);
-  assert.throws(() => normalizeSiteUrl("ftp://client.example"), /http or https/);
+  assert.throws(() => normalizeSiteUrl("http://client.example"), /must be https/, "plain http is refused");
+  assert.throws(() => normalizeSiteUrl("ftp://client.example"), /must be https/);
   assert.throws(() => normalizeSiteUrl("https://user:pass@client.example"), /must not carry a login/);
   assert.equal(normalizeSiteUrl("https://Client.example/wp-admin/"), "https://client.example");
 });
 
-test("the key is stored encrypted and never appears in the clear", async () => {
+test("the arriving key is deleted on the site and only the fresh key is stored", async () => {
   const { env, sqlite } = freshEnv();
-  const { engagementId } = await connectedSite(env, sqlite);
+  const { engagementId, server } = await connectedSite(env, sqlite);
   const row = await connectionForEngagement(env, engagementId);
   assert.equal(row.status, "connected");
   assert.equal(row.wp_user_login, "ts-editor");
+  assert.equal(row.password_uuid, MINTED_UUID, "the fresh key's uuid is stored");
+  assert.equal(await decryptSecret(env, row.password_ciphertext, engagementId), MINTED_PASSWORD, "only the fresh key is stored");
+  const urls = server.state.requests.map((request) => `${request.method} ${request.url}`);
+  assert.ok(urls.includes(`GET https://client.example/wp-json/wp/v2/users/me?context=edit`), "the arriving key is proved against users/me");
+  const mint = server.state.requests.find((request) => request.method === "POST" && request.url.endsWith("/users/me/application-passwords"));
+  assert.equal(JSON.parse(mint.body).app_id, WORDPRESS_CONNECT_APP_ID, "the fresh key is minted with the app id");
+  assert.equal(JSON.parse(mint.body).name, "TinyStudio");
+  const revoke = server.state.requests.find((request) => request.method === "DELETE");
+  assert.ok(revoke.url.endsWith(`/users/me/application-passwords/${ARRIVING_UUID}`), "the key that arrived in the address is deleted");
+  assert.equal(server.state.passwords.find((entry) => entry.uuid === ARRIVING_UUID).deleted, true, "the arriving key is gone from the site");
+  assert.equal(server.state.passwords.find((entry) => entry.uuid === MINTED_UUID).deleted, false, "the fresh key stays on the site");
+  assert.ok(!server.state.requests.some((request) => request.method === "DELETE" && request.url.includes(MINTED_UUID)));
   assert.match(row.password_ciphertext, /^v1:/, "the stored key is a versioned ciphertext");
-  assert.ok(!row.password_ciphertext.includes(STRIPPED_PASSWORD), "the ciphertext does not carry the key");
-  assert.equal(await decryptSecret(env, row.password_ciphertext), STRIPPED_PASSWORD, "the applier can read the key back");
+  assert.ok(!row.password_ciphertext.includes(STRIPPED_PASSWORD), "the ciphertext does not carry the arriving key");
+  assert.ok(!row.password_ciphertext.includes(MINTED_PASSWORD), "the ciphertext does not carry the fresh key in the clear");
   const events = sqlite.prepare("SELECT type, detail FROM engagement_events WHERE engagement_id = ?").all(engagementId);
   for (const event of events) {
-    assert.ok(!JSON.stringify(event).includes(STRIPPED_PASSWORD), "no journal event carries the key");
+    assert.ok(!JSON.stringify(event).includes(STRIPPED_PASSWORD), "no journal event carries the arriving key");
+    assert.ok(!JSON.stringify(event).includes(MINTED_PASSWORD), "no journal event carries the fresh key");
   }
 });
 
-test("the callback route stores the key the WordPress approve screen sends back", async () => {
+test("a fresh key's ciphertext only opens with its own engagement id", async () => {
+  const { env } = freshEnv();
+  const stored = await encryptSecret(env, "secret", "engagement-a");
+  assert.equal(await decryptSecret(env, stored, "engagement-a"), "secret");
+  await assert.rejects(() => decryptSecret(env, stored, "engagement-b"), /does not belong/);
+});
+
+test("an administrator is refused and nothing is stored", async () => {
   const { env, sqlite } = freshEnv();
   const engagementId = await paidEngagement(env, sqlite);
   const connect = await startConnect(env, engagementId, "https://client.example", "https://tinystudio.io", AT);
-  const callback = new URL("https://tinystudio.io/api/wordpress/callback");
-  callback.searchParams.set("engagementId", engagementId);
-  callback.searchParams.set("token", connect.token);
-  callback.searchParams.set("site_url", "https://client.example");
-  callback.searchParams.set("user_login", "ts-editor");
-  callback.searchParams.set("password", APP_PASSWORD);
-  const response = await worker.fetch(new Request(callback), env);
-  assert.equal(response.status, 200);
-  const body = await response.json();
-  assert.equal(body.ok, true);
-  assert.equal(body.status, "connected");
+  const server = wpServer({ roles: ["administrator"] });
+  await assert.rejects(
+    () =>
+      storeCredentials(
+        env,
+        { engagementId, token: connect.token, siteUrl: connect.siteUrl, userLogin: "ts-editor", appPassword: APP_PASSWORD },
+        AT,
+        server.impl
+      ),
+    /Editor role/,
+    "the refusal repeats the separate-Editor-user instruction"
+  );
   const row = await connectionForEngagement(env, engagementId);
-  assert.equal(row.status, "connected");
-  assert.equal(await decryptSecret(env, row.password_ciphertext), STRIPPED_PASSWORD);
-  const rotated = await startConnect(env, engagementId, "https://client.example", "https://tinystudio.io", AT);
-  assert.notEqual(rotated.token, connect.token, "a new connect rotates the token");
-  const replay = await worker.fetch(new Request(callback), env);
-  assert.equal(replay.status, 400, "the old callback cannot be replayed once the token rotated");
+  assert.equal(row.status, "connecting");
+  assert.equal(row.password_ciphertext, null);
+  assert.equal(row.password_uuid, null);
+  assert.ok(!server.state.requests.some((request) => request.method === "POST"), "no fresh key was minted");
+});
+
+test("a failed swap step names the step and stores nothing", async () => {
+  for (const failStep of ["users_me", "mint", "introspect", "revoke"]) {
+    const { env, sqlite } = freshEnv();
+    const engagementId = await paidEngagement(env, sqlite);
+    const connect = await startConnect(env, engagementId, "https://client.example", "https://tinystudio.io", AT);
+    const server = wpServer({ failStep });
+    await assert.rejects(
+      () =>
+        storeCredentials(
+          env,
+          { engagementId, token: connect.token, siteUrl: connect.siteUrl, userLogin: "ts-editor", appPassword: APP_PASSWORD },
+          AT,
+          server.impl
+        ),
+      new RegExp(failStep),
+      `the failure at ${failStep} names the step`
+    );
+    const row = await connectionForEngagement(env, engagementId);
+    assert.equal(row.status, "connecting", `nothing is stored after ${failStep} fails`);
+    assert.equal(row.password_ciphertext, null);
+    assert.equal(row.password_uuid, null);
+  }
+});
+
+test("the callback route swaps the approve-screen key and answers with a one-time redirect", async () => {
+  const { env, sqlite } = freshEnv();
+  const engagementId = await paidEngagement(env, sqlite);
+  const connect = await startConnect(env, engagementId, "https://client.example", "https://tinystudio.io", AT);
+  const server = wpServer();
+  const globalFetch = globalThis.fetch;
+  globalThis.fetch = server.impl;
+  try {
+    const callback = new URL("https://tinystudio.io/api/wordpress/callback");
+    callback.searchParams.set("engagementId", engagementId);
+    callback.searchParams.set("token", connect.token);
+    callback.searchParams.set("site_url", "https://client.example");
+    callback.searchParams.set("user_login", "ts-editor");
+    callback.searchParams.set("password", APP_PASSWORD);
+    const response = await worker.fetch(new Request(callback), env);
+    assert.equal(response.status, 303, "the callback answers with a redirect");
+    const location = new URL(response.headers.get("Location"));
+    assert.equal(location.origin, "https://tinystudio.io");
+    assert.equal(location.search, "", "the redirect address carries no query");
+    assert.equal(response.headers.get("Referrer-Policy"), "no-referrer");
+    const row = await connectionForEngagement(env, engagementId);
+    assert.equal(row.status, "connected");
+    assert.equal(row.connect_token, "", "the connect token is cleared once used");
+    assert.equal(await decryptSecret(env, row.password_ciphertext, engagementId), MINTED_PASSWORD);
+    const replay = await worker.fetch(new Request(callback), env);
+    assert.equal(replay.status, 400, "the callback works once");
+    const rotated = await startConnect(env, engagementId, "https://client.example", "https://tinystudio.io", AT);
+    assert.notEqual(rotated.token, connect.token, "a new connect rotates the token");
+    const replayOld = await worker.fetch(new Request(callback), env);
+    assert.equal(replayOld.status, 400, "the old callback cannot be replayed once the token rotated");
+  } finally {
+    globalThis.fetch = globalFetch;
+  }
+});
+
+test("the declined callback stores nothing and keeps the token for another try", async () => {
+  const { env, sqlite } = freshEnv();
+  const engagementId = await paidEngagement(env, sqlite);
+  const connect = await startConnect(env, engagementId, "https://client.example", "https://tinystudio.io", AT);
+  const response = await worker.fetch(
+    new Request(`https://tinystudio.io/api/wordpress/callback?engagementId=${engagementId}&token=${connect.token}&error=declined`),
+    env
+  );
+  assert.equal(response.status, 200);
+  assert.ok((await response.text()).includes("Not connected"));
+  const row = await connectionForEngagement(env, engagementId);
+  assert.equal(row.status, "connecting");
+  assert.equal(row.password_ciphertext, null);
+});
+
+test("the connect token works once", async () => {
+  const { env, sqlite } = freshEnv();
+  const engagementId = await paidEngagement(env, sqlite);
+  const connect = await startConnect(env, engagementId, "https://client.example", "https://tinystudio.io", AT);
+  const server = wpServer();
+  const input = { engagementId, token: connect.token, siteUrl: connect.siteUrl, userLogin: "ts-editor", appPassword: APP_PASSWORD };
+  await storeCredentials(env, input, AT, server.impl);
+  await assert.rejects(
+    () => storeCredentials(env, input, AT, server.impl),
+    /token does not match|not waiting for a key/,
+    "the cleared token and the connected status both fail the replay"
+  );
+  const again = await startConnect(env, engagementId, "https://client.example", "https://tinystudio.io", AT);
+  await storeCredentials(
+    env,
+    { engagementId, token: again.token, siteUrl: again.siteUrl, userLogin: "ts-editor", appPassword: APP_PASSWORD },
+    AT,
+    server.impl
+  );
+  const row = await connectionForEngagement(env, engagementId);
+  assert.equal(row.status, "connected", "a fresh connect arms a fresh token");
 });
 
 test("storeCredentials refuses token and site mismatches", async () => {
@@ -253,10 +412,11 @@ test("apply writes the approved line through the core REST API and saves the old
   assert.equal(result.applied, 1);
   assert.equal(result.ownerSteps, 0);
   assert.equal(server.state.page.content.raw, "The hero image is 190 KB and loads first.", "the approved after text is live on the site");
-  const expectedAuth = `Basic ${Buffer.from(`ts-editor:${STRIPPED_PASSWORD}`).toString("base64")}`;
-  assert.equal(server.state.requests[0].auth, expectedAuth, "the key travels as Basic application-password auth");
-  const writeIndex = server.state.requests.findIndex((r) => r.method === "POST");
-  const readIndex = server.state.requests.findIndex((r) => r.method === "GET" && r.url.endsWith("/wp-json/wp/v2/pages/7?context=edit"));
+  const expectedAuth = `Basic ${Buffer.from(`ts-editor:${MINTED_PASSWORD}`).toString("base64")}`;
+  const pageRead = server.state.requests.find((request) => request.url.includes("/wp-json/wp/v2/pages/7?context=edit"));
+  assert.equal(pageRead.auth, expectedAuth, "the stored fresh key travels as Basic application-password auth");
+  const writeIndex = server.state.requests.findIndex((request) => request.method === "POST" && request.url.includes("/wp-json/wp/v2/pages/7"));
+  const readIndex = server.state.requests.findIndex((request) => request.method === "GET" && request.url.endsWith("/wp-json/wp/v2/pages/7?context=edit"));
   assert.ok(readIndex > -1 && readIndex < writeIndex, "the old value is read with context=edit before the write");
   /** @type {{ old_value: string, had_old: number, status: string, charged: number } | undefined} */
   const write = sqlite.prepare("SELECT old_value, had_old, status, charged FROM wordpress_line_writes WHERE engagement_id = ?").get(engagementId);
@@ -278,8 +438,8 @@ test("apply never writes a line the desk has not approved", async () => {
     AT
   );
   const connect = await startConnect(env, engagementId, "https://client.example", "https://tinystudio.io", AT);
-  await storeCredentials(env, { engagementId, token: connect.token, siteUrl: connect.siteUrl, userLogin: "ts-editor", appPassword: APP_PASSWORD }, AT);
   const server = wpServer({ connector: true });
+  await storeCredentials(env, { engagementId, token: connect.token, siteUrl: connect.siteUrl, userLogin: "ts-editor", appPassword: APP_PASSWORD }, AT, server.impl);
   const result = await applyApprovedLines(
     env,
     engagementId,
@@ -289,7 +449,7 @@ test("apply never writes a line the desk has not approved", async () => {
   );
   assert.equal(result.results[0].status, "skipped");
   assert.equal(result.applied, 0);
-  assert.ok(!server.state.requests.some((r) => r.body.includes("DRAFT-ONLY-TEXT")), "no unapproved text reaches the site");
+  assert.ok(!server.state.requests.some((request) => request.body.includes("DRAFT-ONLY-TEXT")), "no unapproved text reaches the site");
 });
 
 test("Rank Math and All in One SEO meta write through the core REST API", async () => {
@@ -311,10 +471,10 @@ test("Rank Math and All in One SEO meta write through the core REST API", async 
 });
 
 test("Yoast fields become owner steps without the connector and write with it", async () => {
-  const { env, sqlite } = freshEnv();
-  const without = await connectedSite(env, sqlite);
+  const first = freshEnv();
+  const without = await connectedSite(first.env, first.sqlite);
   const result = await applyApprovedLines(
-    env,
+    first.env,
     without.engagementId,
     [{ lineId: without.line.id, postType: "page", postId: 7, field: "meta:_yoast_wpseo_title" }],
     { fetchImpl: without.server.impl },
@@ -323,15 +483,15 @@ test("Yoast fields become owner steps without the connector and write with it", 
   assert.equal(result.results[0].status, "owner_step");
   assert.equal(result.results[0].pluginNeeded, "TinyStudio Connector");
   /** @type {{ status: string, charged: number, detail: string } | undefined} */
-  const write = sqlite.prepare("SELECT status, charged, detail FROM wordpress_line_writes WHERE engagement_id = ?").get(without.engagementId);
+  const write = first.sqlite.prepare("SELECT status, charged, detail FROM wordpress_line_writes WHERE engagement_id = ?").get(without.engagementId);
   assert.equal(write.status, "owner_step");
   assert.equal(write.charged, 0, "an unwritable field is not charged");
   assert.ok(write.detail.includes("TinyStudio Connector"));
 
-  const { env: env2, sqlite: sqlite2 } = freshEnv();
-  const withConnector = await connectedSite(env2, sqlite2, { connector: true });
+  const second = freshEnv();
+  const withConnector = await connectedSite(second.env, second.sqlite, { connector: true });
   const applied = await applyApprovedLines(
-    env2,
+    second.env,
     withConnector.engagementId,
     [{ lineId: withConnector.line.id, postType: "page", postId: 7, field: "meta:_yoast_wpseo_title" }],
     { fetchImpl: withConnector.server.impl },
@@ -345,6 +505,7 @@ test("a failed write is an owner step, not a charge, and the line stays approved
   const { env, sqlite } = freshEnv();
   const { engagementId, line, server } = await connectedSite(env, sqlite);
   const failing = wpServer({ failWrite: true });
+  const healthyRequestsBefore = server.state.requests.length;
   const result = await applyApprovedLines(
     env,
     engagementId,
@@ -361,7 +522,7 @@ test("a failed write is an owner step, not a charge, and the line stays approved
   assert.equal(write.old_value, "Old Title", "the old value is saved even when the write fails");
   const stored = sqlite.prepare("SELECT status FROM correction_lines WHERE id = ?").get(line.id);
   assert.equal(stored.status, "approved", "the line waits, it is not recorded");
-  assert.equal(server.state.requests.length, 0, "the healthy site was not touched by the failing run");
+  assert.equal(server.state.requests.length, healthyRequestsBefore, "the healthy site was not touched by the failing run");
 });
 
 test("undo restores the saved old value for the line", async () => {
@@ -382,6 +543,7 @@ test("undo restores the saved old value for the line", async () => {
 test("unknown fields are refused before any write", async () => {
   const { env, sqlite } = freshEnv();
   const { engagementId, line, server } = await connectedSite(env, sqlite);
+  const requestsBefore = server.state.requests.length;
   const result = await applyApprovedLines(
     env,
     engagementId,
@@ -390,7 +552,7 @@ test("unknown fields are refused before any write", async () => {
     AT
   );
   assert.equal(result.results[0].status, "invalid");
-  assert.equal(server.state.requests.length, 0);
+  assert.equal(server.state.requests.length, requestsBefore, "the site is not touched for an unknown field");
 });
 
 test("apply and undo refuse an engagement with no connected site", async () => {
@@ -400,7 +562,7 @@ test("apply and undo refuse an engagement with no connected site", async () => {
   await assert.rejects(() => undoLineWrites(env, engagementId, line.id), /no connected WordPress site/);
 });
 
-test("closing the engagement deletes the key", async () => {
+test("closing the engagement revokes the stored key at the site and wipes our copy", async () => {
   const { env, sqlite } = freshEnv();
   const { engagementId, line, server } = await connectedSite(env, sqlite);
   await applyApprovedLines(env, engagementId, [{ lineId: line.id, postType: "page", postId: 7, field: "content" }], { fetchImpl: server.impl, connector: false }, AT);
@@ -408,16 +570,46 @@ test("closing the engagement deletes the key", async () => {
   await addDeskKickoffNote(env, { engagementId, note: "Brand words stay as written." }, "reviewer@tinystudio.io", "2026-11-01T08:00:00.000Z");
   await addDeskTrackingNote(env, { engagementId, day: "7", note: "Speed holds and the pages are indexed." }, "reviewer@tinystudio.io", "2026-11-08T08:00:00.000Z");
   await addDeskTrackingNote(env, { engagementId, day: "14", note: "Four form submissions from search in the second week." }, "reviewer@tinystudio.io", "2026-11-15T08:00:00.000Z");
-  await closeOutEngagement(env, { engagementId }, "reviewer@tinystudio.io", "2026-11-15T09:00:00.000Z");
+  const globalFetch = globalThis.fetch;
+  globalThis.fetch = server.impl;
+  try {
+    await closeOutEngagement(env, { engagementId }, "reviewer@tinystudio.io", "2026-11-15T09:00:00.000Z");
+  } finally {
+    globalThis.fetch = globalFetch;
+  }
   const row = await connectionForEngagement(env, engagementId);
   assert.equal(row.status, "removed");
   assert.equal(row.password_ciphertext, null, "the ciphertext is gone");
+  assert.equal(row.password_uuid, null);
   assert.equal(row.wp_user_login, null);
   assert.equal(row.connect_token, "");
-  /** @type {{ engagement_id: string } | undefined} */
-  const event = sqlite.prepare("SELECT engagement_id FROM engagement_events WHERE type = 'wordpress_key_deleted'").get();
+  const revoke = server.state.requests.find(
+    (request) => request.method === "DELETE" && request.url.endsWith(`/users/me/application-passwords/${MINTED_UUID}`)
+  );
+  assert.ok(revoke, "the stored key is revoked on the site before the wipe");
+  assert.equal(server.state.passwords.find((entry) => entry.uuid === MINTED_UUID).deleted, true);
+  /** @type {{ detail: string } | undefined} */
+  const event = sqlite.prepare("SELECT detail FROM engagement_events WHERE type = 'wordpress_key_deleted'").get();
   assert.ok(event, "the purge is journalled");
-  assert.equal(event.engagement_id, engagementId, "the purge is journalled against the engagement, not the connection");
+  assert.ok(event.detail.includes("revoked on https://client.example"), "the journal says the key was revoked at the site");
+});
+
+test("when the revoke at the site fails our copy is still wiped and an owner step is recorded", async () => {
+  const { env, sqlite } = freshEnv();
+  const { engagementId } = await connectedSite(env, sqlite);
+  const failing = wpServer({ failStep: "revoke" });
+  await purgeEngagementKey(env, engagementId, AT, failing.impl);
+  const row = await connectionForEngagement(env, engagementId);
+  assert.equal(row.status, "removed", "the wipe happens even when the revoke fails");
+  assert.equal(row.password_ciphertext, null);
+  assert.equal(row.password_uuid, null);
+  const events = sqlite.prepare("SELECT type, detail FROM engagement_events WHERE engagement_id = ?").all(engagementId);
+  const step = events.find((event) => event.type === "wordpress_owner_step");
+  assert.ok(step, "the owner step is journalled");
+  assert.ok(step.detail.includes("Users, Profile, Application Passwords"), "the owner step tells the customer where to revoke");
+  const deleted = events.find((event) => event.type === "wordpress_key_deleted");
+  assert.ok(deleted, "the wipe is still journalled");
+  assert.ok(deleted.detail.includes("could not be confirmed"));
 });
 
 test("the connector note tells the customer when the plugin is needed", () => {
@@ -453,8 +645,11 @@ test("the WordPress routes gate on the desk and answer unknown paths", async () 
   assert.equal(crossSite.status, 403, "the manual fallback refuses cross-site posts");
 });
 
-test("the key secret is required before anything is encrypted", async () => {
+test("the key secret must be base64 of 32 random bytes and is required before anything is encrypted", async () => {
   const { env } = freshEnv();
   const noSecret = { ...env, WORDPRESS_KEY_ENC_KEY: "" };
-  await assert.rejects(() => encryptSecret(noSecret, "x"), /key-encryption Worker secret/);
+  await assert.rejects(() => encryptSecret(noSecret, "x", "engagement-a"), /key-encryption Worker secret/);
+  await assert.rejects(() => encryptSecret({ ...env, WORDPRESS_KEY_ENC_KEY: "short" }, "x", "engagement-a"), /32 random bytes/);
+  await assert.rejects(() => encryptSecret({ ...env, WORDPRESS_KEY_ENC_KEY: Buffer.alloc(31).toString("base64") }, "x", "engagement-a"), /32 random bytes/);
+  await assert.rejects(() => encryptSecret({ ...env, WORDPRESS_KEY_ENC_KEY: Buffer.alloc(64).toString("base64") }, "x", "engagement-a"), /32 random bytes/);
 });

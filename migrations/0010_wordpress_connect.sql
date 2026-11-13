@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS wordpress_connections (
   site_url TEXT NOT NULL,
   wp_user_login TEXT,
   password_ciphertext TEXT,
+  password_uuid TEXT,
   status TEXT NOT NULL,
   connect_token TEXT NOT NULL,
   connected_at TEXT,
