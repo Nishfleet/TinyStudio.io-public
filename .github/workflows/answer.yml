@@ -1,14 +1,41 @@
 name: answer
 # A change request from the reviewer bot on an agent PR goes back to the fleet's worker
-# lane, which lives in fleet-ops. The stub needs its own trigger, because "the github
-# context is always associated with the caller workflow":
+# lane, which lives in fleet-ops. A red CI run on an agent PR starts a fix round the same
+# way. The stub needs its own triggers, because "the github context is always associated
+# with the caller workflow":
 # https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations
 on:
   pull_request_review:
     types: [submitted]
+  # The two payloads differ: pull_request_review carries github.event.review and
+  # github.event.pull_request; a workflow_run payload carries neither. There, the PR
+  # number comes from github.event.workflow_run.pull_requests[0].number and the head
+  # branch from workflow_run.head_branch (see the gate below). Nothing from the pull request is checked out or run: the job
+  # below only calls the lane's reusable workflow, the top-level `permissions: {}` grants
+  # the workflow nothing, and the job self-grants only `actions: write` to dispatch
+  # agent.yml. https://docs.zizmor.sh/audits/#dangerous-triggers
+  workflow_run: # zizmor: ignore[dangerous-triggers] see the payload note above
+    workflows: [CI]
+    types: [completed]
 permissions: {}
 jobs:
   answer:
+    # Two ways in, and the gate names them so a workflow_run payload never reaches the
+    # review path and a green CI run never starts a fix round: only a red CI run (conclusion
+    # failure) on an agent branch (head_branch agent/) gets through. The lane reads the
+    # caller's github context and handles both payloads itself: on workflow_run it takes
+    # the PR number from github.event.workflow_run.pull_requests[0].number and the head
+    # branch from workflow_run.head_branch (it never reads workflow_run.head_sha), and on
+    # pull_request_review it reads github.event.pull_request and the review as before.
+    # See the dispatch job of the lane, Nishfleet/fleet-ops/.github/workflows/answer.yml@main:
+    # https://github.com/Nishfleet/fleet-ops/blob/main/.github/workflows/answer.yml
+    if: >-
+      github.event_name == 'pull_request_review' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'failure' &&
+        startsWith(github.event.workflow_run.head_branch, 'agent/')
+      )
     # The lane's job dispatches agent.yml on main with the issue and the PR. A called
     # workflow can only lower the caller's GITHUB_TOKEN permissions, never raise them.
     permissions: {actions: write}
