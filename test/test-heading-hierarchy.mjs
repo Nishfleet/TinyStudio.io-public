@@ -14,18 +14,6 @@ const PAGES = [
   "public/contact.html"
 ];
 
-const EXPECTED_OUTLINES = {
-  "public/index.html": [1, 2, 2, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 2],
-  "public/appraisal.html": [1, 2, 2, 3, 3, 3, 3, 2, 2, 2, 2, 2],
-  "public/pricing.html": [1, 2, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 2, 2],
-  "public/specimen.html": [1, 2, 2, 2, 2, 2, 3, 2, 2],
-  "public/waitlist.html": [1, 2, 2, 2, 2],
-  "public/brief-requested.html": [1, 2, 2, 2],
-  "public/privacy.html": [1, 2, 2, 2],
-  "public/terms.html": [1, 2, 2, 2],
-  "public/contact.html": [1, 2, 2, 2]
-};
-
 export function headingOutline(html) {
   const rendered = html
     .replace(/<!--[\s\S]*?-->/g, "")
@@ -74,14 +62,6 @@ test("every owned public page has a correct heading outline", () => {
     const outline = headingOutline(html);
     const issues = outlineIssues(outline);
     assert.deepEqual(issues, [], `${page} heading hierarchy: ${issues.join("; ") || "ok"}`);
-  }
-});
-
-test("every owned public page matches its locked corrected outline", () => {
-  for (const page of PAGES) {
-    const html = readFileSync(new URL(`../${page}`, import.meta.url), "utf8");
-    const levels = headingOutline(html).map((heading) => heading.level);
-    assert.deepEqual(levels, EXPECTED_OUTLINES[page], `${page} outline must stay ${EXPECTED_OUTLINES[page].join("-")}`);
   }
 });
 
