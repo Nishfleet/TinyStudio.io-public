@@ -1,41 +1,53 @@
 # TinyStudio: The Website Correction
 
-**Status:** current plan, set by Nish on 2026-10-12. Supersedes specs 001 to 004 and the tinystudio-in product doc.
-**One line:** a boutique that finds where a high-ticket service website loses money, proves it, fixes it, and proves the fix. Six clients a month. $10,000 per site.
+**Status:** current plan, set by Nish on 2026-10-12; the offer re-ruled by Nish on 2026-11-12 (section 13). Supersedes specs 001 to 004 and the tinystudio-in product doc.
+**One line:** a boutique that finds where a service website loses money, proves it, fixes it, and proves the fix. The free SEO Fix Kit report is the front door; TinyStudio does the fixing and proves it. Repair from $149 once, Care at $299 a month, Growth at $599 a month, and the $10,000 Website Correction for the high-ticket firm.
 
 ---
 
 ## 1. Thesis
 
-Every self-serve SEO or conversion tool ends the same way: a list of problems the customer never fixes. SEO Fix Kit solves the proof half for people who will do the work themselves. TinyStudio is for the owner who will not touch the site and should not have to. They want one firm to find the faults, show the cost of each fault in money, fix them, and show the result. They will pay a boutique price for that, once, and they will send their peers if the work was obviously made with care.
+Every self-serve SEO or conversion tool ends the same way: a list of problems the customer never fixes. SEO Fix Kit solves the proof half, and it is fully free: the free report is where customers come from, and the request for a fix is made inside that report. TinyStudio is for the owner who will not touch the site and should not have to. They want one firm to find the faults, show the cost of each fault in money, fix them, and show the result. They pay a price sized to the work, once or monthly, and they send their peers if the work was obviously made with care.
 
 The bet is not "cheaper agency". The bet is "the only one that proves it". Every claim TinyStudio makes, before and after the sale, is backed by a record the customer can open. That is the moat, and it is why the price holds.
 
 ## 2. Who it is for
 
-- **Customer:** owner or GM of a high-ticket service business. Law, dental and specialist medical, architecture, financial advice, B2B consultancies, agencies, specialist contractors. Revenue $500k to $20M. Average deal value above $2,000. The homepage is the main sales page and the owner knows it underperforms.
-- **Buying moment:** they just lost a deal they should have won, a competitor's site looks sharper, or an ad spend produced visits and no calls.
-- **Not for:** e-commerce, SaaS self-serve, content publishers, anyone who wants a dashboard, anyone who wants ongoing SEO retainers.
+- **Repair, Care and Growth:** two buyers. The owner of a small service firm whose site nobody looks after. The freelance web designer with 10 to 40 client sites, buying per site or in bulk for their own clients.
+- **The Website Correction:** owner or GM of a high-ticket service business. Law, dental and specialist medical, architecture, financial advice, B2B consultancies, agencies, specialist contractors. Revenue $500k to $20M. Average deal value above $2,000. The homepage is the main sales page and the owner knows it underperforms.
+- **Buying moment:** they just lost a deal they should have won, a competitor's site looks sharper, or an ad spend produced visits and no calls. On Repair and Care, the trigger is simpler: the free report in their inbox, and a fix they cannot make themselves.
+- **Not for:** e-commerce, SaaS self-serve, content publishers, anyone who wants a dashboard.
 
 ## 3. The offer
 
-**The Website Correction. $10,000 per site. Six a month.**
+**SEO Fix Kit is fully free and is the front door.** The free report is where customers come from: it names the faults and what each costs, and the request for a fix is made inside the report. TinyStudio is the business: it does the fixing and proves it.
 
-Included, in this order, with an artifact at each step:
+| Step | Price | The customer gets |
+|---|---|---|
+| Repair | $149, $349 or $699, once | We do the fixes. Each one proven by re-check or refunded. 90 days of watching. Sizes: up to 10 simple fixes, up to 30, or everything in the report. |
+| Care | $299 a month | Fixes stay fixed. Two page improvements a month. A monthly check of what ChatGPT says about them. A monthly proof record. |
+| Growth | $599 a month | Care, plus four new or improved pages a month and a weekly AI check on more questions. |
+| The Website Correction | $10,000 per site, once | The October offer, unchanged. Six clients a month. On sale from day one. |
+
+Cancel any time. No contracts. Prices are starting points and will be reset by the first buyers.
+
+Every step gets the same record flow, sized to its price:
 
 | Step | What the customer gets | Artifact |
 |---|---|---|
-| 1. Appraisal (free, gated) | Every fault on the homepage and the three pages that matter, named in order of what it costs them per month | The Appraisal Record |
+| 1. Appraisal (free) | Every fault on the homepage and the pages that matter, named in order of what it costs them per month | The Appraisal Record |
 | 2. Proposal | A fixed scope and price, the fault list they are buying out of, and what is not included | The Proposal |
 | 3. Correction | Copy rewrite, technical SEO repair, conversion fixes, speed fixes, implemented on their site or handed over dev-ready | The Correction Record |
 | 4. Proof | Rerun of the appraisal on the corrected site, before and after side by side | The Proof Receipt |
-| 5. Tracking | 14 days of watching rankings, speed and conversion events, then a close-out note | The Close-out |
+| 5. Tracking | Watching sized to the step: 90 days on Repair, monthly on Care and Growth, 14 days on the Website Correction | The Close-out |
 
-Explicitly not included: new brand identity, new site build from scratch, paid ads, content marketing, monthly retainers, guarantees of revenue. The no-guarantee language carries over from tinystudio-in's service contract: TinyStudio promises proof, not outcomes.
+Explicitly not included: new brand identity, new site build from scratch, paid ads, content marketing, guarantees of revenue. The no-guarantee language carries over from tinystudio-in's service contract: TinyStudio promises proof, not outcomes.
 
-**Why six a month:** one reviewer can hold six sites in their head with full attention. Scarcity is real, not a marketing line, and it is the reason a waitlist exists.
+On every step, the desk refuses: bulk AI articles, bought links, llms.txt sold as a fix, any promise of rankings.
 
-**Why $10,000:** the good boutiques charge $10,000 to $30,000 for homepage positioning sprints (FletchPMM) and $5,000 to $25,000 for one-off conversion work (Growth Rock). None of them bundle the fix and the proof. TinyStudio does, at the bottom of that band, with a visible path to revenue-tiered pricing later.
+**Why six a month on the Website Correction:** one reviewer can hold six sites in their head with full attention. Scarcity is real, not a marketing line, and it is the reason a waitlist exists. Repair, Care and Growth carry no such cap.
+
+**Why $10,000 on the Website Correction:** the good boutiques charge $10,000 to $30,000 for homepage positioning sprints (FletchPMM) and $5,000 to $25,000 for one-off conversion work (Growth Rock). None of them bundle the fix and the proof. TinyStudio does, at the bottom of that band.
 
 ## 4. Brand and voice
 
@@ -70,6 +82,8 @@ Target: the customer should feel the site was made by the same kind of people wh
 
 ## 6. The customer journey, end to end
 
+This section describes the Website Correction end to end. Repair, Care and Growth run the same flow, sized to the price: fewer or smaller correction lines, watching spread over 90 days or over monthly cycles, and the same record at every step.
+
 Each step names the trigger, the human action, the system action and the artifact. Nothing happens without a record.
 
 **6.1 Discover.** The customer arrives from a referral, the specimen, or an AI answer (llms.txt and offer.md keep the answer-readiness map current). No ads.
@@ -99,7 +113,7 @@ Each step names the trigger, the human action, the system action and the artifac
 - **Engine:** SEO Fix Kit is a service, not a fork. TinyStudio calls its audit, uses its implementation-pack format for the fix list and its proof-receipt format for the rerun. Branding and the costing layer live in TinyStudio only. If the engine lacks an endpoint, the change is made in SEO Fix Kit so both products gain it.
 - **Costing layer (TinyStudio-only):** fault type to conversion-delta table with cited sources, multiplied by the customer's deal value and lead volume. Every number in a record traces to a row in this table and to the customer's inputs.
 - **Records:** static HTML rendered once per state change, stored in R2, served at `/records/{id}` with an unguessable id. No login, no dashboard, no app. Printable. The record is the product surface.
-- **Payments:** Dodo Payments checkout, one product, one price, webhook signed and verified before an engagement opens.
+- **Payments:** Dodo Payments checkout, one product per step, webhook signed and verified before an engagement opens.
 - **Desk tooling:** internal only, behind Cloudflare Access. A queue view, the review screen for a record, approve or reject per line. Nothing the customer sees.
 - **Guardrails:** `service-contract` rules ported from tinystudio-in as a module with tests: denied actions, state machine (requested, appraised, proposed, paid, in correction, proved, tracking, closed), no-guarantee copy.
 - **Observability:** every state change is an event row. Weekly scorecard from those rows, nothing else.
@@ -116,7 +130,7 @@ Each step names the trigger, the human action, the system action and the artifac
 - **The specimen.** Once a month, a public appraisal of a well-known service firm's homepage, costed and written exactly like a paid record. It is the best ad and the only one.
 - **Answer-readiness.** `llms.txt` and `offer.md` stay current so AI answers describe the offer correctly.
 - **Referral first.** Every close-out opens a referral. Referred businesses get the month's priority.
-- **No ads, no cold outreach, no content calendar.** If the records are good, they travel.
+- **Outreach by hand, in batches, each batch on the owner's yes.** No content calendar. The message is the prospect's own finished record: their site, costed and proofed, sent before anything is sold. If the records are good, they travel.
 
 ## 10. Metrics
 
@@ -133,18 +147,25 @@ Each step names the trigger, the human action, the system action and the artifac
 
 Each milestone has a finish line and a proof. A milestone is done when the proof exists, not when the code merges.
 
-- **M0. One clean repo (this week).** TinyStudio.io-public is the only repo. Retired Agent Desk surfaces, specs 001 to 004 and dead pages removed. README points at this plan. tinystudio-in archived. Proof: repo tree matches section 5 and 7, CI green.
-- **M1. The site and the appraisal flow (2 weeks).** New design system, the seven pages, the request form with the real six-a-month counter, audit queued on the SEO Fix Kit engine, the Appraisal Record rendered and emailed. Proof: one real appraisal of a real site delivered end to end, record link opens, Lighthouse 100.
-- **M2. Proposal, payment and correction (3 weeks).** Proposal block, Dodo checkout, engagement state machine, guardrails module, desk review screen, Correction Record. Shipped 2026-10-28 on `orch/issue-47`: the engagement table and its journal are in `migrations/0007_engagements.sql`, the state machine and the denied actions are in `src/guardrails.js`, checkout and the signed webhook are in `src/payments.js`, and the reviewer's queue is in `src/desk.js` behind Cloudflare Access. Proof still owed: one test payment opens a real engagement and a correction line goes from draft to approved to recorded, because that needs the Dodo keys and the Access application on the live zone.
-- **M3. Proof, tracking, referral, return (2 weeks).** Proof Receipt, 14-day tracking, Close-out with referral, 90-day drift rerun. Shipped 2026-10-30 on `orch/issue-48`: the receipt and the drift rerun are in `src/record.js` with their tables in `migrations/0008_proof_receipts.sql`, the nightly clock queues the drift rerun jobs and the day-7 and day-14 notes in `src/tracking.js`, the Close-out and its referral are in `src/desk.js` with `src/record.js` rendering the page, and the specimen wall reads the consented proof pairs in `src/worker.js`. A proof receipt is written only by a real engine rerun; the desk's republishes re-render the stored record and write none. Still owed before M4: the SEO Fix Kit engine consumer that reads the drift rerun jobs and the tracking checks outboxes, so the nightly queue turns into real reruns and daily checks. Proof: a full engagement runs through to Close-out on a real site, drift email fires in a test clock.
-- **M4. First paid client.** The specimen published, waitlist open, one paid Correction delivered and its proof pair on the wall with consent.
+- **M0. One clean repo. Built.** TinyStudio.io-public is the only repo. Retired Agent Desk surfaces, specs 001 to 004 and dead pages removed. README points at this plan. tinystudio-in archived. Proof: repo tree matches section 5 and 7, CI green.
+- **M1. The site and the appraisal flow. Built.** New design system, the seven pages, the request form with the real six-a-month counter, audit queued on the SEO Fix Kit engine, the Appraisal Record rendered and emailed. Proof: one real appraisal of a real site delivered end to end, record link opens, Lighthouse 100.
+- **M2. Proposal, payment and correction. Built.** Proposal block, Dodo checkout, engagement state machine, guardrails module, desk review screen, Correction Record. Shipped 2026-10-28 on `orch/issue-47`: the engagement table and its journal are in `migrations/0007_engagements.sql`, the state machine and the denied actions are in `src/guardrails.js`, checkout and the signed webhook are in `src/payments.js`, and the reviewer's queue is in `src/desk.js` behind Cloudflare Access. The one proof still to run on the live zone: a test payment opens a real engagement and a correction line goes from draft to approved to recorded (needs the Dodo keys and the Access application on the live zone).
+- **M3. Proof, tracking, referral, return. Built.** Proof Receipt, 14-day tracking, Close-out with referral, 90-day drift rerun. Shipped 2026-10-30 on `orch/issue-48`: the receipt and the drift rerun are in `src/record.js` with their tables in `migrations/0008_proof_receipts.sql`, the nightly clock queues the drift rerun jobs and the day-7 and day-14 notes in `src/tracking.js`, the Close-out and its referral are in `src/desk.js` with `src/record.js` rendering the page, and the specimen wall reads the consented proof pairs in `src/worker.js`. A proof receipt is written only by a real engine rerun; the desk's republishes re-render the stored record and write none. Proof: a full engagement runs through to Close-out on a real site, drift email fires in a test clock.
+- **M4. Open tickets for this offer (the 2026-11-12 ruling).**
+  - The free front door: SEO Fix Kit fully free, and the request for a fix made inside the free report.
+  - Repair, Care and Growth sellable: the pricing page and checkout with a product per step, the state machine and guardrails sized to each price.
+  - The record flow sized to the price: Repair's 90 days of watching, Care and Growth's monthly proof record, the monthly and weekly AI checks.
+  - The engine consumer still owed from M3: reads the drift rerun jobs and the tracking checks outboxes, so the nightly queue turns into real reruns and daily checks.
+  - First paid Repair delivered, and its proof pair on the wall with consent.
 
 ## 12. Non-goals
 
-No customer dashboard. No self-serve plan. No monthly retainer. No white label. No second brand. No feature that only exists to look busy.
+No customer dashboard. No white label. No second brand. No feature that only exists to look busy.
 
 ## 13. Decisions
 
+- 2026-11-12, Nish: "make it free, but shift the larger vision to tinystudio.io". SEO Fix Kit is fully free and is the front door; TinyStudio at tinystudio.io is the business that does the fixing and proves it.
+- 2026-11-12, Nish: "no waiting for proof. lets go with research and a built product." Repair, Care and Growth go on sale now, alongside the Website Correction.
 - 2026-10-12, Nish: TinyStudio goes done-for-you on the SEO Fix Kit engine at boutique price. One repo remains.
 - 2026-10-12, Nish: price $10,000 per site, matching the good boutiques.
 - 2026-10-12, Nish: tinystudio-in is wiped. Promptly and Drishti pages are not carried over.

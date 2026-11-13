@@ -1,6 +1,6 @@
 # TinyStudio.io
 
-TinyStudio is a boutique that finds where a high-ticket service website loses money, proves it, fixes it, and proves the fix. The offer is the Website Correction: $10,000 per site, six a month, with a free Appraisal first.
+TinyStudio is a boutique that finds where a service website loses money, proves it, fixes it, and proves the fix. The free SEO Fix Kit report is the front door, and the request for a fix is made inside the report. TinyStudio does the fixing: Repair from $149 once, Care at $299 a month, Growth at $599 a month, and the $10,000 Website Correction for the high-ticket firm.
 
 ## Current plan
 
@@ -26,6 +26,7 @@ The plan also lists `/correction`, `/method` and `/records/{id}`; these are buil
 - `/api/appraisal-slots` reports how many of the six appraisals this month are left, and the next open slot.
 - `/api/agent-audit` is the existing audit generation endpoint. It runs at most 50 times a day across all callers, and setting `AGENT_AUDIT_DISABLED=1` turns it off.
 - `/api/engagements/checkout` starts the Dodo checkout for the record's engagement, and returns the checkout URL the record page sends the customer to.
+- `/api/records/{recordId}/lines/{lineId}` and `/api/records/{recordId}/lines` carry the customer's decisions on the record page: approve, edit or skip each line the reviewer passed, or approve all. Keyed by the unguessable record id, no login.
 - `/api/webhooks/dodo` receives the signed Dodo payment event. The signature is verified before an engagement opens, and a replayed event opens nothing new.
 - `/desk` is the reviewer's queue, and `/api/desk/correction-lines`, `/api/desk/correction-lines/{id}/review`, `/api/desk/kickoff`, `/api/desk/tracking-note`, `/api/desk/close-out` and `/api/desk/specimen-consent` write the correction lines, the review decisions, the kickoff note, the day-7 and day-14 tracking notes, the Close-out and the specimen consent. All seven answer 503 until `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set, and every write is journalled with the reviewer and the time.
 - `/health` reports readiness, and `app.tinystudio.io` and `api.tinystudio.io` answer with a 410 retirement response.
