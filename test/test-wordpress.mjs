@@ -25,13 +25,25 @@ import {
   undoLineWrites
 } from "../src/wordpress.js";
 
-const WEBHOOK_SECRET = "whsec_" + Buffer.from("tinystudio-test-secret-key").toString("base64");
-const SIGNER = new Webhook(Buffer.from("tinystudio-test-secret-key").toString("base64"));
+/** @returns {string} a random application-password body of the length WordPress mints */
+function randomKeyBody() {
+  return randomBytes(12).toString("hex");
+}
+
+/** @param {string} body @returns {string} the body as WordPress shows it, in groups of four */
+function displayKey(body) {
+  return body.match(/.{4}/g).join(" ");
+}
+
+const WEBHOOK_KEY = randomBytes(32).toString("base64");
+const WEBHOOK_SECRET = `whsec_${WEBHOOK_KEY}`;
+const SIGNER = new Webhook(WEBHOOK_KEY);
 const PRODUCT_ID = "prod_tinystudio_correction";
+const API_KEY = randomBytes(16).toString("hex");
 const ENC_KEY = randomBytes(32).toString("base64");
-const APP_PASSWORD = "abcd efgh ijkl mnop";
-const STRIPPED_PASSWORD = "abcdefghijklmnop";
-const MINTED_PASSWORD = randomBytes(8).toString("hex");
+const STRIPPED_PASSWORD = randomKeyBody();
+const APP_PASSWORD = displayKey(STRIPPED_PASSWORD);
+const MINTED_PASSWORD = randomKeyBody();
 const ARRIVING_UUID = "aaaaaaaa-1111-4bbb-8ccc-000000000001";
 const MINTED_UUID = "aaaaaaaa-2222-4bbb-8ccc-000000000002";
 const AT = "2026-10-13T12:10:00.000Z";
@@ -61,7 +73,7 @@ function freshEnv() {
   ).run();
   const objects = new Map();
   const env = {
-    DODO_TINYSTUDIO_API_KEY: "test-api-key",
+    DODO_TINYSTUDIO_API_KEY: API_KEY,
     DODO_TINYSTUDIO_PRODUCT_ID: PRODUCT_ID,
     DODO_TINYSTUDIO_WEBHOOK_SECRET: WEBHOOK_SECRET,
     DODO_TINYSTUDIO_MODE: "test",
