@@ -1,6 +1,6 @@
 # TinyStudio.io
 
-TinyStudio is a boutique that finds where a high-ticket service website loses money, proves it, fixes it, and proves the fix. The offer is the Website Correction: $10,000 per site, six a month, with a free Appraisal first.
+TinyStudio is a boutique that finds where a service website loses money, proves it, fixes it, and proves the fix. The free SEO Fix Kit report is the front door, and the request for a fix is made inside the report. TinyStudio does the fixing: Repair from $149 once, Care at $299 a month, Growth at $599 a month, and the $10,000 Website Correction for the high-ticket firm.
 
 ## Current plan
 
