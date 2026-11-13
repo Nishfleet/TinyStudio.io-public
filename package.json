@@ -40,7 +40,7 @@
     "@eslint/js": "^10.0.1",
     "@fontsource-variable/fraunces": "5.3.0",
     "@fontsource-variable/karla": "5.3.0",
-    "cf": "1.0.0-beta.27",
+    "cf": "1.0.0-beta.28",
     "eslint": "^10.13.0",
     "eslint-plugin-no-comments": "^1.2.1",
     "globals": "^17.13.0",
