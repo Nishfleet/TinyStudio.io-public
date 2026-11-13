@@ -1,5 +1,6 @@
 import offer from "../config/offer.json" with { type: "json" };
-import { engagementById, journalEngagementEvent, setPlanState } from "./engagement.js";
+import { advanceEngagement, engagementById, setPlanState } from "./engagement.js";
+import { ENGAGEMENT_SETTLED_STATUSES } from "./guardrails.js";
 
 const CATALOG = new Map(offer.products.map((product) => [product.productKey, product]));
 
@@ -24,6 +25,17 @@ const PRODUCT_ID_VARIABLES = {
   growth: "DODO_TINYSTUDIO_GROWTH_PRODUCT_ID",
   "website-correction": "DODO_TINYSTUDIO_PRODUCT_ID"
 };
+
+/** @param {string | null | undefined} productKey @returns {typeof offer.products[number] | null} the catalog product the key names, or null */
+export function productByKey(productKey) {
+  return CATALOG.get(String(productKey || "").trim()) ?? null;
+}
+
+/** @param {string} productKey @returns {string} the env variable that holds the Dodo product id for this product */
+export function productIdVariable(productKey) {
+  const variables = /** @type {Record<string, string>} */ (PRODUCT_ID_VARIABLES);
+  return variables[String(productKey || "").trim()] || "";
+}
 
 /** @param {{ productIds?: string[] }} payment @param {Env} env @returns {typeof offer.products[number] | null} the one catalog product the payment bought, or null */
 export function paidProduct(payment, env) {
@@ -92,15 +104,10 @@ export async function applyPaidProduct(env, row, engagement, product, payment, a
   return engagement;
 }
 
-/** @param {Env} env @param {EngagementRow} row @param {string} eventType @param {{ subscriptionId?: string }} sub */
-async function advanceMonthlyEngagement(env, row, eventType, sub) {
+/** @param {Env} env @param {EngagementRow} row @param {string} eventType @param {{ subscriptionId?: string }} sub @param {string} at */
+async function advanceMonthlyEngagement(env, row, eventType, sub, at) {
   if (row.status !== "proposed") return row;
-  const claim = await env.DB.prepare("UPDATE engagements SET status = 'paid', changed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?1 AND status = 'proposed'")
-    .bind(row.id)
-    .run();
-  if (Number(claim.meta?.changes) === 0) return row;
-  await journalEngagementEvent(env, row, { type: "status_changed", detail: `${eventType} ${sub.subscriptionId}`, at: new Date().toISOString(), from: "proposed", to: "paid" });
-  return { ...row, status: "paid" };
+  return advanceEngagement(env, row, "paid", { type: "status_changed", detail: `${eventType} ${sub.subscriptionId}`, at });
 }
 
 export const DODO_SUBSCRIPTION_ACTIVE_EVENTS = new Set(["subscription.active", "subscription.renewed"]);
@@ -112,7 +119,7 @@ export const DODO_SUBSCRIPTION_EVENTS = new Set([
   ...DODO_SUBSCRIPTION_FAILED_EVENTS
 ]);
 
-/** @description Handles the Dodo subscription lifecycle for a monthly plan; the signature is already verified and the webhook id already deduplicated when this runs. @param {Env} env @param {{ event: unknown, eventType: string, webhookId: string }} input @param {string} at @returns {Promise<{ ok: boolean, status: number, body: Record<string, unknown>, log: { status: string, reason: string | null } | null }>} */
+/** @description Handles the Dodo subscription lifecycle for a monthly plan; the signature is already verified and the webhook id already deduplicated when this runs. A closing or failing event only lands on an engagement that is settled or whose plan is already active, so a bare proposal cannot be closed or marked past due by a subscription event it never answered. @param {Env} env @param {{ event: unknown, eventType: string, webhookId: string }} input @param {string} at @returns {Promise<{ ok: boolean, status: number, body: Record<string, unknown>, log: { status: string, reason: string | null } | null }>} */
 export async function handleSubscriptionWebhook(env, { event, eventType, webhookId }, at = new Date().toISOString()) {
   const sub = extractDodoSubscription(event);
   const row = (sub.engagementId ? await engagementById(env, sub.engagementId) : null) ?? (await engagementForSubscription(env, sub.subscriptionId));
@@ -128,9 +135,10 @@ export async function handleSubscriptionWebhook(env, { event, eventType, webhook
   if (renewal && sub.amountCents > 0 && sub.amountCents < product.priceCents) {
     return { ok: false, status: 400, body: { error: "offer_mismatch" }, log: { status: "rejected", reason: "offer_mismatch" } };
   }
+  const openedOrSettled = ENGAGEMENT_SETTLED_STATUSES.includes(row.status) || row.plan_status === "active";
 
   if (renewal) {
-    await advanceMonthlyEngagement(env, row, eventType, sub);
+    await advanceMonthlyEngagement(env, row, eventType, sub, at);
     const updated = await setPlanState(env, row, {
       planStatus: "active",
       subscriptionId: sub.subscriptionId || row.subscription_id || null,
@@ -142,6 +150,9 @@ export async function handleSubscriptionWebhook(env, { event, eventType, webhook
   }
 
   if (DODO_SUBSCRIPTION_FAILED_EVENTS.has(eventType)) {
+    if (!openedOrSettled) {
+      return { ok: false, status: 409, body: { error: "engagement_state" }, log: { status: "failed", reason: "engagement_state" } };
+    }
     await setPlanState(env, row, {
       planStatus: "past_due",
       subscriptionId: sub.subscriptionId || row.subscription_id || null,
@@ -152,6 +163,9 @@ export async function handleSubscriptionWebhook(env, { event, eventType, webhook
     return { ok: true, status: 200, body: { received: true, engagementId: row.id, planStatus: "past_due" }, log: { status: "failed", reason: "subscription_payment_failed" } };
   }
 
+  if (!openedOrSettled) {
+    return { ok: false, status: 409, body: { error: "engagement_state" }, log: { status: "failed", reason: "engagement_state" } };
+  }
   const periodEnd = sub.cancelledAt || sub.nextBillingDate || at;
   const endedNow = Date.parse(periodEnd) <= Date.parse(at) || eventType === "subscription.expired";
   if (endedNow) {

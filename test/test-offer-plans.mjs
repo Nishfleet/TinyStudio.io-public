@@ -293,6 +293,9 @@ test("an expired plan closes now, and a failed renewal waits out the grace perio
 test("a renewal extends the period and is journaled as a renewal, not a duplicate", async () => {
   const { env, sqlite } = freshEnv();
   const engagementId = paidEngagement(sqlite, "care");
+  sqlite.prepare(
+    "INSERT INTO engagement_payments (payment_id, engagement_id, webhook_id, product_id, amount_cents, currency, status, role, payload, created_at) VALUES ('pay_first', ?1, 'wh_first', 'prod_care', 29900, 'USD', 'succeeded', 'care', ?2, '2026-11-01T10:00:00.000Z')"
+  ).run(engagementId, JSON.stringify({ paymentId: "pay_first", subscriptionId: "sub_started" }));
   const renewal = signedEvent({
     type: "subscription.renewed",
     webhookId: "wh_renew",
@@ -321,6 +324,84 @@ test("a renewal extends the period and is journaled as a renewal, not a duplicat
   const journaled = sqlite.prepare("SELECT type FROM engagement_events WHERE engagement_id = ? AND type = 'payment_recorded_renewal'").all(engagementId);
   assert.equal(journaled.length, 1);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM engagement_payments WHERE payment_id = 'pay_renewal'").get().n, 1);
+});
+
+test("the first payment after subscription.active is recorded, not mislabelled as a renewal", async () => {
+  const { env, sqlite } = freshEnv();
+  const engagementId = proposedEngagement(sqlite, "care");
+  const started = signedEvent({
+    type: "subscription.active",
+    webhookId: "wh_active_first",
+    productId: PRODUCT_IDS.care,
+    subscriptionId: "sub_early",
+    engagementId,
+    extra: { next_billing_date: "2026-12-13T00:00:00.000Z" }
+  });
+  assert.equal((await send(env, started)).status, 200);
+
+  const firstCharge = signedEvent({
+    webhookId: "wh_first_charge",
+    productId: PRODUCT_IDS.care,
+    subscriptionId: "sub_early",
+    engagementId,
+    paymentId: "pay_first_charge"
+  });
+  const firstResult = await send(env, firstCharge, "2026-11-13T10:05:00.000Z");
+  assert.equal(firstResult.status, 200);
+  assert.equal(
+    sqlite.prepare("SELECT COUNT(*) AS n FROM engagement_events WHERE engagement_id = ? AND type = 'payment_recorded_renewal'").get(engagementId).n,
+    0,
+    "the subscription's first charge is not a renewal"
+  );
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM engagement_payments WHERE payment_id = 'pay_first_charge'").get().n, 1, "the first charge is still recorded");
+
+  const secondCharge = signedEvent({
+    webhookId: "wh_second_charge",
+    productId: PRODUCT_IDS.care,
+    subscriptionId: "sub_early",
+    engagementId,
+    paymentId: "pay_second_charge"
+  });
+  const secondResult = await send(env, secondCharge, "2026-11-13T11:05:00.000Z");
+  assert.equal(secondResult.status, 200);
+  assert.equal(
+    sqlite.prepare("SELECT COUNT(*) AS n FROM engagement_events WHERE engagement_id = ? AND type = 'payment_recorded_renewal'").get(engagementId).n,
+    1,
+    "the next charge for the same subscription is the renewal"
+  );
+});
+
+test("closing and failing subscription events cannot touch an engagement that was never opened", async () => {
+  const { env, sqlite } = freshEnv();
+  const proposedId = proposedEngagement(sqlite, "care");
+  const cancelled = signedEvent({
+    type: "subscription.cancelled",
+    webhookId: "wh_cancel_proposed",
+    productId: PRODUCT_IDS.care,
+    subscriptionId: "sub_never",
+    engagementId: proposedId,
+    extra: { next_billing_date: "2026-12-01T00:00:00.000Z" }
+  });
+  const result = await send(env, cancelled);
+  assert.equal(result.status, 409);
+  assert.deepEqual(result.body, { error: "engagement_state" });
+  const row = sqlite.prepare("SELECT status, plan_status, period_ends_at FROM engagements WHERE id = ?").get(proposedId);
+  assert.deepEqual({ ...row }, { status: "proposed", plan_status: null, period_ends_at: null }, "a proposal is not cancelled by a subscription event it never answered");
+  const logged = sqlite.prepare("SELECT status, reason FROM dodo_webhook_events WHERE webhook_id = 'wh_cancel_proposed'").get();
+  assert.deepEqual({ ...logged }, { status: "failed", reason: "engagement_state" });
+
+  const pastDue = signedEvent({
+    type: "subscription.past_due",
+    webhookId: "wh_past_due_proposed",
+    productId: PRODUCT_IDS.care,
+    subscriptionId: "sub_never",
+    engagementId: proposedId,
+    extra: { past_due_ends_at: "2026-11-20T00:00:00.000Z" }
+  });
+  const failedResult = await send(env, pastDue);
+  assert.equal(failedResult.status, 409);
+  assert.deepEqual(failedResult.body, { error: "engagement_state" });
+  assert.equal(sqlite.prepare("SELECT plan_status FROM engagements WHERE id = ?").get(proposedId).plan_status, null);
 });
 
 test("subscription events go through the same signature and engagement guards", async () => {

@@ -1912,7 +1912,7 @@ async function checkoutResponse(request, env, url) {
   const sessionSlot = await claimCheckoutSlot(env, await checkoutSessionBucket(request, recordId), MAX_CHECKOUTS_PER_IP_PER_DAY);
   if (!sessionSlot.ok) return sessionSlot.response;
   try {
-    const checkout = await startCheckoutForRequest(env, { recordId });
+    const checkout = await startCheckoutForRequest(env, { recordId, productKey: cleanField(form.get("product"), 64) });
     return browserForm
       ? withSecurityHeaders(redirectResponse(checkout.checkoutUrl))
       : withSecurityHeaders(jsonResponse({ ok: true, checkoutUrl: checkout.checkoutUrl }));
