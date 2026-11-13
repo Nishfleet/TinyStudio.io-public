@@ -42,6 +42,8 @@ jobs:
     name: Secret scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      RANGE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}..${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -51,7 +53,10 @@ jobs:
         run: |
           curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.27.2/gitleaks_8.27.2_linux_x64.tar.gz | tar -xz -C /tmp
           sudo mv /tmp/gitleaks /usr/local/bin/
-      - run: gitleaks detect --source . --no-banner --redact
+      # --log-opts scopes the scan to the commits this event adds: unscoped, gitleaks reads every
+      # branch (the full-history checkout fetches them all), so a finding on one unmerged branch
+      # fails this required check on every other PR in the repo.
+      - run: gitleaks detect --source . --no-banner --redact --log-opts "$RANGE"
 
   zizmor:
     # Unsafe workflow triggers and token placement reached review six times (#60, #87, #89).
