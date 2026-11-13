@@ -948,7 +948,12 @@ function deletionRequestMessage(env, email, at) {
   };
 }
 
-function deletionRequestedPage() {
+/** @param {string} emailed "sent" or "failed" */
+function deletionRequestedPage(emailed) {
+  const deskLine =
+    emailed === "failed"
+      ? "<p>We have the address you sent, and your request is recorded.</p>"
+      : "<p>We have the address you sent, and the desk has it by email.</p>";
   return withSecurityHeaders(
     new Response(
       `<!doctype html>
@@ -961,7 +966,7 @@ function deletionRequestedPage() {
   <body>
     <main>
       <h1>Your deletion request is recorded.</h1>
-      <p>We have the address you sent, and the desk has it by email.</p>
+      ${deskLine}
       <p><a href="https://tinystudio.io/">Back to TinyStudio.io</a></p>
     </main>
   </body>
@@ -1025,7 +1030,7 @@ async function deletionRequestResponse(request, env, url) {
     console.warn("tinystudio_deletion_email_failed", errorMessage(error) || "send failed");
   }
 
-  if (wantsHtmlRedirect(request)) return deletionRequestedPage();
+  if (wantsHtmlRedirect(request)) return deletionRequestedPage(emailed);
   return jsonResponse({ ok: true, email: emailed }, { status: 202 });
 }
 

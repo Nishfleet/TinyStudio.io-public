@@ -129,9 +129,30 @@ test("a no-JS form post lands on the confirmation page", async () => {
     env
   );
   assert.equal(res.status, 200);
-  assert.match(await res.text(), /deletion request is recorded/);
+  const text = await res.text();
+  assert.match(text, /deletion request is recorded/);
+  assert.match(text, /the desk has it by email/);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM deletion_requests").get().n, 1);
   assert.equal(sent.length, 1);
+});
+
+test("a no-JS form post with a failed send says only that the request is recorded", async () => {
+  const { sqlite, env } = freshEnv();
+  env.EMAIL = { async send() { throw new Error("mail down"); } };
+  const res = await worker.fetch(
+    new Request("https://tinystudio.io/api/deletion-request", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "text/html", Referer: "https://tinystudio.io/contact" },
+      body: new URLSearchParams({ email: "dana@clinic.example" }).toString()
+    }),
+    env
+  );
+  assert.equal(res.status, 200);
+  const text = await res.text();
+  assert.match(text, /deletion request is recorded/);
+  assert.match(text, /your request is recorded/);
+  assert.doesNotMatch(text, /the desk has it by email/);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM deletion_requests").get().n, 1);
 });
 
 test("a failed send still keeps the request and never claims the email went out", async () => {
