@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<ruleset name="TinyStudio Connector">
+	<description>WordPress Coding Standards for the TinyStudio Connector plugin.</description>
+
+	<file>.</file>
+	<exclude-pattern>/vendor/</exclude-pattern>
+
+	<rule ref="WordPress"/>
+
+	<!-- PHPUnit 10 discovers test classes by file name, so the test files are
+	     named after their classes instead of the hyphenated style; the file
+	     name sniffs are suspended for the tests directory for that reason. -->
+	<rule ref="WordPress.Files.FileName">
+		<exclude-pattern>/tests/</exclude-pattern>
+	</rule>
+
+	<config name="testVersion" value="7.4-"/>
+	<rule ref="PHPCompatibilityWP"/>
+
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+	<arg value="sp"/>
+</ruleset>
