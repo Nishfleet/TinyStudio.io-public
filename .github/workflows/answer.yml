@@ -10,20 +10,22 @@ on:
     workflows: [CI]
     types: [completed]
 permissions: {}
-# A workflow_run payload has no review, so the lane reads the PR number from this env
-# value (workflow_run.pull_requests[0].number) instead of from github.event.review. It
-# is data only: the job below is a uses: call with no run: step and no checkout, so no
-# PR-controlled string is ever interpolated into a script or fetched, which is what the
-# dangerous-triggers ignore above claims.
-env:
-  ANSWER_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+# The lane gets no env from this stub: a caller's workflow-level env is not inherited
+# by a reusable workflow, only the caller's github context is, per the link in the
+# header. The lane reads the PR number out of that context itself, event by event:
+# github.event.pull_request.number on a submitted review,
+# github.event.workflow_run.pull_requests[0].number on a finished CI run, as the review
+# path already did before this file ever set env. The event is data only: the job below
+# is a uses: call with no run: step and no checkout, so no PR-controlled string is ever
+# interpolated into a script or fetched, which is what the dangerous-triggers ignore
+# above claims.
 jobs:
   answer:
     # A submitted review starts a fix round. A finished CI run only starts one when the
     # run is red and on an agent branch (agent/*): not a green run, and not a run on
     # main or a merge queue. The comparison is expression-evaluated, not shell, so the
-    # head_branch read is not an injection path. The lane keeps its own agent-PR check
-    # on the PR itself before it dispatches.
+    # head_branch read is not an injection path. This gate is the only agent-PR check
+    # this file makes.
     if: >-
       github.event_name == 'pull_request_review' ||
       (
