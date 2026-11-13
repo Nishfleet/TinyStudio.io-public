@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
@@ -27,10 +28,10 @@ import {
 const WEBHOOK_SECRET = "whsec_" + Buffer.from("tinystudio-test-secret-key").toString("base64");
 const SIGNER = new Webhook(Buffer.from("tinystudio-test-secret-key").toString("base64"));
 const PRODUCT_ID = "prod_tinystudio_correction";
-const ENC_KEY = "nKGWU0YTMUuot7uZWU5jX0OgNSH9pBG+/N5ZDhINOWo=";
+const ENC_KEY = randomBytes(32).toString("base64");
 const APP_PASSWORD = "abcd efgh ijkl mnop";
 const STRIPPED_PASSWORD = "abcdefghijklmnop";
-const MINTED_PASSWORD = "fedcba9876543210";
+const MINTED_PASSWORD = randomBytes(8).toString("hex");
 const ARRIVING_UUID = "aaaaaaaa-1111-4bbb-8ccc-000000000001";
 const MINTED_UUID = "aaaaaaaa-2222-4bbb-8ccc-000000000002";
 const AT = "2026-10-13T12:10:00.000Z";
