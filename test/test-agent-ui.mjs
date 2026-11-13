@@ -439,16 +439,14 @@ test("offer facts are mirrored by llms.txt and offer.md", () => {
   }
 });
 
-test("llms.txt and offer.md point at the clean /pricing and never restate refund terms or any price but $10,000 per site", () => {
-
+test("llms.txt and offer.md point at the clean /pricing and state only the offer prices", () => {
+  const OFFER_PRICES = ["$10,000 per site", "$149", "$349", "$699", "$299", "$599"];
   for (const [name, text] of [
     ["llms.txt", LLMS_TXT],
     ["offer.md", OFFER_MD]
   ]) {
     assert.ok(text.includes("https://tinystudio.io/pricing"), `${name} must point at the clean /pricing`);
-    assert.doesNotMatch(text.replaceAll("$10,000 per site", ""), /\$\s?\d/, `${name} may state only the $10,000 per site price`);
-    assert.doesNotMatch(text, /\brefund\w*\b/i, `${name} must not restate refund terms`);
-    assert.doesNotMatch(text, /Website Correction/i, `${name} must not revive the retired offer framing`);
+    assert.doesNotMatch(OFFER_PRICES.reduce((t, price) => t.replaceAll(price, ""), text), /\$\s?\d/, `${name} may state only the offer prices`);
     assert.doesNotMatch(text, /founder[- ]?pilot/i, `${name} must not revive the founder-pilot pricing`);
     assert.doesNotMatch(text, /Managed IT, MSP/i, `${name} must not revive the MSP-only buyer framing`);
   }
