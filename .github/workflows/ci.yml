@@ -56,6 +56,11 @@ jobs:
       # --log-opts scopes the scan to the commits this event adds: unscoped, gitleaks reads every
       # branch (the full-history checkout fetches them all), so a finding on one unmerged branch
       # fails this required check on every other PR in the repo.
+      # Fail rather than scan nothing: on a trigger without PR or merge-group SHAs (push,
+      # workflow_dispatch, anything added later) both sides are empty, RANGE is "..", git reads
+      # that as HEAD..HEAD, and gitleaks would scan zero commits and report success.
+      - name: Non-empty scan range
+        run: test -n "${RANGE%%..*}" && test -n "${RANGE##*..}"
       - run: gitleaks detect --source . --no-banner --redact --log-opts "$RANGE"
 
   zizmor:
