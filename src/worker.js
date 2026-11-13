@@ -11,6 +11,7 @@ import {
   setDeskSpecimenConsent
 } from "./desk.js";
 import { handleDodoWebhook, startCheckoutForRequest } from "./payments.js";
+import { customerDecisionResponse } from "./customer-lines.js";
 import { deskQueuePage } from "./desk-page.js";
 import { ENGAGEMENT_ID } from "./engagement.js";
 import { queueTrackingChecks } from "./tracking.js";
@@ -2484,6 +2485,10 @@ const handler = {
 
     if (url.pathname === "/api/engagements/checkout") {
       return checkoutResponse(request, env, url);
+    }
+
+    if (url.pathname.startsWith("/api/records/") && url.pathname.includes("/lines")) {
+      return customerDecisionResponse(request, env, url);
     }
 
     if (url.pathname === "/api/webhooks/dodo") {

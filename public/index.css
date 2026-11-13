@@ -60,7 +60,7 @@
   .signal[hidden]{display:none}
   .signal:focus{outline:none}
   .micro{margin-top:16px;font-size:13.5px;color:var(--muted)}
-  .meta{margin:54px auto 0;max-width:900px;display:grid;grid-template-columns:repeat(3,1fr);
+  .meta{margin:54px auto 0;max-width:1000px;display:grid;grid-template-columns:repeat(4,1fr);
     border-top:1px solid var(--hair);padding-top:22px}
   .meta div{text-align:center;border-right:1px solid var(--hair)}
   .meta div:last-child{border-right:0}
