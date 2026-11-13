@@ -33,6 +33,12 @@ described below. We do not ask for passwords, card details on this site
 | Paid correction engagement (created for you) | kickoff note with what you asked us to change; checkout session identifier; whether you consented to your record appearing in the specimen gallery |
 | Anything you write to us by email or in the desk workflow | the text you send, and the work we write back (correction before/after lines, day-7 and day-14 tracking notes) — this is our working file with you |
 
+The newsletter / leak-audit sign-up is not an appraisal request. The code
+stores the address and sends that address no email at all today, so no
+sequence reaches it. `NISH:` Confirm what that sign-up is for and whether it
+should carry an email sequence of its own; if it does, Section 3 needs the
+basis for it, and the terms need to say so in their Section 3.
+
 ### 2.2 What the forms store about your visit (technical fields)
 
 For anti-abuse and basic sign-up bookkeeping, the following technical fields are
@@ -78,10 +84,10 @@ run happened, with the hashed IP and user agent as above.
 
 ### 2.5 The Appraisal Record (object storage)
 
-Your appraisal is published as a PDF-like web page in an unguessable Cloudflare
-R2 bucket — `records/<random-id>.html` — because it must survive every state
-change without being emailed as an attachment. It is stored as HTML and
-contains what you see on `/records/<id>`:
+Your appraisal is published as a web page (HTML) at an unguessable address in a
+Cloudflare R2 bucket — `records/<random-id>.html`, served at `/records/<id>` —
+because it must survive every state change without being emailed as an
+attachment. The record page contains:
 
 - the site URL we appraised and the name you gave;
 - the faults found on your site and the evidence for each;
@@ -112,9 +118,9 @@ consent copy matches the flag exactly.
 | Name, email, website, business type, deal value, monthly leads, referral code | To send the appraisal you asked for; to hold your slot on this month or the waitlist; to send the record and the confirmation | Performance of a contract (steps taken at your request before payment: GDPR Art. 6(1)(b)) |
 | Deal value, monthly leads, website, faults and evidence, correction lines, tracking notes, kickoff note | To do the work you paid for and to prove the result | Performance of the consented contract for the paid correction (Art. 6(1)(b)) |
 | Email, hashed IP, user agent, page path, referrer, timestamps, rate-limit counters | To stop flood and repeat abuse of the free forms and daily limits | Legitimate interests in operating a working service (Art. 6(1)(f)); IP is hashed and day-scoped for exactly this reason |
-| Payment identifiers, amount, webhook payload | To match the payment to the engagement and honour anti-fraud checks | Performance of the contract (Art. 6(1)(b)), plus legal obligation to keep n.finance accounts (Art. 6(1)(c)) |
+| Payment identifiers, amount, webhook payload | To match the payment to the engagement and honour anti-fraud checks | Performance of the contract (Art. 6(1)(b)), plus legal obligation to keep financial and tax records (Art. 6(1)(c)) |
 | Specimen consent and record link | To show off the work honestly | Consent (Art. 6(1)(a)) — you can withdraw; the record then leaves the gallery |
-| Confirmation, record-ready, drift emails | To let you know where things stand | Legitimate interest / Art. 6(1)(b) |
+| Confirmation, record-ready, drift emails | To let you know where things stand | Performance of a contract (Art. 6(1)(b)) — each of these emails is a step of the engagement you asked for |
 
 `NISH:` Confirm the exact named legal basis for each row when the business
 identity (Section 1) is settled. The table above is our best-call draft, not

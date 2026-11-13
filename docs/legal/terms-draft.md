@@ -39,8 +39,10 @@ referral code can skip that wait.
   you gave us. A named person reviews the output before it is sent.
 - **What you give us.** One website; one email; one name; the business type;
   a deal value above zero; a rough monthly lead count. No welcome sequence:
-  the only emails we send are the confirmation, the record link, and, if you
-  bought the paid correction, the drift alerts you asked for.
+  the only emails we send about the appraisal are the confirmation, the record
+  link, and, if you bought the paid correction, the drift alerts you asked
+  for. Sign-ups on this site that are not an appraisal request are covered in
+  the privacy notice.
 - **What it is not.** The appraisal is an opinion on documents. It is not a
   developer engagement (the paid correction is), it is not legal advice, it
   is not a re-execution of your site, and it is not a purchase.
@@ -173,9 +175,10 @@ privacy notice is the place to look.
 - **Free appraisal, six a month, waitlist, referral code skips the wait:**
   `src/worker.js` (`MAX_APPRAISALS_PER_MONTH = 6`, `placeAppraisalRequest`,
   `appraisal_referrals`), `/pricing` page copy.
-- **Confirmations only, no sequence:** `src/worker.js`
+- **Confirmations only, no sequence, appraisal emails only:** `src/worker.js`
   (`sendConfirmationOnce` — exactly one confirmation email, one record ready
-  email, one drift email).
+  email, one drift email; a sign-up address that is not an appraisal request
+  gets no email at all).
 - **$10,000 USD, six slots, ten working days, access + decision maker,
   no guarantee:** `config/offer.json`.
 - **Payment on Dodo Payments, webhooks, no card handling here:**
