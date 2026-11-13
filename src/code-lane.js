@@ -260,12 +260,12 @@ export async function applyApprovedLines(env, input, reviewer, at) {
     fileState.set(filePath, current);
     staged.push({ line, path: filePath, content: current });
   }
+  await assertOk(
+    await githubFetch(env, "POST", `${repo}/git/refs`, token, JSON.stringify({ ref: `refs/heads/${branch}`, sha: baseSha })),
+    "BRANCH_EXISTS",
+    "an order for this engagement is already open on the repository"
+  );
   try {
-    await assertOk(
-      await githubFetch(env, "POST", `${repo}/git/refs`, token, JSON.stringify({ ref: `refs/heads/${branch}`, sha: baseSha })),
-      "BRANCH_EXISTS",
-      "an order for this engagement is already open on the repository"
-    );
     /** @type {{ line: CorrectionLineRow, commit: string }[]} */
     const applied = [];
     for (const { line, path, content } of staged) {

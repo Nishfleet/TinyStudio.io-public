@@ -317,6 +317,27 @@ test("code lane: a commit failure deletes the order branch so the retry starts c
   assert.equal(stub.branches.has(`refs/heads/${branch}`), false, "the retry will not stop at BRANCH_EXISTS");
 });
 
+test("code lane: a second apply that hits BRANCH_EXISTS leaves the first order's branch alone", async () => {
+  const { env, stub } = await freshEnv();
+  const { engagement } = await engagementWithApprovedLine(env);
+  const branch = `tinystudio/correction-${engagement.id.slice(0, 8)}`;
+  await applyApprovedLines(env, { engagementId: engagement.id }, "Jev", "2026-10-12T13:00:00.000Z");
+  assert.equal(stub.branches.has(`refs/heads/${branch}`), true, "the first apply opens its order branch");
+  const deletes = stub.calls.filter((call) => call.method === "DELETE");
+  assert.equal(deletes.length, 0, "a clean apply deletes nothing");
+  await assert.rejects(
+    applyApprovedLines(env, { engagementId: engagement.id }, "Jev", "2026-10-12T14:00:00.000Z"),
+    { code: "BRANCH_EXISTS" },
+    "the second apply stops at the branch that is already open"
+  );
+  assert.equal(stub.branches.has(`refs/heads/${branch}`), true, "the first order's branch survives the second apply");
+  assert.equal(
+    stub.calls.some((call) => call.method === "DELETE" && call.path === `/repos/acme/site-repo/git/refs/heads/${branch}`),
+    false,
+    "the catch never deletes a branch this call did not create"
+  );
+});
+
 test("code lane: a file of 200 KB still encodes for its commit", async () => {
   const { env, stub } = await freshEnv({
     fileOverrides: new Map([["site/index.html", `${"x".repeat(200 * 1024)}\n<p>Book a visit today.</p>\n`]])
