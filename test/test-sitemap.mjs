@@ -22,6 +22,19 @@ const SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9";
 const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>';
 const SITE_PREFIX = "https://tinystudio.io/";
 
+const OLD_THREE_URL_SITEMAP = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://tinystudio.io/</loc>
+  </url>
+  <url>
+    <loc>https://tinystudio.io/offer.md</loc>
+  </url>
+  <url>
+    <loc>https://tinystudio.io/llms.txt</loc>
+  </url>
+</urlset>`;
+
 export function parseLocs(xml) {
   return [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
 }
@@ -91,4 +104,77 @@ test("sitemap passes the full structural contract", () => {
 test("robots.txt keeps pointing at the sitemap", () => {
   const robots = readFileSync(new URL(`../${ROBOTS_PATH}`, import.meta.url), "utf8");
   assert.ok(robots.includes("Sitemap: https://tinystudio.io/sitemap.xml"), "robots.txt must keep the Sitemap directive");
+});
+
+test("checker rejects the old three-URL sitemap (missing /appraisal /pricing /specimen)", () => {
+  const issues = sitemapIssues(OLD_THREE_URL_SITEMAP);
+  assert.ok(issues.some((issue) => issue.includes("missing: https://tinystudio.io/appraisal")), `got: ${issues.join("; ")}`);
+  assert.ok(issues.some((issue) => issue.includes("/privacy")), `got: ${issues.join("; ")}`);
+  assert.ok(issues.some((issue) => issue.includes("/pricing")), `got: ${issues.join("; ")}`);
+  assert.ok(issues.some((issue) => issue.includes("/specimen")), `got: ${issues.join("; ")}`);
+});
+
+test("checker rejects /brief-requested and /agent-desk entries", () => {
+  const withStalePaths = `${OLD_THREE_URL_SITEMAP}
+  <url>
+    <loc>https://tinystudio.io/brief-requested</loc>
+  </url>
+  <url>
+    <loc>https://tinystudio.io/agent-desk</loc>
+  </url>`;
+  const issues = sitemapIssues(withStalePaths);
+  assert.ok(issues.some((issue) => issue.includes("stale path must not be listed: /brief-requested")), `got: ${issues.join("; ")}`);
+  assert.ok(issues.some((issue) => issue.includes("stale path must not be listed: /agent-desk")), `got: ${issues.join("; ")}`);
+});
+
+test("checker rejects schema drift (extra url elements and wrong host/trailing slash)", () => {
+  const drifted = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://tinystudio.io/</loc>
+    <lastmod>2026-08-09</lastmod>
+  </url>
+  <url>
+    <loc>https://tinystudio.io/audit/</loc>
+  </url>
+  <url>
+    <loc>http://tinystudio.io/agents</loc>
+  </url>
+</urlset>`;
+  const issues = sitemapIssues(drifted);
+  assert.ok(issues.some((issue) => issue.includes("must not carry elements beyond <loc>")), `got: ${issues.join("; ")}`);
+  assert.ok(issues.some((issue) => issue.includes("only the root may carry a trailing slash")), `got: ${issues.join("; ")}`);
+  assert.ok(issues.some((issue) => issue.includes("absolute https://tinystudio.io/ URL")), `got: ${issues.join("; ")}`);
+});
+
+test("checker rejects a reordered or duplicated loc set", () => {
+  const reordered = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://tinystudio.io/</loc>
+  </url>
+  <url>
+    <loc>https://tinystudio.io/pricing</loc>
+  </url>
+  <url>
+    <loc>https://tinystudio.io/pricing</loc>
+  </url>
+  <url>
+    <loc>https://tinystudio.io/appraisal</loc>
+  </url>
+  <url>
+    <loc>https://tinystudio.io/contact</loc>
+  </url>
+  <url>
+    <loc>https://tinystudio.io/specimen</loc>
+  </url>
+  <url>
+    <loc>https://tinystudio.io/offer.md</loc>
+  </url>
+  <url>
+    <loc>https://tinystudio.io/llms.txt</loc>
+  </url>
+</urlset>`;
+  const issues = sitemapIssues(reordered);
+  assert.ok(issues.some((issue) => issue.includes("loc set must be exactly")), `got: ${issues.join("; ")}`);
 });

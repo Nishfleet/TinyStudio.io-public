@@ -64,3 +64,62 @@ test("every owned public page has a correct heading outline", () => {
     assert.deepEqual(issues, [], `${page} heading hierarchy: ${issues.join("; ") || "ok"}`);
   }
 });
+
+test("checker rejects the known bad shape: h2 -> h4 skips (homepage stops, identity, faq)", () => {
+  const bad = [
+    "<h1>Most of them leave</h1>",
+    "<h2>How the work runs</h2>",
+    "<h4>Everything on the table</h4>",
+    "<h4>The loop</h4>",
+    "<h2>This one. tinystudio.io.</h2>",
+    "<h4>What TinyStudio does</h4>",
+    "<h2>Before you ask</h2>",
+    "<h4>What exactly do I get for free?</h4>"
+  ].join("");
+  const issues = outlineIssues(headingOutline(bad));
+  assert.ok(issues.some((issue) => issue.includes("skips from h2 to h4")), `expected h2->h4 skips, got: ${issues.join("; ")}`);
+});
+
+test("checker rejects the known bad shape: h1 -> h3 roster, specimen and brief-requested", () => {
+  const bad = [
+    "<h1>Seven specialists</h1>",
+    "<h3>Landing Page Fixer</h3>",
+    "<h3>Weekly Performance Analyst</h3>",
+    "<h4>What the desk does</h4>",
+    "<h2>Why this isn't something you can just prompt</h2>",
+    "<h1>Four ways this clinic loses people</h1>",
+    "<h3>The fee list is excellent</h3>",
+    "<h3>The proof is real</h3>",
+    "<h4>Two passes not run</h4>",
+    "<h2>Confidentiality</h2>",
+    "<h1>That's it. Nothing else needed from you.</h1>",
+    "<h3>We read the page</h3>",
+    "<h3>Findings land in your inbox</h3>",
+    "<h3>Then nothing, unless you want something</h3>"
+  ].join("");
+  const issues = outlineIssues(headingOutline(bad));
+  assert.ok(issues.some((issue) => issue.includes("skips from h1 to h3")), `expected h1->h3 skips, got: ${issues.join("; ")}`);
+});
+
+test("checker rejects a page that does not start with a single h1", () => {
+  const noH1 = "<h2>Starts at h2</h2>";
+  const twoH1 = "<h1>First</h1><p>gap</p><h1>Second</h1>";
+  const firstIssues = outlineIssues(headingOutline(noH1));
+  assert.ok(firstIssues.some((issue) => issue.includes("first heading is h2")), `got: ${firstIssues.join("; ")}`);
+  const countIssues = outlineIssues(headingOutline(twoH1));
+  assert.ok(countIssues.some((issue) => issue.includes("exactly one h1")), `got: ${countIssues.join("; ")}`);
+});
+
+test("checker ignores headings hidden in comments, scripts and styles", () => {
+  const html = [
+    "<h1>Real</h1>",
+    "<!-- <h2>comment fake</h2> -->",
+    "<script>const template = \"<h2>script fake</h2>\";</script>",
+    "<style>h3.fake { display: none }</style>",
+    "<h2>Real section</h2>"
+  ].join("");
+  const outline = headingOutline(html);
+  assert.deepEqual(outline.map((heading) => heading.level), [1, 2]);
+  assert.equal(outline[0].text, "Real");
+  assert.equal(outline[1].text, "Real section");
+});
