@@ -144,7 +144,7 @@ test("engagement: the correction line is the unit the desk reviews, and the reco
   assert.equal((await correctionLines(env, current.id)).length, 1);
   await assert.rejects(reviewCorrectionLine(env, line, "hold", { reviewer: "Jev", note: "", at: "2026-10-12T13:00:00.000Z" }), /unknown correction review action/);
   const approved = await reviewCorrectionLine(env, line, "approve", { reviewer: "Jev", note: "", at: "2026-10-12T13:00:00.000Z" });
-  assert.equal(approved.status, "approved");
+  assert.equal(approved.status, "proposed", "the reviewer's pass proposes the line to the customer");
 
   const proved = await advanceEngagement(env, current, "proved", { type: "status_changed", detail: "review complete", at: "2026-10-12T14:00:00.000Z" });
   const withNote = await setKickoffNote(env, proved, "Tracking starts 1 November 2026.", "2026-10-12T15:00:00.000Z");

@@ -16,6 +16,13 @@ export async function engagementById(env, engagementId) {
   return row ?? null;
 }
 
+/** @param {Env} env @param {string} recordId @returns {Promise<EngagementRow | null>} */
+export async function engagementByRecordId(env, recordId) {
+  /** @type {EngagementRow | null} */
+  const row = await env.DB.prepare("SELECT * FROM engagements WHERE record_id = ?1").bind(recordId).first();
+  return row ?? null;
+}
+
 /** @param {Env} env @param {EngagementRef} engagement @param {{ type: string, detail?: string | null, at: string, from?: string | null, to?: string }} event */
 export async function journalEngagementEvent(env, engagement, { type, detail, at, from = engagement.status, to = engagement.status }) {
   await env.DB.prepare(
@@ -118,7 +125,7 @@ export async function correctionLines(env, engagementId) {
 
 /** @param {Env} env @param {CorrectionLineRow} line @param {unknown} action @param {{ reviewer: unknown, note?: unknown, at: string }} review */
 export async function reviewCorrectionLine(env, line, action, { reviewer, note, at }) {
-  const decision = action === "approve" ? "approved" : action === "reject" ? "rejected" : "";
+  const decision = action === "approve" ? "proposed" : action === "reject" ? "rejected" : "";
   if (!decision) throw new Error("unknown correction review action");
   assertCorrectionLineStatus(line.status, decision);
   const reviewerName = String(reviewer ?? "").trim();
@@ -139,16 +146,58 @@ export async function reviewCorrectionLine(env, line, action, { reviewer, note, 
   return reviewed;
 }
 
+/** @type {Record<string, string>} */
+const CUSTOMER_DECISION_TARGETS = { approve: "approved", edit: "draft", skip: "skipped" };
+/** @type {Record<string, string>} */
+const CUSTOMER_DECISION_DETAILS = {
+  approve: "the customer approved this line",
+  edit: "the customer sent their own wording",
+  skip: "the customer left this line alone"
+};
+
+/** @param {Env} env @param {CorrectionLineRow} line @param {string} decision @param {{ text?: unknown } | undefined} input @param {string} at */
+export async function decideCorrectionLine(env, line, decision, input, at) {
+  const to = CUSTOMER_DECISION_TARGETS[decision];
+  if (!to) throw new Error("unknown customer decision");
+  assertCorrectionLineStatus(line.status, to);
+  const text = String(input?.text ?? "").trim();
+  if (decision === "edit" && !text) throw new Error("an edit needs the customer's own wording");
+  if (decision === "edit") {
+    await env.DB.prepare("UPDATE correction_lines SET status = 'draft', after_text = ?1, changed_at = ?2 WHERE id = ?3 AND status = 'proposed'")
+      .bind(text, at, line.id)
+      .run();
+  } else {
+    await env.DB.prepare("UPDATE correction_lines SET status = ?1, changed_at = ?2 WHERE id = ?3 AND status = 'proposed'")
+      .bind(to, at, line.id)
+      .run();
+  }
+  await env.DB.prepare(
+    "INSERT INTO correction_reviews (line_id, engagement_id, reviewer, action, note, created_at) VALUES (?1, ?2, 'customer', ?3, ?4, ?5)"
+  )
+    .bind(line.id, line.engagement_id, `customer_${decision}`, decision === "edit" ? text : null, at)
+    .run();
+  await journalEngagementEvent(env, lineJournalRow(line), {
+    type: `correction_line_customer_${decision}`,
+    detail: `${line.id} ${CUSTOMER_DECISION_DETAILS[decision]}`,
+    at,
+    from: line.status,
+    to
+  });
+  const decided = await correctionLineById(env, line.id);
+  if (!decided) throw new Error(`correction line ${line.id} could not be read back`);
+  return decided;
+}
+
 /** @param {Env} env @param {CorrectionLineRow} line @param {string} at */
 export async function revertCorrectionLine(env, line, at) {
   const current = await correctionLineById(env, line.id);
-  if (!current || current.status !== "approved") return current ?? line;
+  if (!current || (current.status !== "approved" && current.status !== "proposed")) return current ?? line;
   await env.DB.prepare(
-    "UPDATE correction_lines SET status = 'draft', reviewer = NULL, review_note = NULL, reviewed_at = NULL, changed_at = ?1 WHERE id = ?2 AND status = 'approved'"
+    "UPDATE correction_lines SET status = 'draft', reviewer = NULL, review_note = NULL, reviewed_at = NULL, changed_at = ?1 WHERE id = ?2 AND status IN ('approved', 'proposed')"
   )
     .bind(at, line.id)
     .run();
-  await journalEngagementEvent(env, lineJournalRow(line), { type: "correction_line_reverted", detail: `${line.id} after a failed republish`, at, from: "approved", to: "draft" });
+  await journalEngagementEvent(env, lineJournalRow(line), { type: "correction_line_reverted", detail: `${line.id} after a failed republish`, at, from: current.status, to: "draft" });
   return correctionLineById(env, line.id);
 }
 
