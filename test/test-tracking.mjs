@@ -19,6 +19,7 @@ import {
 } from "../src/desk.js";
 import { handleDodoWebhook } from "../src/payments.js";
 import { engagementAllows } from "../src/guardrails.js";
+import { decideCustomerLine } from "../src/customer-lines.js";
 import { queueTrackingChecks } from "../src/tracking.js";
 import { Webhook } from "standardwebhooks";
 import offer from "../config/offer.json" with { type: "json" };
@@ -138,6 +139,7 @@ async function engagementInTracking(env, sqlite) {
     "2026-10-20T08:00:00.000Z"
   );
   await reviewDeskCorrectionLine(env, { lineId: sqlite.prepare("SELECT id FROM correction_lines").get().id, action: "approve" }, "reviewer@tinystudio.io", "2026-10-24T08:00:00.000Z");
+  await decideCustomerLine(env, { recordId, lineId: sqlite.prepare("SELECT id FROM correction_lines").get().id, decision: "approve" }, "2026-10-24T09:00:00.000Z");
   await addDeskKickoffNote(env, { engagementId, note: "Brand words stay as written." }, "reviewer@tinystudio.io", "2026-10-25T08:00:00.000Z");
   return { engagementId, recordId };
 }
@@ -175,6 +177,7 @@ test("a republish after the proof rerun keeps the receipt link on the record", a
     "2026-10-20T08:00:00.000Z"
   );
   await reviewDeskCorrectionLine(env, { lineId: sqlite.prepare("SELECT id FROM correction_lines").get().id, action: "approve" }, "reviewer@tinystudio.io", "2026-10-24T08:00:00.000Z");
+  await decideCustomerLine(env, { recordId, lineId: sqlite.prepare("SELECT id FROM correction_lines").get().id, decision: "approve" }, "2026-10-24T09:00:00.000Z");
   await proofRerun(env);
   const receiptId = sqlite.prepare("SELECT id FROM proof_receipts").get().id;
   await addDeskKickoffNote(env, { engagementId, note: "Brand words stay as written." }, "reviewer@tinystudio.io", "2026-10-25T08:00:00.000Z");
@@ -274,6 +277,7 @@ test("a full engagement runs through to the Close-out, with the receipt and clos
     "correction_line_added",
     "status_changed",
     "correction_line_approve",
+    "correction_line_customer_approve",
     "correction_line_recorded",
     "status_changed",
     "kickoff_note_added",
