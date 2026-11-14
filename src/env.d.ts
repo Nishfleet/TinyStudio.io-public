@@ -6,8 +6,13 @@ interface Env {
   CF_ACCESS_TEAM_DOMAIN?: string;
   CONFIRMATION_FROM?: string;
   DODO_TINYSTUDIO_API_KEY?: string;
+  DODO_TINYSTUDIO_CARE_PRODUCT_ID?: string;
+  DODO_TINYSTUDIO_GROWTH_PRODUCT_ID?: string;
   DODO_TINYSTUDIO_MODE?: string;
   DODO_TINYSTUDIO_PRODUCT_ID?: string;
+  DODO_TINYSTUDIO_REPAIR_LARGE_PRODUCT_ID?: string;
+  DODO_TINYSTUDIO_REPAIR_MEDIUM_PRODUCT_ID?: string;
+  DODO_TINYSTUDIO_REPAIR_SMALL_PRODUCT_ID?: string;
   DODO_TINYSTUDIO_WEBHOOK_SECRET?: string;
   GOOGLE_ADS_CONVERSION_ID?: string;
   GOOGLE_ADS_CONVERSION_LABEL?: string;
@@ -23,6 +28,10 @@ interface EngagementRow {
   request_id: string;
   record_id: string | null;
   status: string;
+  product_key: string | null;
+  subscription_id: string | null;
+  plan_status: string | null;
+  period_ends_at: string | null;
   checkout_session_id: string | null;
   kickoff_note: string | null;
   specimen_consent: number;
@@ -106,6 +115,8 @@ interface AppraisalRun {
 interface DodoPaymentData {
   payment_id?: unknown;
   id?: unknown;
+  subscription_id?: unknown;
+  product_id?: unknown;
   session_id?: unknown;
   checkout_session_id?: unknown;
   metadata?: Record<string, unknown> | null;
@@ -118,6 +129,21 @@ interface DodoPaymentData {
   currency?: unknown;
   status?: unknown;
   payment_status?: unknown;
+}
+
+interface DodoSubscriptionData {
+  subscription_id?: unknown;
+  product_id?: unknown;
+  product_cart?: Array<{ product_id?: unknown } | null>;
+  metadata?: Record<string, unknown> | null;
+  currency?: unknown;
+  monthly_recurring_price?: unknown;
+  total_amount?: unknown;
+  amount?: unknown;
+  next_billing_date?: unknown;
+  past_due_ends_at?: unknown;
+  cancelled_at?: unknown;
+  status?: unknown;
 }
 
 interface DodoEvent {

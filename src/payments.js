@@ -1,7 +1,18 @@
 import offer from "../config/offer.json" with { type: "json" };
 import { Webhook } from "standardwebhooks";
 import { engagementAllows, ENGAGEMENT_SETTLED_STATUSES } from "./guardrails.js";
-import { advanceEngagement, attachCheckoutSession, engagementById, engagementForRequest, journalEngagementEvent } from "./engagement.js";
+import { advanceEngagement, attachCheckoutSession, engagementById, engagementForRequest, journalEngagementEvent, setPlanState } from "./engagement.js";
+import {
+  DODO_SUBSCRIPTION_EVENTS,
+  DEFAULT_PRODUCT_KEY,
+  applyPaidProduct,
+  engagementForSubscription,
+  engagementProductKey,
+  handleSubscriptionWebhook,
+  paidProduct,
+  productByKey,
+  productIdVariable
+} from "./plans.js";
 
 const DODO_LIVE_URL = "https://live.dodopayments.com";
 const DODO_TEST_URL = "https://test.dodopayments.com";
@@ -108,26 +119,31 @@ export function extractDodoPayment(event) {
   const items = Array.isArray(data.product_cart) ? data.product_cart : [];
   return {
     paymentId: String(data.payment_id || data.id || "").trim(),
+    subscriptionId: String(data.subscription_id || "").trim(),
     checkoutSessionId: String(data.session_id || data.checkout_session_id || "").trim(),
     engagementId: String(metadata.engagement_id || "").trim(),
     recordId: String(metadata.record_id || "").trim(),
     requestId: String(metadata.request_id || "").trim(),
     customerEmail: String(data.customer_email || data.customer?.email || "").trim().toLowerCase(),
-    productIds: items.map((item) => String(item?.product_id || "").trim()).filter(Boolean),
+    productIds: [
+      ...items.map((item) => String(item?.product_id || "").trim()),
+      String(data.product_id || "").trim()
+    ]
+      .filter(Boolean)
+      .filter((id, index, all) => all.indexOf(id) === index),
     amountCents: Number(data.total_amount ?? data.amount ?? data.payment_total) || 0,
     currency: String(data.currency || "USD").trim().toUpperCase(),
     status: String(data.status || data.payment_status || "succeeded").trim().toLowerCase()
   };
 }
 
-/** @param {ReturnType<typeof extractDodoPayment>} payment @param {Pick<Env, "DODO_TINYSTUDIO_PRODUCT_ID">} env */
+/** @param {ReturnType<typeof extractDodoPayment>} payment @param {Env} env */
 export function paymentMatchesOffer(payment, env) {
-  const expected = String(env.DODO_TINYSTUDIO_PRODUCT_ID || "").trim();
   if (!payment.paymentId) return false;
-  if (!expected) return false;
-  if (!payment.productIds.length || !payment.productIds.includes(expected)) return false;
+  const product = paidProduct(payment, env);
+  if (!product) return false;
   if (payment.currency !== offer.currency) return false;
-  if (!Number.isFinite(payment.amountCents) || payment.amountCents < offer.priceCents) return false;
+  if (!Number.isFinite(payment.amountCents) || payment.amountCents < product.priceCents) return false;
   return true;
 }
 
@@ -170,6 +186,7 @@ async function logWebhook(env, { webhookId, eventType, status, reason, payload, 
 
 /** @param {Env} env @param {{ payment: ReturnType<typeof extractDodoPayment>, engagement: EngagementRef, webhookId: string, at: string }} entry */
 async function recordPaymentRow(env, { payment, engagement, webhookId, at }) {
+  const product = paidProduct(payment, env);
   await env.DB.prepare(
     `INSERT INTO engagement_payments (payment_id, engagement_id, webhook_id, product_id, amount_cents, currency, status, role, payload, created_at)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
@@ -183,36 +200,72 @@ async function recordPaymentRow(env, { payment, engagement, webhookId, at }) {
       payment.amountCents,
       payment.currency,
       payment.status,
-      "correction",
+      product?.productKey || "correction",
       JSON.stringify(payment),
       at
     )
     .run();
 }
 
+/** @param {Env} env @param {string} paymentId */
+async function paymentKnown(env, paymentId) {
+  /** @type {{ payment_id: string } | null} */
+  const row = await env.DB.prepare("SELECT payment_id FROM engagement_payments WHERE payment_id = ?1").bind(paymentId).first();
+  return Boolean(row);
+}
+
+/** @param {Env} env @param {string} engagementId @param {string} subscriptionId @returns {Promise<boolean>} whether this engagement already recorded a payment for that subscription */
+async function subscriptionHasRecordedPayment(env, engagementId, subscriptionId) {
+  /** @type {{ n: number } | null} */
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM engagement_payments WHERE engagement_id = ?1 AND json_extract(payload, '$.subscriptionId') = ?2"
+  )
+    .bind(engagementId, subscriptionId)
+    .first();
+  return Boolean(row?.n);
+}
+
 /** @param {Env} env @param {{ payment: ReturnType<typeof extractDodoPayment>, at: string }} input */
 export async function openEngagementFromPayment(env, { payment, at }) {
-  const engagementRow = payment.engagementId ? await engagementById(env, payment.engagementId) : null;
+  const product = paidProduct(payment, env);
+  const engagementRow =
+    (payment.engagementId ? await engagementById(env, payment.engagementId) : null) ??
+    (await engagementForSubscription(env, payment.subscriptionId));
   if (!engagementRow) throw Object.assign(new Error("paid event for an engagement this worker cannot match"), { code: "engagement_unknown" });
+  if (product && product.productKey !== engagementProductKey(engagementRow)) {
+    throw Object.assign(new Error("the payment buys a different product than the proposal named"), { code: "offer_mismatch" });
+  }
   const settled = ENGAGEMENT_SETTLED_STATUSES.includes(engagementRow.status);
   if (!settled && engagementRow.status !== "proposed") {
     throw Object.assign(new Error(`payment for an engagement in state ${engagementRow.status}`), { code: "engagement_state" });
   }
 
-  const engagement = settled
+  let engagement = settled
     ? engagementRow
     : await advanceEngagement(env, engagementRow, "paid", { type: "status_changed", detail: `payment ${payment.paymentId}`, at });
+  if (!settled && product) {
+    engagement = await applyPaidProduct(env, engagementRow, engagement, product, payment, at);
+  }
   if (payment.checkoutSessionId && engagementRow.checkout_session_id !== payment.checkoutSessionId) {
     await attachCheckoutSession(env, engagement, payment.checkoutSessionId, at);
   }
+  let duplicate = false;
   if (settled) {
-    console.warn(
-      "tinystudio_payment_duplicate",
-      JSON.stringify({ engagementId: engagementRow.id, paymentId: payment.paymentId, status: engagementRow.status })
-    );
-    await journalEngagementEvent(env, engagement, { type: "payment_recorded_duplicate", detail: `payment ${payment.paymentId}`, at });
+    duplicate = await paymentKnown(env, payment.paymentId);
+    if (duplicate) {
+      console.warn(
+        "tinystudio_payment_duplicate",
+        JSON.stringify({ engagementId: engagementRow.id, paymentId: payment.paymentId, status: engagementRow.status })
+      );
+      await journalEngagementEvent(env, engagement, { type: "payment_recorded_duplicate", detail: `payment ${payment.paymentId}`, at });
+    } else if (payment.subscriptionId && (await subscriptionHasRecordedPayment(env, engagementRow.id, payment.subscriptionId))) {
+      await journalEngagementEvent(env, engagement, { type: "payment_recorded_renewal", detail: `renewal payment ${payment.paymentId}`, at });
+    } else {
+      duplicate = true;
+      await journalEngagementEvent(env, engagement, { type: "payment_recorded_duplicate", detail: `payment ${payment.paymentId}`, at });
+    }
   }
-  return { engagement, duplicate: settled };
+  return { engagement, duplicate };
 }
 
 /** @param {Env} env @param {{ rawBody: string, headers: Headers | Record<string, string> }} input */
@@ -246,6 +299,13 @@ export async function handleDodoWebhook(env, { rawBody, headers }, at = new Date
     return { ok: false, status: 400, body: { error: "body_invalid" } };
   }
   const eventType = dodoEventType(event);
+  if (DODO_SUBSCRIPTION_EVENTS.has(eventType)) {
+    const result = await handleSubscriptionWebhook(env, { event, eventType, webhookId }, at);
+    if (result.log) {
+      await logWebhook(env, { webhookId, eventType, status: result.log.status, reason: result.log.reason, payload: event, at });
+    }
+    return { ok: result.ok, status: result.status, body: result.body };
+  }
   if (!DODO_PAYMENT_SUCCESS_EVENTS.has(eventType)) {
     await logWebhook(env, {
       webhookId,
@@ -288,16 +348,25 @@ export async function handleDodoWebhook(env, { rawBody, headers }, at = new Date
   } catch (error) {
     const failure = error instanceof Error ? error : new Error(String(error));
     const code = String(("code" in failure && failure.code) || "engagement_open_failed");
+    if (code === "offer_mismatch") {
+      await logWebhook(env, { webhookId, eventType, status: "rejected", reason: "offer_mismatch", payload: event, at });
+      return { ok: false, status: 400, body: { error: "offer_mismatch" } };
+    }
     const known = ["engagement_unknown", "engagement_state"].includes(code);
     await logWebhook(env, { webhookId, eventType, status: "failed", reason: String(failure.message || code), payload: event, at });
     return { ok: false, status: known ? 409 : 500, body: known ? { error: code } : { error: "engagement_open_failed" } };
   }
 }
 
-/** @param {Env} env @param {{ recordId?: string, requestId?: string, engagementId?: string, customerEmail?: string }} input @param {typeof fetch} fetchImpl */
-export async function createDodoCheckout(env, { recordId, requestId, engagementId, customerEmail }, fetchImpl = fetch) {
+/** @param {Env} env @param {{ recordId?: string, requestId?: string, engagementId?: string, customerEmail?: string, productKey?: string }} input @param {typeof fetch} fetchImpl */
+export async function createDodoCheckout(env, { recordId, requestId, engagementId, customerEmail, productKey }, fetchImpl = fetch) {
+  const product = productByKey(productKey || DEFAULT_PRODUCT_KEY);
+  if (!product) {
+    throw Object.assign(new Error(`no such product in the offer: ${productKey}`), { code: "product_unknown" });
+  }
+  const productId = String((/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (env)))[productIdVariable(product.productKey)] || "").trim();
   const status = dodoConfigStatus(env);
-  if (!status.productId || !status.apiKey) {
+  if (!productId || !status.apiKey) {
     throw Object.assign(new Error("Dodo checkout is not configured"), { code: "checkout_not_configured" });
   }
   const engagement = engagementId ? await engagementById(env, engagementId) : null;
@@ -308,14 +377,14 @@ export async function createDodoCheckout(env, { recordId, requestId, engagementI
       authorization: `Bearer ${env.DODO_TINYSTUDIO_API_KEY}`
     },
     body: JSON.stringify({
-      product_cart: [{ product_id: env.DODO_TINYSTUDIO_PRODUCT_ID, quantity: 1 }],
+      product_cart: [{ product_id: productId, quantity: 1 }],
       return_url: `${CHECKOUT_ORIGIN}/records/${recordId || ""}?paid=1`,
       customer_email: customerEmail || undefined,
       metadata: {
         engagement_id: engagement?.id || "",
         record_id: recordId || "",
         request_id: requestId || engagement?.request_id || "",
-        product_key: offer.productKey,
+        product_key: product.productKey,
         source: "tinystudio.io"
       }
     }),
@@ -337,8 +406,8 @@ export async function createDodoCheckout(env, { recordId, requestId, engagementI
   return { checkoutUrl, sessionId };
 }
 
-/** @param {Env} env @param {{ recordId: string }} input */
-export async function startCheckoutForRequest(env, { recordId }, at = new Date().toISOString(), fetchImpl = fetch) {
+/** @param {Env} env @param {{ recordId: string, productKey?: string }} input Checkout names the product on the engagement, so the payment webhook can hold the charge against the product the proposal actually sold. */
+export async function startCheckoutForRequest(env, { recordId, productKey }, at = new Date().toISOString(), fetchImpl = fetch) {
   /** @type {{ id: string, request_id: string } | null} */
   const record = await env.DB.prepare("SELECT id, request_id FROM appraisal_records WHERE id = ?1").bind(recordId).first();
   if (!record) throw Object.assign(new Error("record not found"), { code: "record_not_found" });
@@ -347,6 +416,15 @@ export async function startCheckoutForRequest(env, { recordId }, at = new Date()
   if (!engagementAllows(engagement, "send_checkout")) {
     throw Object.assign(new Error("this engagement is not awaiting payment"), { code: "not_awaiting_payment" });
   }
+  const product = productByKey(productKey || DEFAULT_PRODUCT_KEY);
+  if (!product) {
+    throw Object.assign(new Error(`no such product in the offer: ${productKey}`), { code: "product_unknown" });
+  }
+  const named = String(engagement.product_key || "").trim();
+  if (named && named !== product.productKey) {
+    throw Object.assign(new Error("the engagement is proposed for a different product"), { code: "product_mismatch" });
+  }
+  const withProduct = named ? engagement : await setPlanState(env, engagement, { productKey: product.productKey, type: "product_named", detail: product.productKey }, at);
   /** @type {{ email: string } | null} */
   const request = await env.DB.prepare("SELECT email FROM appraisal_requests WHERE id = ?1").bind(record.request_id).first();
   const checkout = await createDodoCheckout(
@@ -354,11 +432,12 @@ export async function startCheckoutForRequest(env, { recordId }, at = new Date()
     {
       recordId: record.id,
       requestId: record.request_id,
-      engagementId: engagement.id,
-      customerEmail: request?.email
+      engagementId: withProduct.id,
+      customerEmail: request?.email,
+      productKey: product.productKey
     },
     fetchImpl
   );
-  await attachCheckoutSession(env, engagement, checkout.sessionId, at);
+  await attachCheckoutSession(env, withProduct, checkout.sessionId, at);
   return checkout;
 }

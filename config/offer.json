@@ -6,5 +6,49 @@
   "slotsPerMonth": 6,
   "workingDays": 10,
   "requires": ["Access to the site and its host", "One decision-maker we can reach"],
-  "noGuarantee": "TinyStudio promises proof, not outcomes. We fix the faults in the record and show you the before and after. We do not promise revenue, rankings or any business result."
+  "noGuarantee": "TinyStudio promises proof, not outcomes. We fix the faults in the record and show you the before and after. We do not promise revenue, rankings or any business result.",
+  "products": [
+    {
+      "productKey": "repair-small",
+      "name": "Repair — Small",
+      "priceCents": 14900,
+      "currency": "USD",
+      "billing": "one-time"
+    },
+    {
+      "productKey": "repair-medium",
+      "name": "Repair — Medium",
+      "priceCents": 34900,
+      "currency": "USD",
+      "billing": "one-time"
+    },
+    {
+      "productKey": "repair-large",
+      "name": "Repair — Large",
+      "priceCents": 69900,
+      "currency": "USD",
+      "billing": "one-time"
+    },
+    {
+      "productKey": "care",
+      "name": "Care",
+      "priceCents": 29900,
+      "currency": "USD",
+      "billing": "monthly"
+    },
+    {
+      "productKey": "growth",
+      "name": "Growth",
+      "priceCents": 59900,
+      "currency": "USD",
+      "billing": "monthly"
+    },
+    {
+      "productKey": "website-correction",
+      "name": "Website Correction",
+      "priceCents": 1000000,
+      "currency": "USD",
+      "billing": "one-time"
+    }
+  ]
 }
