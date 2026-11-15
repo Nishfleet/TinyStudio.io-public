@@ -21,7 +21,7 @@ The plan also lists `/correction`, `/method` and `/records/{id}`; these are buil
 
 ## Endpoints
 
-- `/api/signups` stores an email signup in Cloudflare D1.
+- `/api/signups` stores an email signup in Cloudflare D1, and `/api/deletion-request` records a data deletion request from `/contact` and emails the team inbox.
 - `/api/appraisal-requests` stores an appraisal request or, when the month is full, a waitlist place in Cloudflare D1.
 - `/api/appraisal-slots` reports how many of the six appraisals this month are left, and the next open slot.
 - `/api/agent-audit` is the existing audit generation endpoint. It runs at most 50 times a day across all callers, and setting `AGENT_AUDIT_DISABLED=1` turns it off.

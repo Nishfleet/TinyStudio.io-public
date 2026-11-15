@@ -116,6 +116,7 @@ const MAX_WAITLIST_PER_MONTH = 50;
 const MAX_CHECKOUTS_PER_IP_PER_DAY = 5;
 const MAX_CHECKOUT_ATTEMPTS_PER_IP_PER_DAY = 20;
 const APPRAISAL_SURFACE = "website-appraisal";
+const DELETION_INBOX = "hello@tinystudio.io";
 const CURRENCY_AMOUNT_PATTERN = String.raw`(?:(?:₹|\$|€|£|inr|usd|us\$|aud|cad|sgd|gbp|eur|rs\.?|rupees?)\s*\d[\d,.]*(?:\s*(?:k|lakh|lakhs|l|cr))?|\d[\d,.]*\s*(?:inr|usd|aud|cad|sgd|gbp|eur|rupees?))`;
 const METRIC_VALUE_PATTERN = String.raw`(?:${CURRENCY_AMOUNT_PATTERN}|\b\d[\d,.]*\b)`;
 const WEEKLY_METRIC_LABELS = [
@@ -929,6 +930,108 @@ async function appraisalRequestResponse(request, env, url) {
     },
     { status: placed.duplicate ? 200 : 201 }
   );
+}
+
+/** @param {Env} env @param {string} email @param {string} at */
+function deletionRequestMessage(env, email, at) {
+  return {
+    from: env.CONFIRMATION_FROM || "TinyStudio <appraisals@tinystudio.io>",
+    to: DELETION_INBOX,
+    subject: "Data deletion request",
+    text: [
+      `${email} asked for the data held for this address to be deleted.`,
+      "",
+      `Recorded at ${at}.`,
+      "",
+      "TinyStudio"
+    ].join("\n")
+  };
+}
+
+/** @param {string} emailed "sent" or "failed" */
+function deletionRequestedPage(emailed) {
+  const deskLine =
+    emailed === "failed"
+      ? "<p>We have the address you sent, and your request is recorded.</p>"
+      : "<p>We have the address you sent, and the desk has it by email.</p>";
+  return withSecurityHeaders(
+    new Response(
+      `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TinyStudio — Data deletion request</title>
+  </head>
+  <body>
+    <main>
+      <h1>Your deletion request is recorded.</h1>
+      ${deskLine}
+      <p><a href="https://tinystudio.io/">Back to TinyStudio.io</a></p>
+    </main>
+  </body>
+</html>`,
+      { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } }
+    )
+  );
+}
+
+/** @param {Request} request @param {Env} env @param {URL} url */
+async function deletionRequestResponse(request, env, url) {
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "method_not_allowed" }, { status: 405 });
+  }
+  if (!isSameOriginPost(request, url)) {
+    return jsonResponse({ ok: false, error: "cross_site_blocked" }, { status: 403 });
+  }
+  if (requestTooLarge(request)) {
+    return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+  }
+
+  let body;
+  try {
+    body = await readRequestBody(request);
+  } catch (error) {
+    if (errorMessage(error) === "request_too_large") {
+      return jsonResponse({ ok: false, error: "request_too_large" }, { status: 413 });
+    }
+    body = {};
+  }
+
+  const email = normalizeEmail(body.email);
+  if (!isValidEmail(email)) {
+    return jsonResponse({ ok: false, error: "invalid_email" }, { status: 400 });
+  }
+
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  for (const key of [`deletion-ip:${ip}`, `deletion-email:${email}`]) {
+    const { success } = await env.APPRAISAL_LIMITER.limit({ key });
+    if (!success) return jsonResponse({ ok: false, error: "rate_limited" }, { status: 429 });
+  }
+
+  const at = new Date().toISOString();
+  try {
+    await env.DB.prepare(
+      "INSERT INTO deletion_requests (id, email, created_at) VALUES (?1, ?2, ?3)"
+    )
+      .bind(crypto.randomUUID(), email, at)
+      .run();
+  } catch (error) {
+    console.warn("tinystudio_deletion_storage_failed", errorMessage(error) || "storage failed");
+    return jsonResponse({ ok: false, error: "storage_unavailable" }, { status: 503 });
+  }
+
+  let emailed = "sent";
+  try {
+    if (!env.EMAIL) throw new Error("email binding missing");
+    await env.EMAIL.send(deletionRequestMessage(env, email, at));
+  } catch (error) {
+    emailed = "failed";
+    console.warn("tinystudio_deletion_email_failed", errorMessage(error) || "send failed");
+  }
+
+  if (wantsHtmlRedirect(request)) return deletionRequestedPage(emailed);
+  return jsonResponse({ ok: true, email: emailed }, { status: 202 });
 }
 
 /** @param {Request} request @param {string} bucket */
@@ -2375,6 +2478,10 @@ const handler = {
 
     if (url.pathname === "/api/appraisal-requests") {
       return appraisalRequestResponse(request, env, url);
+    }
+
+    if (url.pathname === "/api/deletion-request") {
+      return deletionRequestResponse(request, env, url);
     }
 
     if (url.pathname === "/api/appraisal-slots") {
