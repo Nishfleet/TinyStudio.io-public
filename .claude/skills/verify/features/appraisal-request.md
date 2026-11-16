@@ -23,11 +23,10 @@ Preconditions:
 
 - **Open the form.** Run `curl -s -o /tmp/verify-tinystudio/appraisal-page.html -w '%{http_code}\n' http://localhost:8788/appraisal`. It prints `200`, and the page contains `action="/api/appraisal-requests"`.
 - **Slots.** Run `curl -s http://localhost:8788/api/appraisal-slots`. It prints `{"ok":true,"month":...,"limit":6,"taken":0,"remaining":6,"full":false,"nextSlotDate":null}` on a fresh local database.
-- **Submit.** Run `curl -s -w ' %{http_code}\n' -X POST http://localhost:8788/api/appraisal-requests -H 'Origin: https://tinystudio.io' -H 'Content-Type: application/x-www-form-urlencoded' --data 'website=verify-example.com&businessType=Private+dental+clinic&dealValue=8000&monthlyLeads=40&name=Verify+Run&email=verify-<run-id>%40example.com&referral='`. It prints `{"ok":true,"status":"accepted","duplicate":false,...,"confirmation":"sent"}` and `201`.
+- **Submit.** Run `curl -s -w ' %{http_code}\n' -X POST http://localhost:8788/api/appraisal-requests -H 'Origin: http://localhost:8788' -H 'Content-Type: application/x-www-form-urlencoded' --data 'website=verify-example.com&businessType=Private+dental+clinic&dealValue=8000&monthlyLeads=40&name=Verify+Run&email=verify-<run-id>%40example.com&referral='`. It prints `{"ok":true,"status":"accepted","duplicate":false,...,"confirmation":"sent"}` and `201`. The `Origin` header is the local server's own origin, the same one a browser sends.
 - **Read back.** Send the same command again. It prints `"duplicate":true`, `"confirmation":"already_sent"` and `200`. That proves the first request was stored. `npm run test:appraisal` proves the waitlist pick, the duplicate and the guards against the Worker.
 - **Proof.** `grep 'POST /api/appraisal-requests' /tmp/verify-tinystudio/server.log` shows `201 Created`, then `200 OK`. The sent email is listed in Local Explorer.
 
 ## Gotchas
 
-- The local server rewrites each request to the first production route, so the Worker accepts the origin `https://tinystudio.io` and refuses a browser's `http://localhost:8788` with 403 `cross_site_blocked`. A real browser cannot submit the form locally until #119 is fixed. Use the curl drive.
 - `wrangler d1 execute --local` reads a different local database file than `cf dev`, so it reports `no such table`. Use the read-back step or Local Explorer instead.
