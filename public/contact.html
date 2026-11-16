@@ -83,6 +83,14 @@
     <p class="lede">To request a Website Appraisal, use the form on the <a href="/">home page</a>. Do not send passwords or private admin access by email unless we have already agreed a paid desk engagement.</p>
   </section>
   <section>
+    <h2>Delete my data</h2>
+    <p class="lede">To ask us to delete the data we hold for your email address, send the address in this form.</p>
+    <form class="lead two" action="/api/deletion-request" method="post">
+      <label for="deletion-email"><span>Your email</span><input type="email" name="email" id="deletion-email" required autocomplete="email" placeholder="you@company.com"></label>
+      <button>Request deletion</button>
+    </form>
+  </section>
+  <section>
     <h2>Legal pages</h2>
     <p class="lede">See <a href="/privacy">Privacy</a> and <a href="/terms">Terms</a>. This page is a PLACEHOLDER until Nish rewrites it.</p>
   </section>

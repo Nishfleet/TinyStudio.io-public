@@ -1,7 +1,7 @@
 import costing from "../config/costing.json" with { type: "json" };
 import offer from "../config/offer.json" with { type: "json" };
 import { advanceEngagement, correctionLines, markLinesRecorded, openEngagement } from "./engagement.js";
-import { APPLIED_LINE_STATES, assertPublishableLines, ENGAGEMENT_SETTLED_STATUSES, REVIEWED_LINE_STATES } from "./guardrails.js";
+import { APPLIED_LINE_STATES, assertPublishableLines, ENGAGEMENT_SETTLED_STATUSES, RECORD_LINE_STATES } from "./guardrails.js";
 
 const ROWS = new Map(costing.rows.map((row) => [row.faultType, row]));
 
@@ -92,11 +92,13 @@ ${awaitingPayment
 </section>`;
 }
 
-/** @param {{ engagementId?: string, kickoffNote?: string | null, lines: CorrectionLineRow[] }} input */
-function correctionBlock({ engagementId, kickoffNote, lines }) {
+/** @param {{ recordId?: string, engagementId?: string, kickoffNote?: string | null, lines: CorrectionLineRow[] }} input */
+function correctionBlock({ recordId, engagementId, kickoffNote, lines }) {
   if (!lines.length) return "";
   const applied = lines.filter((line) => APPLIED_LINE_STATES.includes(line.status));
   const refused = lines.filter((line) => line.status === "rejected");
+  const pending = lines.filter((line) => line.status === "proposed");
+  const skipped = lines.filter((line) => line.status === "skipped");
   assertPublishableLines(applied);
   const items = applied
     .map((line) => `<li class="correction-line" data-line-id="${esc(line.id)}">
@@ -104,7 +106,7 @@ function correctionBlock({ engagementId, kickoffNote, lines }) {
 <p>Fault closed: ${esc(line.fault_title)}.</p>
 <p>Before: ${esc(line.before_text)}</p>
 <p>After: ${esc(line.after_text)}</p>
-<p>Reviewed and approved by ${esc(line.reviewer || "the reviewer")}.</p>
+<p>Reviewed and approved by ${esc(line.reviewer || "the reviewer")}, and approved by you.</p>
 </li>`)
     .join("\n");
   const refusedItems = refused
@@ -113,15 +115,56 @@ function correctionBlock({ engagementId, kickoffNote, lines }) {
 <p>Not applied: ${esc(line.review_note || "the reviewer did not approve this change")}</p>
 </li>`)
     .join("\n");
+  const linesBase = `/api/records/${esc(recordId || "")}/lines`;
+  const decisionItems = pending
+    .map((line) => `<li class="correction-pending" data-line-id="${esc(line.id)}" data-line-status="proposed">
+<h3>${esc(line.fault_title)}</h3>
+<p>Before: ${esc(line.before_text)}</p>
+<p>After: ${esc(line.after_text)}</p>
+<form method="post" action="${linesBase}/${esc(line.id)}">
+<input type="hidden" name="decision" value="approve">
+<button type="submit">Approve</button>
+</form>
+<form method="post" action="${linesBase}/${esc(line.id)}">
+<input type="hidden" name="decision" value="edit">
+<label for="text-${esc(line.id)}">Your wording</label>
+<textarea id="text-${esc(line.id)}" name="text" rows="3" maxlength="4000"></textarea>
+<button type="submit">Send my wording to the reviewer</button>
+</form>
+<form method="post" action="${linesBase}/${esc(line.id)}">
+<input type="hidden" name="decision" value="skip">
+<button type="submit">Skip</button>
+</form>
+</li>`)
+    .join("\n");
+  const skippedItems = skipped
+    .map((line) => `<li class="correction-skipped" data-line-id="${esc(line.id)}" data-line-status="skipped">
+<h3>${esc(line.fault_title)}</h3>
+<p>Skipped: you left this change alone.</p>
+</li>`)
+    .join("\n");
   return `<section class="correction" data-cite="engagement:${esc(engagementId || "")}">
 <h2>Correction Record</h2>
 ${kickoffNote ? `<p class="kickoff">Kickoff note: ${esc(kickoffNote)}</p>` : ""}
+${pending.length ? `<h3>Your decision</h3>
+<p>Each line below passed your reviewer. Approve it, edit the wording, or skip it. Only the lines you approve are applied, and each approval is recorded with its time.</p>
+<form method="post" action="${linesBase}">
+<input type="hidden" name="decision" value="approve-all">
+<button type="submit">Approve all</button>
+</form>
+<ol>
+${decisionItems}
+</ol>` : ""}
 ${applied.length ? `<ol>
 ${items}
 </ol>` : ""}
 ${refused.length ? `<h3>Reviewed and not applied</h3>
 <ul>
 ${refusedItems}
+</ul>` : ""}
+${skipped.length ? `<h3>Skipped</h3>
+<ul>
+${skippedItems}
 </ul>` : ""}
 </section>`;
 }
@@ -184,7 +227,7 @@ ${receiptId ? `<p><a href="/records/${esc(receiptId)}">Read the Proof Receipt: t
 ${sourceHtml}
 </ul>
 ${proposalBlock({ recordId, engagementStatus, renderedAt })}
-${correctionBlock({ engagementId, kickoffNote, lines })}
+${correctionBlock({ recordId, engagementId, kickoffNote, lines })}
 </main>
 </body>
 </html>
@@ -396,7 +439,7 @@ export async function publishRecord(env, requestId, { faults, review }, origin, 
     engagementId: engagement.id,
     engagementStatus: engagement.status,
     kickoffNote: engagement.kickoff_note,
-    correctionLines: (await correctionLines(env, engagement.id)).filter((line) => REVIEWED_LINE_STATES.includes(line.status))
+    correctionLines: (await correctionLines(env, engagement.id)).filter((line) => RECORD_LINE_STATES.includes(line.status))
   });
   if (receiptId && before) {
     await publishProofReceipt(env, request, id, receiptId, before, run, at);

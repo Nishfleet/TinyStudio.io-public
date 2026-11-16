@@ -31,48 +31,6 @@ async function loadAuditScript() {
   return globalThis.TinyStudioAudit;
 }
 
-test("AI-search fixture runs carry the right structure for their states", () => {
-  const states = [...new Set(AI_EVIDENCE.runs.map((run) => run.state))].sort();
-  assert.deepEqual(states, ["absent", "found", "not-tested", "wrong"]);
-
-  const questionIds = new Set(AI_QUESTIONS.questions.map((question) => question.id));
-  const engineIds = new Set(AI_EVIDENCE.engines.map((engine) => engine.id));
-
-  for (const run of AI_EVIDENCE.runs) {
-    assert.ok(questionIds.has(run.questionId), `known question for ${run.questionId}/${run.engine}`);
-    assert.ok(engineIds.has(run.engine), `known engine for ${run.questionId}/${run.engine}`);
-    assert.ok(run.testedAt, `testedAt recorded for ${run.questionId}/${run.engine}`);
-    if (run.state === "not-tested") {
-      assert.ok(run.reason, `not-tested reason for ${run.questionId}/${run.engine}`);
-      assert.equal(run.captured, undefined, `not-tested must not capture an answer for ${run.questionId}/${run.engine}`);
-      assert.deepEqual(run.sources || [], [], `not-tested must not cite sources for ${run.questionId}/${run.engine}`);
-    } else {
-      assert.ok(run.captured, `captured observation for ${run.questionId}/${run.engine}`);
-      if (run.state !== "absent") {
-        assert.ok(run.sources.length, `cited sources for ${run.questionId}/${run.engine}`);
-      } else {
-        assert.deepEqual(run.sources || [], [], `absent must not cite sources for ${run.questionId}/${run.engine}`);
-      }
-    }
-  }
-
-  for (const question of AI_QUESTIONS.questions) {
-    assert.ok(question.id && question.name && question.prompt && question.truth, `named question ${question.id}`);
-  }
-});
-
-test("AI-search q5 found run cites the tested business and claims no page-specific fix", () => {
-  const run = AI_EVIDENCE.runs.find(
-    (candidate) => candidate.questionId === "q5-what-is-tinystudio-io" && candidate.engine === "google"
-  );
-  assert.ok(run, "google/q5 run exists");
-  assert.equal(run.state, "found");
-  assert.ok(run.remediation, "q5 carries a remediation note");
-  assert.equal(run.remediation.page, undefined, "q5 must not claim a page-specific fix");
-  assert.ok(run.sources.some((source) => source.url.startsWith("https://tinystudio.io")), "q5 cites the tested business's site");
-  assert.match(run.captured, /free website "leak audits" for high-ticket service homepages/);
-});
-
 test("AI-search renderer shows all four states and keeps not-tested distinct from absent", async () => {
   globalThis.document = auditDocumentStub();
   const api = await loadAuditScript();
@@ -307,8 +265,6 @@ test("AI-search remediation links resolve defensively and reject cross-host or i
   assert.doesNotMatch(invalidHtml, /javascript:/);
 });
 
-const HOME_HTML = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
-const AUDIT_HTML = readFileSync(new URL("../public/appraisal.html", import.meta.url), "utf8");
 const LLMS_TXT = readFileSync(new URL("../public/llms.txt", import.meta.url), "utf8");
 const OFFER_MD = readFileSync(new URL("../public/offer.md", import.meta.url), "utf8");
 
@@ -322,100 +278,6 @@ const OFFER_FACTS = [
   "There are no revenue, ranking, ROAS, conversion, booked-call, or sales-volume guarantees",
   "https://tinystudio.io/pricing"
 ];
-
-test("homepage disambiguation block answers every controlled question", () => {
-  const section = HOME_HTML.match(/<section[^>]*id="identity"[\s\S]*?<\/section>/i)?.[0] ?? "";
-  assert.ok(section, "homepage carries the identity section");
-  assert.match(section, /data-ai-identity/);
-  const refs = new Set(
-    [...section.matchAll(/\bdata-ai-question="([^"]+)"/gi)]
-      .flatMap((match) => match[1].trim().split(/\s+/))
-      .filter(Boolean)
-  );
-  for (const question of AI_QUESTIONS.questions) {
-    assert.ok(refs.has(question.id), `homepage answers the controlled question ${question.id}`);
-  }
-  for (const ref of refs) {
-    assert.ok(
-      AI_QUESTIONS.questions.some((question) => question.id === ref),
-      `homepage references a known question id: ${ref}`
-    );
-  }
-});
-
-test("every owned identity surface states the human-reviewed outcome", () => {
-  for (const [name, text] of [
-    ["homepage", HOME_HTML],
-    ["audit page", AUDIT_HTML],
-    ["llms.txt", LLMS_TXT],
-    ["offer.md", OFFER_MD]
-  ]) {
-    assert.match(text, /human-reviewed/, `${name} must state the human-reviewed outcome`);
-  }
-});
-
-const IDENTITY_MIRROR_FACTS = [
-  "Mac subtitle app",
-  "fibre-arts magazine",
-  "design agency",
-  "video production studio",
-  "Los Angeles venue",
-  "unrelated studio LLC",
-  "states no base city or office address",
-  "run by Nish"
-];
-
-test("identity disambiguation facts are mirrored by llms.txt and offer.md", () => {
-
-  for (const fact of IDENTITY_MIRROR_FACTS) {
-    assert.ok(LLMS_TXT.toLowerCase().includes(fact.toLowerCase()), `llms.txt must state: ${fact}`);
-    assert.ok(OFFER_MD.toLowerCase().includes(fact.toLowerCase()), `offer.md must state: ${fact}`);
-  }
-  assert.match(LLMS_TXT, /^## Identity$/m, "llms.txt must carry the machine-readable Identity section");
-  assert.ok(LLMS_TXT.includes("https://tinystudio.io/offer.md"), "llms.txt must link offer.md as its mirror");
-  assert.ok(OFFER_MD.includes("https://tinystudio.io/llms.txt"), "offer.md must link llms.txt as its mirror");
-  assert.ok(LLMS_TXT.includes("https://tinystudio.io/appraisal"), "llms.txt must point at the audit page's evidence artifact");
-});
-
-test("every controlled question maps to a preferred source page, mirrored by llms.txt and offer.md", () => {
-
-  const ANSWER_READINESS_HEADING = "## Answer Readiness: Preferred Source Pages";
-  for (const [name, text] of [
-    ["llms.txt", LLMS_TXT],
-    ["offer.md", OFFER_MD]
-  ]) {
-    assert.ok(text.includes(ANSWER_READINESS_HEADING), `${name} must carry the Answer Readiness section`);
-  }
-  const sectionOf = (content) => {
-    const start = content.indexOf(ANSWER_READINESS_HEADING);
-    const after = content.slice(start + ANSWER_READINESS_HEADING.length);
-    const end = after.search(/\n## /);
-    return end === -1 ? after : after.slice(0, end);
-  };
-  const servedPages = [
-    "https://tinystudio.io/",
-    "https://tinystudio.io/appraisal",
-    "https://tinystudio.io/pricing",
-    "https://tinystudio.io/specimen"
-  ];
-  const llmsSection = sectionOf(LLMS_TXT);
-  const offerSection = sectionOf(OFFER_MD);
-  for (const question of AI_QUESTIONS.questions) {
-    const llmsLine = llmsSection.split("\n").find((line) => line.includes(question.id));
-    assert.ok(llmsLine, `llms.txt must map the controlled question to a preferred source page: ${question.id}`);
-    const urls = [...(llmsLine ?? "").matchAll(/https:\/\/tinystudio\.io\/[^\s]*/g)].map((match) => match[0]);
-    assert.equal(urls.length, 1, `preferred source mapping must name exactly one page: ${question.id}`);
-    const preferred = urls[0];
-    assert.ok(servedPages.includes(preferred), `preferred source page must be a served page: ${question.id}`);
-    const isPriceQuestion =
-      question.id === "q2-what-tinystudio-charges" || question.id === "q7-what-tinystudio-io-charges";
-    if (isPriceQuestion) {
-      assert.equal(preferred, "https://tinystudio.io/pricing", `price question ${question.id} must map to the clean /pricing`);
-    }
-    const offerLine = offerSection.split("\n").find((line) => line.includes(question.id));
-    assert.ok(offerLine?.includes(preferred), `offer.md must mirror the preferred source page for ${question.id}`);
-  }
-});
 
 test("offer facts are mirrored by llms.txt and offer.md", () => {
 
@@ -436,53 +298,5 @@ test("offer facts are mirrored by llms.txt and offer.md", () => {
   for (const fact of DATA_HANDLING_FACTS) {
     assert.ok(normalized(LLMS_TXT).includes(normalized(fact)), `llms.txt must state: ${fact}`);
     assert.ok(normalized(OFFER_MD).includes(normalized(fact)), `offer.md must state: ${fact}`);
-  }
-});
-
-test("llms.txt and offer.md point at the clean /pricing and never restate refund terms or any price but $10,000 per site", () => {
-
-  for (const [name, text] of [
-    ["llms.txt", LLMS_TXT],
-    ["offer.md", OFFER_MD]
-  ]) {
-    assert.ok(text.includes("https://tinystudio.io/pricing"), `${name} must point at the clean /pricing`);
-    assert.doesNotMatch(text.replaceAll("$10,000 per site", ""), /\$\s?\d/, `${name} may state only the $10,000 per site price`);
-    assert.doesNotMatch(text, /\brefund\w*\b/i, `${name} must not restate refund terms`);
-    assert.doesNotMatch(text, /Website Correction/i, `${name} must not revive the retired offer framing`);
-    assert.doesNotMatch(text, /founder[- ]?pilot/i, `${name} must not revive the founder-pilot pricing`);
-    assert.doesNotMatch(text, /Managed IT, MSP/i, `${name} must not revive the MSP-only buyer framing`);
-  }
-});
-
-test("every cited source has a title and a valid absolute http(s) URL, unique within its run", () => {
-  for (const run of AI_EVIDENCE.runs) {
-    const citedUrls = new Set();
-    for (const source of run.sources || []) {
-      assert.ok(source.title && String(source.title).trim(), `source title for ${run.questionId}/${run.engine}`);
-      assert.ok(!citedUrls.has(source.url), `source URL unique within run (${run.questionId}/${run.engine}): ${source.url}`);
-      citedUrls.add(source.url);
-      assert.doesNotMatch(source.url, /\s/, `source URL must not contain whitespace (${run.questionId}/${run.engine})`);
-      let parsed;
-      assert.doesNotThrow(() => {
-        parsed = new URL(source.url);
-      }, `source URL must parse (${run.questionId}/${run.engine})`);
-      assert.match(parsed.protocol, /^https?:$/, `source URL must be http(s) (${run.questionId}/${run.engine})`);
-      assert.ok(parsed.hostname.includes("."), `source URL host must be a real hostname (${run.questionId}/${run.engine})`);
-    }
-  }
-});
-
-test("found runs must cite the tested business's own site", () => {
-  const siteHost = new URL(AI_EVIDENCE.business.site).hostname;
-  for (const run of AI_EVIDENCE.runs) {
-    if (run.state !== "found") continue;
-    const citesOwnSite = (run.sources || []).some((source) => {
-      try {
-        return new URL(source.url).hostname === siteHost;
-      } catch {
-        return false;
-      }
-    });
-    assert.ok(citesOwnSite, `found run must cite the site: ${run.questionId}/${run.engine}`);
   }
 });

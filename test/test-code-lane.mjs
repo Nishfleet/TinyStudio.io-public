@@ -18,7 +18,7 @@ import {
   recheckCodeLane,
   setLineFilePath
 } from "../src/code-lane.js";
-import { addCorrectionLine, advanceEngagement, openEngagement, reviewCorrectionLine } from "../src/engagement.js";
+import { addCorrectionLine, advanceEngagement, decideCorrectionLine, openEngagement, reviewCorrectionLine } from "../src/engagement.js";
 import worker from "../src/worker.js";
 
 function d1(sqlite) {
@@ -136,6 +136,11 @@ async function freshEnv(github = {}) {
   return { sqlite, env, stub };
 }
 
+async function approveLine(env, line, at = "2026-10-12T12:25:00.000Z") {
+  const proposed = await reviewCorrectionLine(env, line, "approve", { reviewer: "Jev", note: "", at: "2026-10-12T12:20:00.000Z" });
+  return decideCorrectionLine(env, proposed, "approve", {}, at);
+}
+
 async function engagementWithApprovedLine(env, { folder = "site", path = "site/index.html", namePath = true } = {}) {
   let current = await openEngagement(env, "req-1", "2026-10-12T09:00:00.000Z");
   current = await advanceEngagement(env, current, "appraised", { type: "audit_recorded", detail: "appraised", at: "2026-10-12T09:30:00.000Z" });
@@ -150,7 +155,7 @@ async function engagementWithApprovedLine(env, { folder = "site", path = "site/i
   );
   await connectCodeLane(env, { requestId: "req-1", repo: "acme/site-repo", installationId: "4242", siteFolder: folder }, "Jev", "2026-10-12T12:00:00.000Z");
   if (namePath) await setLineFilePath(env, line.id, path, "2026-10-12T12:10:00.000Z");
-  const approved = await reviewCorrectionLine(env, line, "approve", { reviewer: "Jev", note: "", at: "2026-10-12T12:20:00.000Z" });
+  const approved = await approveLine(env, line);
   return { engagement: current, line: approved };
 }
 
@@ -265,7 +270,7 @@ test("code lane: two approved lines on one file commit in order, each built on t
     "2026-10-12T11:40:00.000Z"
   );
   await setLineFilePath(env, second.id, "site/index.html", "2026-10-12T12:05:00.000Z");
-  await reviewCorrectionLine(env, second, "approve", { reviewer: "Jev", note: "", at: "2026-10-12T12:25:00.000Z" });
+  await approveLine(env, second);
   const result = await applyApprovedLines(env, { engagementId: engagement.id }, "Jev", "2026-10-12T13:00:00.000Z");
   assert.equal(result.lines.length, 2, "both lines land on one pull request");
   assert.equal(
@@ -298,7 +303,7 @@ test("code lane: a second line that misses the base content stops before the bra
     "2026-10-12T11:40:00.000Z"
   );
   await setLineFilePath(env, second.id, "site/index.html", "2026-10-12T12:05:00.000Z");
-  await reviewCorrectionLine(env, second, "approve", { reviewer: "Jev", note: "", at: "2026-10-12T12:25:00.000Z" });
+  await approveLine(env, second);
   await assert.rejects(applyApprovedLines(env, { engagementId: engagement.id }, "Jev", "2026-10-12T13:00:00.000Z"), { code: "BEFORE_TEXT_NOT_FOUND" });
   assert.equal(stub.calls.some((call) => call.path === "/repos/acme/site-repo/git/refs"), false, "no branch is created for a list that cannot apply");
   assert.equal(stub.calls.some((call) => call.method === "PUT"), false, "nothing is written to the repository");
@@ -358,7 +363,7 @@ test("code lane: a re-check with an unfixed line keeps the pull open for a later
     "2026-10-12T11:40:00.000Z"
   );
   await setLineFilePath(env, second.id, "site/about.html", "2026-10-12T12:05:00.000Z");
-  await reviewCorrectionLine(env, second, "approve", { reviewer: "Jev", note: "", at: "2026-10-12T12:25:00.000Z" });
+  await approveLine(env, second);
   await applyApprovedLines(env, { engagementId: engagement.id }, "Jev", "2026-10-12T13:00:00.000Z");
   stub.pulls.get(7).state = "merged";
   stub.files.set("site/about.html", "<p>About us.</p>\n");

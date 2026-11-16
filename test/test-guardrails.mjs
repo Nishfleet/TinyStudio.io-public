@@ -61,11 +61,25 @@ test("guardrails: an unknown status has no legal step", () => {
   assert.throws(() => assertEngagementStatus("requested", "unknown"), /illegal engagement transition/);
 });
 
-test("guardrails: a correction line moves draft to approved to recorded, and no other way", () => {
-  assert.doesNotThrow(() => assertCorrectionLineStatus("draft", "approved"));
+test("guardrails: a line moves draft to proposed, then the customer approves, edits it back or skips, and no other way", () => {
+  assert.doesNotThrow(() => assertCorrectionLineStatus("draft", "proposed"));
   assert.doesNotThrow(() => assertCorrectionLineStatus("draft", "rejected"));
+  assert.doesNotThrow(() => assertCorrectionLineStatus("proposed", "approved"));
+  assert.doesNotThrow(() => assertCorrectionLineStatus("proposed", "draft"));
+  assert.doesNotThrow(() => assertCorrectionLineStatus("proposed", "skipped"));
   assert.doesNotThrow(() => assertCorrectionLineStatus("approved", "recorded"));
-  for (const [from, to] of [["approved", "draft"], ["recorded", "approved"], ["rejected", "recorded"], ["draft", "recorded"]]) {
+  for (const [from, to] of [
+    ["draft", "approved"],
+    ["draft", "recorded"],
+    ["draft", "skipped"],
+    ["proposed", "rejected"],
+    ["proposed", "recorded"],
+    ["approved", "draft"],
+    ["recorded", "approved"],
+    ["rejected", "recorded"],
+    ["skipped", "approved"],
+    ["skipped", "draft"]
+  ]) {
     assert.throws(() => assertCorrectionLineStatus(from, to), new RegExp(`illegal correction line transition: ${from} -> ${to}`));
   }
 });
@@ -87,6 +101,9 @@ test("guardrails: each state allows only the action that state has", () => {
   assert.equal(engagementAllows({ status: "proposed" }, "send_checkout"), true);
   assert.equal(engagementAllows({ status: "paid" }, "add_correction_line"), true);
   assert.equal(engagementAllows({ status: "in_correction" }, "review_correction_line"), true);
+  assert.equal(engagementAllows({ status: "in_correction" }, "decide_correction_line"), true);
+  assert.equal(engagementAllows({ status: "proved" }, "decide_correction_line"), false);
+  assert.equal(engagementAllows({ status: "paid" }, "decide_correction_line"), false);
   assert.equal(engagementAllows({ status: "proved" }, "add_kickoff_note"), true);
   assert.equal(engagementAllows({ status: "requested" }, "send_checkout"), false);
   assert.equal(engagementAllows({ status: "paid" }, "send_checkout"), false);
