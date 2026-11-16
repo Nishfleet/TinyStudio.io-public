@@ -157,6 +157,7 @@ Each milestone has a finish line and a proof. A milestone is done when the proof
   - The record flow sized to the price: Repair's 90 days of watching, Care and Growth's monthly proof record, the monthly and weekly AI checks.
   - The engine consumer still owed from M3: reads the drift rerun jobs and the tracking checks outboxes, so the nightly queue turns into real reruns and daily checks.
   - First paid Repair delivered, and its proof pair on the wall with consent.
+- **M5. The code lane (2026-11-12, first slice).** A customer whose site is code on GitHub gets an approved change list applied as one pull request per order through the TinyStudio GitHub App: the connection and its folder are on the record (`migrations/0010_code_lane.sql`), the apply, the per-line file naming, the owner-hold pull request and the post-merge re-check are in `src/code-lane.js`, and the desk route is behind the same Access door in `src/worker.js`. Creating the app (id and key) is an account step; the full run — connect, change list, pull request, merge, re-check, record — on a repository we own is the proof still owed. Split across PRs: this one carries the apply and the re-check; the sync-tool click notes (Lovable, Bolt, v0) and the fault-level fixed/not-fixed marking follow.
 
 ## 12. Non-goals
 
