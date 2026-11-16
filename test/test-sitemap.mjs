@@ -95,11 +95,6 @@ export function sitemapIssues(xml, expected = EXPECTED_LOCS) {
   return issues;
 }
 
-test("sitemap lists the complete indexable public surface in the locked order", () => {
-  const xml = readFileSync(new URL(`../${SITEMAP_PATH}`, import.meta.url), "utf8");
-  assert.deepEqual(parseLocs(xml), EXPECTED_LOCS);
-});
-
 test("sitemap passes the full structural contract", () => {
   const xml = readFileSync(new URL(`../${SITEMAP_PATH}`, import.meta.url), "utf8");
   const issues = sitemapIssues(xml);

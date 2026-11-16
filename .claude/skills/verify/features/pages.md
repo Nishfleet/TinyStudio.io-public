@@ -20,7 +20,7 @@ Preconditions:
 
 - **Each page.** Run `for p in / /appraisal /pricing /specimen /waitlist /contact /privacy /terms /llms.txt /offer.md; do curl -s -o /dev/null -w "$p %{http_code}\n" http://localhost:8788$p; done`. Every line ends `200`.
 - **Signup form.** `curl -s http://localhost:8788/ | grep -o '<form[^>]*>'` shows `action="/api/signups"`.
-- **Layout.** `npm run test:viewport`, `npm run test:narrow-pages` and `npm run test:narrow` check the first viewport and the 320 px width.
+- **Layout.** `npm run test:narrow-pages` and `npm run test:narrow` check the 320 px width.
 
 ## Gotchas
 

@@ -85,7 +85,7 @@ export default defineConfig((ctx) => {
 			env: {
 				DB: bindings.d1({
 					name: "tinystudio_email_signups",
-					id: "ff360a55-14fc-468c-895f-893c89e0db79",
+					id: "772176da-86b4-4d73-a1dc-8f50af9de419",
 				}),
 				RECORDS: bindings.r2({
 					name: "tinystudio-records",

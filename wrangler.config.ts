@@ -17,10 +17,13 @@ export default defineWranglerConfig((ctx) => {
 		dev: {
 			port: 8788,
 			// The dev server forwards every request to the host of the first
-			// production route, so the Worker saw `tinystudio.io` and a browser
-			// on localhost was refused. Forward to the local server instead:
-			// the Worker's request URL, Host header and Origin then all name
-			// localhost, and the same-origin check answers as it does live.
+			// production route, and rewrites the request URL, the Host header
+			// and the Origin to that host. The Worker therefore saw
+			// `tinystudio.io` and refused a browser on http://localhost:8788
+			// with 403 `cross_site_blocked`. Forwarding to the local server
+			// instead makes all three name localhost, so the same-origin check
+			// answers as it does live. Proved by the curl drive in
+			// .claude/skills/verify/features/appraisal-request.md.
 			// https://developers.cloudflare.com/workers/wrangler/configuration/#local-development-settings
 			host: "localhost:8788",
 		},
