@@ -29,5 +29,4 @@ Preconditions:
 
 ## Gotchas
 
-- The dev server forwards every request to the host of the first production route and rewrites the request URL, the Host header and the Origin to that host. Without `dev.host` in `wrangler.config.ts` the Worker sees `tinystudio.io` and refuses a browser on `http://localhost:8788` with 403 `cross_site_blocked`; with it, all three name localhost and the form posts. `npm run test:dev-config` reads the shipped config, and this file's curl drive is the end-to-end proof.
 - `wrangler d1 execute --local` reads a different local database file than `cf dev`, so it reports `no such table`. Use the read-back step or Local Explorer instead.
