@@ -226,6 +226,8 @@ test("code lane: an approved list becomes one pull request, one commit per line,
   assert.ok(pullCall.body.body.includes("`site` in `acme/site-repo`"), "the pull request names the folder it is limited to");
   const tokenCalls = stub.calls.filter((call) => call.path === "/app/installations/4242/access_tokens");
   assert.equal(tokenCalls.length, 1, "one installation token per job");
+  assert.deepEqual(tokenCalls[0].body.repositories, ["site-repo"], "the token is limited to the one repository");
+  assert.deepEqual(tokenCalls[0].body.permissions, { contents: "write", pull_requests: "write" });
 });
 
 test("code lane: the order stops before anything is written when the lines are not ready", async () => {

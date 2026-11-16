@@ -131,7 +131,7 @@ export async function appJwt(env, now) {
 /** @param {Env} env @param {CodeLaneConnectionRow} connection @returns {Promise<string>} */
 export async function installationToken(env, connection) {
   const jwt = await appJwt(env, Math.floor(Date.now() / 1000));
-  const response = await githubFetch(env, "POST", `/app/installations/${connection.installation_id}/access_tokens`, jwt, "{}");
+  const response = await githubFetch(env, "POST", `/app/installations/${connection.installation_id}/access_tokens`, jwt, JSON.stringify({ repositories: [connection.repo_name], permissions: { contents: "write", pull_requests: "write" } }));
   const body = await response.json();
   if (!response.ok || typeof body?.token !== "string" || !body.token) {
     throw fail("TOKEN_FAILED", "the installation token exchange failed; check the app installation on the repository");
