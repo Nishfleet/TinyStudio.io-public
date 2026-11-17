@@ -12,6 +12,7 @@ import {
 } from "./desk.js";
 import { handleDodoWebhook, startCheckoutForRequest } from "./payments.js";
 import { customerDecisionResponse } from "./customer-lines.js";
+import { closeDuePlans } from "./plans.js";
 import { deskQueuePage } from "./desk-page.js";
 import { ENGAGEMENT_ID } from "./engagement.js";
 import { queueTrackingChecks } from "./tracking.js";
@@ -2015,7 +2016,7 @@ async function checkoutResponse(request, env, url) {
   const sessionSlot = await claimCheckoutSlot(env, await checkoutSessionBucket(request, recordId), MAX_CHECKOUTS_PER_IP_PER_DAY);
   if (!sessionSlot.ok) return sessionSlot.response;
   try {
-    const checkout = await startCheckoutForRequest(env, { recordId });
+    const checkout = await startCheckoutForRequest(env, { recordId, productKey: cleanField(form.get("product"), 64) });
     return browserForm
       ? withSecurityHeaders(redirectResponse(checkout.checkoutUrl))
       : withSecurityHeaders(jsonResponse({ ok: true, checkoutUrl: checkout.checkoutUrl }));
@@ -2631,6 +2632,11 @@ const handler = {
       await queueTrackingChecks(env, now);
     } catch (error) {
       console.error("tinystudio_tracking_checks_queue_failed", errorMessage(error) || String(error));
+    }
+    try {
+      await closeDuePlans(env, now);
+    } catch (error) {
+      console.error("tinystudio_plans_close_failed", errorMessage(error) || String(error));
     }
   }
 };

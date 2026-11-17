@@ -119,9 +119,10 @@ test("checkout: one product, one price, and a Dodo URL the worker may redirect t
   assert.equal(calls[0].url, "https://test.dodopayments.com/checkouts", "the test mode base URL");
   assert.equal(calls[0].init.headers.authorization, "Bearer test-api-key");
 
-  const stored = sqlite.prepare("SELECT checkout_session_id, status FROM engagements WHERE id = ?").get(engagement.id);
+  const stored = sqlite.prepare("SELECT checkout_session_id, status, product_key FROM engagements WHERE id = ?").get(engagement.id);
   assert.equal(stored.checkout_session_id, "cs_1");
   assert.equal(stored.status, "proposed");
+  assert.equal(stored.product_key, offer.productKey, "the checkout names the product the engagement sells");
   const journal = sqlite.prepare("SELECT type, detail FROM engagement_events WHERE engagement_id = ? AND type = 'checkout_session_created'").all(engagement.id);
   assert.equal(journal.length, 1, "the checkout session is written to the journal");
   assert.equal(journal[0].detail, "checkout session cs_1");
@@ -130,6 +131,55 @@ test("checkout: one product, one price, and a Dodo URL the worker may redirect t
   assert.equal(safeDodoCheckoutUrl("https://evil.example/session/cs_1"), "");
   assert.equal(safeDodoCheckoutUrl("http://checkout.dodopayments.com/session/cs_1"), "");
   assert.equal(safeDodoCheckoutUrl(""), "");
+});
+
+test("checkout: naming Care carries from the proposal through the Dodo cart to the paid webhook", async () => {
+  const { env, sqlite } = freshEnv();
+  env.DODO_TINYSTUDIO_CARE_PRODUCT_ID = "prod_care";
+  const recordId = await proposedEngagement(env);
+  const engagement = sqlite.prepare("SELECT id FROM engagements WHERE request_id = 'req-1'").get();
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ checkout_url: "https://checkout.dodopayments.com/session/cs_care", session_id: "cs_care" })
+    };
+  };
+  await startCheckoutForRequest(env, { recordId, productKey: "care" }, "2026-10-13T09:00:00.000Z", fetchImpl);
+  const cart = JSON.parse(calls[0].init.body);
+  assert.deepEqual(cart.product_cart, [{ product_id: "prod_care", quantity: 1 }], "the checkout sells the product that was named");
+  assert.equal(cart.metadata.product_key, "care");
+  assert.equal(sqlite.prepare("SELECT product_key FROM engagements WHERE id = ?").get(engagement.id).product_key, "care");
+  const named = sqlite.prepare("SELECT type, detail FROM engagement_events WHERE engagement_id = ? AND type = 'product_named'").all(engagement.id);
+  assert.deepEqual(named.map((row) => row.detail), ["care"], "naming the product is journalled once");
+
+  await assert.rejects(
+    startCheckoutForRequest(env, { recordId, productKey: "growth" }, "2026-10-13T09:05:00.000Z", fetchImpl),
+    /different product/,
+    "a second checkout may not quietly switch the product the proposal sold"
+  );
+  assert.equal(calls.length, 1, "the refused switch never reached Dodo");
+  await assert.rejects(startCheckoutForRequest(env, { recordId, productKey: "not-a-product" }, "2026-10-13T09:06:00.000Z", fetchImpl), /no such product/);
+
+  const { body, headers } = signedEvent({
+    webhookId: "wh_care_e2e",
+    data: {
+      payment_id: "pay_care_e2e",
+      subscription_id: "sub_care_e2e",
+      session_id: "cs_care",
+      total_amount: 29900,
+      product_cart: [{ product_id: "prod_care", quantity: 1 }],
+      metadata: { engagement_id: engagement.id, record_id: recordId, request_id: "req-1", product_key: "care" }
+    }
+  });
+  const result = await handleDodoWebhook(env, { rawBody: body, headers: new Headers(headers) }, "2026-10-13T10:00:00.000Z");
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, { received: true, engagementId: engagement.id, engagementStatus: "paid" });
+  const row = sqlite.prepare("SELECT status, product_key, plan_status, subscription_id FROM engagements WHERE id = ?").get(engagement.id);
+  assert.deepEqual({ ...row }, { status: "paid", product_key: "care", plan_status: "active", subscription_id: "sub_care_e2e" });
+  assert.equal(sqlite.prepare("SELECT role FROM engagement_payments WHERE payment_id = 'pay_care_e2e'").get().role, "care");
 });
 
 test("checkout: a missing config or an unusable Dodo answer never opens an engagement", async () => {
