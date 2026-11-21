@@ -1,0 +1,10 @@
+{
+	"core": null,
+	"phpVersion": "8.3",
+	"plugins": [
+		"https://downloads.wordpress.org/plugin/wordpress-seo.latest-stable.zip",
+		"https://downloads.wordpress.org/plugin/seo-by-rank-math.latest-stable.zip",
+		"https://downloads.wordpress.org/plugin/all-in-one-seo-pack.latest-stable.zip",
+		"."
+	]
+}
